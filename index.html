@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Financeiro — Pá Carregadeira | TA Transporte</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ══════════ TELA DE LOGIN ══════════ -->
+  <div id="tela-login" class="login-fundo oculto">
+    <div class="login-caixa">
+      <div class="login-marca">
+        <div class="marca-icone">PC</div>
+        <div>
+          <div class="marca-nome">TA Transporte</div>
+          <div class="marca-sub">Gerenciador Financeiro</div>
+        </div>
+      </div>
+      <h1 class="titulo-risco"><span>Acesso restrito</span></h1>
+      <form id="form-login">
+        <label>E-mail
+          <input type="email" id="login-email" required autocomplete="username">
+        </label>
+        <label>Senha
+          <input type="password" id="login-senha" required autocomplete="current-password">
+        </label>
+        <div id="login-erro" class="form-erro oculto"></div>
+        <button type="submit" class="btn-primario btn-largo" id="login-btn">Entrar</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ══════════ AVISO DE CONFIGURAÇÃO ══════════ -->
+  <div id="tela-config" class="login-fundo oculto">
+    <div class="login-caixa">
+      <h1 class="titulo-risco"><span>Configuração pendente</span></h1>
+      <p class="texto-config">
+        Abra o arquivo <code>config.js</code> e preencha a <b>URL</b> e a
+        <b>anon key</b> do seu projeto Supabase, conforme o passo a passo do
+        <code>README.md</code>.
+      </p>
+    </div>
+  </div>
+
+  <!-- ══════════ APLICAÇÃO ══════════ -->
+  <div id="app" class="oculto">
+
+    <header class="topo">
+      <div class="topo-faixa"></div>
+      <div class="topo-conteudo">
+        <div class="marca">
+          <div class="marca-icone">PC</div>
+          <div>
+            <div class="marca-nome">TA Transporte</div>
+            <div class="marca-sub">Financeiro · Pá Carregadeira</div>
+          </div>
+        </div>
+        <div class="topo-direita">
+          <div class="topo-saldo">
+            <span class="topo-saldo-rotulo">Saldo em caixa</span>
+            <span class="topo-saldo-valor" id="saldo-topo">—</span>
+          </div>
+          <button class="btn-fantasma btn-sair" id="btn-sair" title="Sair">Sair</button>
+        </div>
+      </div>
+      <nav class="abas" id="abas">
+        <button class="aba ativa" data-aba="painel">Painel</button>
+        <button class="aba" data-aba="extrato">Extrato</button>
+        <button class="aba" data-aba="recebimentos">Recebimentos</button>
+        <button class="aba" data-aba="diesel">Diesel</button>
+        <button class="aba" data-aba="agenda">Agenda</button>
+      </nav>
+    </header>
+
+    <main class="conteudo">
+      <div id="carregando" class="vazio">Carregando dados do banco…</div>
+
+      <!-- ─── PAINEL ─── -->
+      <section id="aba-painel" class="secao oculto">
+        <div class="kpi-grade" id="kpis-painel"></div>
+
+        <div class="cartao">
+          <h2 class="titulo-risco"><span>Fluxo de caixa mensal</span></h2>
+          <p class="cartao-nota">barras: entradas e saídas · linha: saldo acumulado</p>
+          <div class="grafico-caixa"><canvas id="graf-fluxo"></canvas></div>
+        </div>
+
+        <div class="cartao">
+          <h2 class="titulo-risco"><span>Para onde vai o dinheiro</span></h2>
+          <p class="cartao-nota">saídas por grupo, todo o período</p>
+          <div class="grupos" id="grupos-painel"></div>
+        </div>
+      </section>
+
+      <!-- ─── EXTRATO ─── -->
+      <section id="aba-extrato" class="secao oculto">
+        <div class="filtros">
+          <select id="ext-filtro-mes"></select>
+          <select id="ext-filtro-grupo"></select>
+          <input class="busca" type="text" id="ext-busca" placeholder="Buscar descrição…">
+          <button class="btn-primario" id="ext-novo">+ Lançamento</button>
+        </div>
+        <div class="faixa-resumo" id="ext-resumo"></div>
+        <div class="tabela-rolagem">
+          <table class="tabela">
+            <thead>
+              <tr>
+                <th>Data</th><th>Grupo</th><th>Descrição</th><th>Conta</th>
+                <th class="num">Valor</th><th class="num">Saldo</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="ext-corpo"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ─── RECEBIMENTOS ─── -->
+      <section id="aba-recebimentos" class="secao oculto">
+        <div class="filtros">
+          <div class="cliente-grade" id="rec-clientes"></div>
+        </div>
+        <div class="filtros">
+          <button class="btn-primario" id="rec-novo">+ Registro de horas / pagamento</button>
+        </div>
+        <div class="tabela-rolagem">
+          <table class="tabela">
+            <thead>
+              <tr>
+                <th>Data</th><th>Cliente</th><th class="num">Horímetro</th>
+                <th class="num">Horas</th><th class="num">R$/h</th>
+                <th class="num">Faturado</th><th class="num">Pago</th><th>Forma</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="rec-corpo"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ─── DIESEL ─── -->
+      <section id="aba-diesel" class="secao oculto">
+        <div class="kpi-grade" id="kpis-diesel"></div>
+        <div class="cartao">
+          <h2 class="titulo-risco"><span>Preço do litro por abastecimento</span></h2>
+          <div class="grafico-caixa grafico-baixo"><canvas id="graf-diesel"></canvas></div>
+        </div>
+        <div class="filtros">
+          <button class="btn-primario" id="die-novo">+ Abastecimento</button>
+        </div>
+        <div class="tabela-rolagem">
+          <table class="tabela">
+            <thead>
+              <tr>
+                <th>Data</th><th class="num">Horímetro</th><th class="num">Horas</th>
+                <th class="num">Litros</th><th class="num">R$/L</th><th class="num">Total</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="die-corpo"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ─── AGENDA ─── -->
+      <section id="aba-agenda" class="secao oculto">
+        <div class="cartao">
+          <h2 class="titulo-risco"><span>Compromissos por mês</span></h2>
+          <p class="cartao-nota" id="age-total-nota"></p>
+          <div class="grafico-caixa grafico-baixo"><canvas id="graf-agenda"></canvas></div>
+        </div>
+        <div class="filtros">
+          <button class="btn-primario" id="age-novo">+ Compromisso</button>
+        </div>
+        <div class="tabela-rolagem">
+          <table class="tabela tabela-agenda">
+            <thead id="age-cabeca"></thead>
+            <tbody id="age-corpo"></tbody>
+          </table>
+        </div>
+        <p class="rodape-nota">Valores em reais. Coluna "Dia" indica o vencimento. Clique em um compromisso para editar.</p>
+      </section>
+    </main>
+
+    <!-- ─── MODAL GENÉRICO ─── -->
+    <div id="modal-fundo" class="modal-fundo oculto">
+      <div class="modal">
+        <h3 id="modal-titulo">—</h3>
+        <div class="form-grade" id="modal-campos"></div>
+        <div class="form-erro oculto" id="modal-erro"></div>
+        <div class="modal-acoes">
+          <button class="btn-perigo oculto" id="modal-excluir">Excluir</button>
+          <span class="modal-espaco"></span>
+          <button class="btn-fantasma" id="modal-cancelar">Cancelar</button>
+          <button class="btn-primario" id="modal-salvar">Salvar</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast oculto"></div>
+  </div>
+
+  <!-- Bibliotecas via CDN — mesmo padrão do portal -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
