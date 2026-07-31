@@ -175,6 +175,34 @@ body {
 
 .td-natureza { font-size: 10.5px; color: var(--texto-mudo); margin-top: 2px; }
 
+/* ── Seleção de equipamento ────────────────────────────── */
+.equip-caixa { max-width: 420px; }
+.equip-grade { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.equip-cartao {
+  background: var(--superficie-2); border: 1px solid var(--borda); border-radius: 12px;
+  padding: 18px 10px; display: flex; flex-direction: column; align-items: center; gap: 8px;
+  cursor: pointer; transition: border-color .15s, transform .15s; font-family: var(--fonte-texto); color: var(--texto);
+}
+.equip-cartao:hover { border-color: var(--amarelo); transform: translateY(-1px); }
+.equip-cartao-icone {
+  width: 40px; height: 40px; border-radius: 8px; background: var(--amarelo); color: var(--fundo);
+  display: flex; align-items: center; justify-content: center; font-family: var(--fonte-titulo); font-weight: 700; font-size: 15px;
+}
+.equip-cartao-total .equip-cartao-icone { background: var(--verde); }
+.equip-cartao-nome { font-size: 12.5px; font-weight: 600; text-align: center; }
+.equip-add-form { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+.equip-add-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--texto-mudo); }
+.equip-add-acoes { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* ── Manutenção: próximas ──────────────────────────────── */
+.man-proximas { display: flex; flex-direction: column; gap: 8px; }
+.man-proxima-linha {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  background: var(--superficie-2); border: 1px solid var(--borda); border-radius: 8px; padding: 9px 12px;
+}
+.man-proxima-desc { flex: 1; min-width: 140px; font-size: 13px; }
+.man-proxima-data { font-family: var(--fonte-mono); font-size: 12px; color: var(--texto-mudo); }
+
 .grupos { display: flex; flex-direction: column; gap: 8px; }
 .grupo-linha { display: grid; grid-template-columns: 130px 1fr 92px; align-items: center; gap: 10px; }
 .grupo-nome { font-size: 13px; color: var(--texto-suave); }
@@ -322,6 +350,7 @@ select:focus, input:focus { outline: none; border-color: var(--amarelo); }
   .abas { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; }
   .aba { flex: 0 0 auto; white-space: nowrap; }
   .cliente-grade { grid-template-columns: 1fr; }
+  .equip-grade { grid-template-columns: 1fr 1fr; }
   .modal { width: 94vw; max-height: 88vh; overflow-y: auto; }
   .modal-acoes { flex-wrap: wrap; }
   .cartao-cabeca { flex-direction: column; align-items: stretch; }

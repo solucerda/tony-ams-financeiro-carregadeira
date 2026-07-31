@@ -47,6 +47,33 @@
     </div>
   </div>
 
+  <!-- ══════════ SELEÇÃO DE EQUIPAMENTO ══════════ -->
+  <div id="tela-equipamento" class="login-fundo oculto">
+    <div class="login-caixa equip-caixa">
+      <div class="login-marca">
+        <div class="marca-icone">PC</div>
+        <div>
+          <div class="marca-nome">TA Transporte</div>
+          <div class="marca-sub">Gerenciador Financeiro</div>
+        </div>
+      </div>
+      <h1 class="titulo-risco"><span>Qual equipamento?</span></h1>
+      <p class="texto-config" style="margin-top:0;margin-bottom:14px;">Escolha um equipamento para ver os dados só dele, ou "Total do negócio" para ver tudo somado.</p>
+      <div id="equip-cartoes" class="equip-grade"></div>
+      <button class="btn-fantasma btn-largo" id="equip-add-abrir" style="margin-top:14px;">+ Adicionar equipamento</button>
+      <div id="equip-add-form" class="equip-add-form oculto">
+        <label>Nome do novo equipamento
+          <input type="text" id="equip-add-nome" placeholder="Ex.: Retroescavadeira">
+        </label>
+        <div class="equip-add-acoes">
+          <button class="btn-fantasma" id="equip-add-cancelar">Cancelar</button>
+          <button class="btn-primario" id="equip-add-salvar">Criar</button>
+        </div>
+      </div>
+      <button class="btn-fantasma btn-largo" id="equip-sair" style="margin-top:18px;">Sair</button>
+    </div>
+  </div>
+
   <!-- ══════════ APLICAÇÃO ══════════ -->
   <div id="app" class="oculto">
 
@@ -57,7 +84,7 @@
           <div class="marca-icone">PC</div>
           <div>
             <div class="marca-nome">TA Transporte</div>
-            <div class="marca-sub">Financeiro · Pá Carregadeira</div>
+            <div class="marca-sub">Financeiro · <span id="contexto-nome">—</span></div>
           </div>
         </div>
         <div class="topo-direita">
@@ -65,6 +92,7 @@
             <span class="topo-saldo-rotulo">Saldo em caixa</span>
             <span class="topo-saldo-valor" id="saldo-topo">—</span>
           </div>
+          <button class="btn-fantasma" id="btn-trocar-equip" title="Trocar equipamento">Trocar</button>
           <button class="btn-fantasma btn-sair" id="btn-sair" title="Sair">Sair</button>
         </div>
       </div>
@@ -73,6 +101,7 @@
         <button class="aba" data-aba="extrato">Extrato</button>
         <button class="aba" data-aba="recebimentos">Recebimentos</button>
         <button class="aba" data-aba="diesel">Diesel</button>
+        <button class="aba" data-aba="manutencao">Manutenção</button>
         <button class="aba" data-aba="agenda">Agenda</button>
       </nav>
     </header>
@@ -197,6 +226,46 @@
               </tr>
             </thead>
             <tbody id="die-corpo"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ─── MANUTENÇÃO ─── -->
+      <section id="aba-manutencao" class="secao oculto">
+        <div class="kpi-grade" id="kpis-manutencao"></div>
+
+        <div class="cartao">
+          <div class="cartao-cabeca">
+            <h2 class="titulo-risco"><span>Próximas manutenções</span></h2>
+          </div>
+          <p class="cartao-nota">agendadas ou previstas — ainda não realizadas</p>
+          <div id="man-proximas" class="man-proximas"></div>
+        </div>
+
+        <div class="filtros">
+          <select id="man-filtro-tipo">
+            <option value="todos">Todos os tipos</option>
+            <option value="preventiva">Preventiva</option>
+            <option value="preditiva">Preditiva</option>
+            <option value="corretiva">Corretiva</option>
+          </select>
+          <div class="segmentado" id="man-filtro-status">
+            <button type="button" data-valor="todos" class="ativo">Todas</button>
+            <button type="button" data-valor="realizadas">Realizadas</button>
+            <button type="button" data-valor="agendadas">Agendadas</button>
+          </div>
+          <button class="btn-primario" id="man-novo">+ Manutenção</button>
+        </div>
+        <div class="tabela-rolagem">
+          <table class="tabela">
+            <thead>
+              <tr>
+                <th>Data</th><th>Equip.</th><th>Tipo</th><th class="num">Horímetro</th>
+                <th>Descrição / peças</th><th>Fornecedor</th>
+                <th class="num">Total</th><th>Situação</th><th>Próxima</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="man-corpo"></tbody>
           </table>
         </div>
       </section>

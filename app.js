@@ -7,10 +7,11 @@
 
 /* ── Estado global ─────────────────────────────────────── */
 let sb = null;                 // cliente Supabase
-const dados = { saldoInicial: 0, lanc: [], rec: [], die: [], age: [] };
+const dados = { saldoInicial: 0, lanc: [], rec: [], die: [], age: [], man: [], equipamentos: [] };
 let filtroExt = { mes: "todos", grupo: "todos", busca: "" };
 let filtroCliente = "todos";
 let filtroPainel = { periodo: "tudo", natureza: "todos", tipoFluxo: "bar", agrupar: "grupo", visual: "lista" };
+let filtroManutencao = { tipo: "todos", status: "todos" };
 const graficos = {};           // instâncias Chart.js
 
 const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
@@ -59,7 +60,30 @@ function ligarSegmentado(idContainer, aoMudar) {
   });
 }
 
+// Opções de equipamento para os campos "select" dos modais. Quando estamos
+// vendo um equipamento específico, o campo já nasce travado nele; no modo
+// "Total do negócio" o usuário escolhe. incluirGeral permite despesas/
+// compromissos que não são de uma máquina específica (ex.: contabilidade).
+function opcoesEquipamento(incluirGeral) {
+  const opts = dados.equipamentos.map(e => `${e.id}|${e.nome}`);
+  if (incluirGeral) opts.push("|Geral (sem máquina específica)");
+  return opts;
+}
+function equipamentoPadrao(valorAtual, incluirGeral) {
+  if (valorAtual != null) return String(valorAtual);
+  if (contexto.equipamentoId != null) return String(contexto.equipamentoId);
+  if (incluirGeral) return "";
+  return dados.equipamentos[0] ? String(dados.equipamentos[0].id) : "";
+}
+function nomeEquipamento(id) {
+  const e = dados.equipamentos.find(x => x.id === id);
+  return e ? e.nome : "";
+}
+
 /* ── Inicialização ─────────────────────────────────────── */
+let contexto = { equipamentoId: null, nome: null }; // null = "Total do negócio"
+let appIniciado = false;
+
 document.addEventListener("DOMContentLoaded", async () => {
   if (!SUPABASE_URL || SUPABASE_URL.includes("COLE_AQUI")) {
     $("tela-config").classList.remove("oculto");
@@ -68,12 +92,20 @@ document.addEventListener("DOMContentLoaded", async () => {
   sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const { data: { session } } = await sb.auth.getSession();
-  if (session) iniciarApp(); else mostrarLogin();
+  if (session) mostrarSeletorEquipamento(); else mostrarLogin();
 
   $("form-login").addEventListener("submit", fazerLogin);
   $("btn-sair").addEventListener("click", async () => {
     await sb.auth.signOut();
     location.reload();
+  });
+  $("equip-sair").addEventListener("click", async () => {
+    await sb.auth.signOut();
+    location.reload();
+  });
+  $("btn-trocar-equip").addEventListener("click", () => {
+    $("app").classList.add("oculto");
+    mostrarSeletorEquipamento();
   });
 });
 
@@ -97,11 +129,70 @@ async function fazerLogin(ev) {
     return;
   }
   $("tela-login").classList.add("oculto");
-  iniciarApp();
+  mostrarSeletorEquipamento();
+}
+
+/* ── Seleção de equipamento (primeira tela após o login) ─── */
+async function mostrarSeletorEquipamento() {
+  $("tela-equipamento").classList.remove("oculto");
+  $("equip-add-form").classList.add("oculto");
+  $("equip-cartoes").innerHTML = '<div class="vazio">Carregando…</div>';
+
+  const { data, error } = await sb.from("equipamentos").select("*").eq("ativo", true).order("nome");
+  if (error) {
+    $("equip-cartoes").innerHTML = '<div class="vazio">Não foi possível carregar os equipamentos. (' + escHtml(error.message) + ')</div>';
+    return;
+  }
+  dados.equipamentos = data || [];
+
+  const cartoes = dados.equipamentos.map(e => `
+    <button type="button" class="equip-cartao" data-id="${e.id}" data-nome="${escHtml(e.nome)}">
+      <div class="equip-cartao-icone">${escHtml(e.nome.slice(0,2).toUpperCase())}</div>
+      <div class="equip-cartao-nome">${escHtml(e.nome)}</div>
+    </button>`).join("");
+  const cartaoTotal = `
+    <button type="button" class="equip-cartao equip-cartao-total" data-id="" data-nome="Total do negócio">
+      <div class="equip-cartao-icone">∑</div>
+      <div class="equip-cartao-nome">Total do negócio</div>
+    </button>`;
+  $("equip-cartoes").innerHTML = cartoes + cartaoTotal;
+
+  $("equip-cartoes").querySelectorAll(".equip-cartao").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.id ? Number(btn.dataset.id) : null;
+      escolherContexto(id, btn.dataset.nome);
+    });
+  });
+
+  if (!$("equip-add-abrir")._ligado) {
+    $("equip-add-abrir")._ligado = true;
+    $("equip-add-abrir").addEventListener("click", () => {
+      $("equip-add-form").classList.remove("oculto");
+      $("equip-add-nome").focus();
+    });
+    $("equip-add-cancelar").addEventListener("click", () => $("equip-add-form").classList.add("oculto"));
+    $("equip-add-salvar").addEventListener("click", criarEquipamento);
+  }
+}
+
+async function criarEquipamento() {
+  const nome = $("equip-add-nome").value.trim();
+  if (!nome) { toast("Informe o nome do equipamento."); return; }
+  const { error } = await sb.from("equipamentos").insert({ nome });
+  if (error) { toast("Não foi possível criar: " + error.message); return; }
+  $("equip-add-nome").value = "";
+  await mostrarSeletorEquipamento();
+}
+
+function escolherContexto(equipamentoId, nome) {
+  contexto = { equipamentoId, nome };
+  $("tela-equipamento").classList.add("oculto");
+  $("contexto-nome").textContent = nome;
+  if (!appIniciado) { iniciarApp(); appIniciado = true; }
+  else { $("app").classList.remove("oculto"); carregarTudo(); }
 }
 
 async function iniciarApp() {
-  $("tela-login").classList.add("oculto");
   $("app").classList.remove("oculto");
 
   // navegação por abas
@@ -118,6 +209,7 @@ async function iniciarApp() {
   $("rec-novo").addEventListener("click", () => abrirModalRecebimento(null));
   $("die-novo").addEventListener("click", () => abrirModalDiesel(null));
   $("age-novo").addEventListener("click", () => abrirModalAgenda(null));
+  $("man-novo").addEventListener("click", () => abrirModalManutencao(null));
 
   // filtros do extrato
   $("ext-filtro-mes").addEventListener("change", e => { filtroExt.mes = e.target.value; renderExtrato(); });
@@ -132,6 +224,10 @@ async function iniciarApp() {
   ligarSegmentado("pnl-tipo-fluxo", (v) => { filtroPainel.tipoFluxo = v; renderPainel(); });
   ligarSegmentado("pnl-agrupar", (v) => { filtroPainel.agrupar = v; renderPainel(); });
   ligarSegmentado("pnl-visual", (v) => { filtroPainel.visual = v; renderPainel(); });
+
+  // filtros de manutenção
+  $("man-filtro-tipo").addEventListener("change", e => { filtroManutencao.tipo = e.target.value; renderManutencao(); });
+  ligarSegmentado("man-filtro-status", (v) => { filtroManutencao.status = v; renderManutencao(); });
 
   // cliques delegados (cartões de cliente e linhas da agenda)
   $("rec-clientes").addEventListener("click", (ev) => {
@@ -153,16 +249,23 @@ async function iniciarApp() {
 
 /* ── Carga de dados ────────────────────────────────────── */
 async function carregarTudo() {
+  $("carregando").textContent = "Carregando dados do banco…";
   $("carregando").classList.remove("oculto");
+  $("aba-painel").classList.add("oculto");
   try {
-    const [cfg, lanc, rec, die, age] = await Promise.all([
+    // no modo "Total do negócio" (contexto.equipamentoId === null) não filtra
+    // nada — traz tudo, inclusive despesas gerais sem equipamento definido.
+    const comEquip = (q) => contexto.equipamentoId != null ? q.eq("equipamento_id", contexto.equipamentoId) : q;
+
+    const [cfg, lanc, rec, die, age, man] = await Promise.all([
       sb.from("config").select("*"),
-      sb.from("lancamentos").select("*").order("data").order("id"),
-      sb.from("recebimentos").select("*").order("data").order("id"),
-      sb.from("diesel").select("*").order("data").order("id"),
-      sb.from("agenda").select("*").order("item").order("mes"),
+      comEquip(sb.from("lancamentos").select("*")).order("data").order("id"),
+      comEquip(sb.from("recebimentos").select("*")).order("data").order("id"),
+      comEquip(sb.from("diesel").select("*")).order("data").order("id"),
+      comEquip(sb.from("agenda").select("*")).order("item").order("mes"),
+      comEquip(sb.from("manutencoes").select("*")).order("data", { ascending: false }),
     ]);
-    const erro = cfg.error || lanc.error || rec.error || die.error || age.error;
+    const erro = cfg.error || lanc.error || rec.error || die.error || age.error || man.error;
     if (erro) throw erro;
 
     const si = (cfg.data || []).find(c => c.chave === "saldo_inicial");
@@ -171,13 +274,15 @@ async function carregarTudo() {
     dados.rec  = (rec.data  || []).map(o => normNum(o, "recebimentos"));
     dados.die  = (die.data  || []).map(o => normNum(o, "diesel"));
     dados.age  = (age.data  || []).map(o => normNum(o, "agenda"));
+    dados.man  = (man.data  || []).map(o => normNum(o, "manutencoes"));
 
     $("carregando").classList.add("oculto");
     $("aba-painel").classList.remove("oculto");
     renderTudo();
   } catch (e) {
+    $("carregando").classList.remove("oculto");
     $("carregando").textContent =
-      "Não foi possível carregar os dados. Confira se o script schema.sql foi executado no Supabase e se a URL/anon key do config.js estão corretas. (" + (e.message || e) + ")";
+      "Não foi possível carregar os dados. Confira se as migrações SQL foram executadas no Supabase e se a URL/anon key do config.js estão corretas. (" + (e.message || e) + ")";
   }
 }
 
@@ -190,6 +295,7 @@ const CAMPOS_TEXTO = {
   recebimentos: new Set(["data", "cliente", "forma"]),
   diesel:       new Set(["data"]),
   agenda:       new Set(["item", "dia"]),
+  manutencoes:  new Set(["data", "descricao", "pecas", "fornecedor", "vencimento", "proxima_data"]),
 };
 
 function normNum(obj, tabela) {
@@ -211,6 +317,7 @@ function renderTudo() {
   rodarSemTravar(renderExtrato, "Extrato");
   rodarSemTravar(renderRecebimentos, "Recebimentos");
   rodarSemTravar(renderDiesel, "Diesel");
+  rodarSemTravar(renderManutencao, "Manutenção");
   rodarSemTravar(renderAgenda, "Agenda");
 }
 
@@ -448,6 +555,7 @@ function abrirModalLancamento(id) {
     campos: [
       { nome:"data", rotulo:"Data", tipo:"date", valor: l?.data || hoje() },
       { nome:"_tipo", rotulo:"Tipo", tipo:"select", opcoes:["saida|Saída","entrada|Entrada"], valor: tipo },
+      { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(true), valor: equipamentoPadrao(l?.equipamento_id, true) },
       { nome:"grupo", rotulo:"Grupo", tipo:"select", opcoes: GRUPOS_SAIDA.concat("Recebimentos"), valor: l?.grupo || "Combustível" },
       { nome:"natureza", rotulo:"Natureza (só p/ saída)", tipo:"select",
         opcoes:["Variavel|Custo variável","Fixo|Custo fixo","Investimento|Investimento"],
@@ -462,6 +570,7 @@ function abrirModalLancamento(id) {
       return {
         data: f.data,
         banco: f.banco,
+        equipamento_id: f.equipamento_id ? Number(f.equipamento_id) : null,
         grupo: f._tipo === "entrada" ? "Recebimentos" : f.grupo,
         subgrupo: "",
         entrada: f._tipo === "entrada" ? v : 0,
@@ -528,6 +637,7 @@ function abrirModalRecebimento(id) {
     tabela: "recebimentos", id,
     campos: [
       { nome:"data", rotulo:"Data", tipo:"date", valor: r?.data || hoje() },
+      { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(r?.equipamento_id, false) },
       { nome:"cliente", rotulo:"Cliente", tipo:"texto", valor: r?.cliente || "", lista: clientes },
       { nome:"hora_inicial", rotulo:"Horímetro inicial", tipo:"numero", valor: r?.hora_inicial ?? "" },
       { nome:"hora_final", rotulo:"Horímetro final", tipo:"numero", valor: r?.hora_final ?? "" },
@@ -538,12 +648,13 @@ function abrirModalRecebimento(id) {
     ],
     montar(f) {
       if (!f.cliente.trim()) throw "Informe o cliente.";
+      if (!f.equipamento_id) throw "Selecione o equipamento.";
       const hi = f.hora_inicial === "" ? null : Number(f.hora_inicial);
       const hf = f.hora_final === "" ? null : Number(f.hora_final);
       const horas = (hi != null && hf != null) ? Math.max(0, hf - hi) : 0;
       const vh = Number(f.valor_hora) || 0;
       return {
-        data: f.data, cliente: f.cliente.trim(),
+        data: f.data, equipamento_id: Number(f.equipamento_id), cliente: f.cliente.trim(),
         hora_inicial: hi, hora_final: hf, horas,
         valor_hora: vh, valor_total: horas * vh,
         valor_pago: Number(f.valor_pago) || 0,
@@ -620,6 +731,7 @@ function abrirModalDiesel(id) {
     tabela: "diesel", id,
     campos: [
       { nome:"data", rotulo:"Data", tipo:"date", valor: d?.data || hoje() },
+      { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(d?.equipamento_id, false) },
       { nome:"local", rotulo:"Local / fornecedor", tipo:"texto", largo:true, valor: d?.local || "" },
       { nome:"litros", rotulo:"Litros", tipo:"numero", valor: d?.litros ?? "" },
       { nome:"valor_unit", rotulo:"Preço do litro (R$)", tipo:"numero", valor: d?.valor_unit ?? "" },
@@ -633,11 +745,12 @@ function abrirModalDiesel(id) {
       const litros = Number(f.litros) || 0;
       const vu = Number(f.valor_unit) || 0;
       if (!litros && !vu) throw "Informe pelo menos os litros e o preço.";
+      if (!f.equipamento_id) throw "Selecione o equipamento.";
       if (f.status === "pendente" && !f.vencimento) throw "Informe o vencimento para abastecimentos a pagar.";
       const hi = f.hora_inicial === "" ? null : Number(f.hora_inicial);
       const hf = f.hora_final === "" ? null : Number(f.hora_final);
       return {
-        data: f.data, local: f.local.trim(), litros, valor_unit: vu, valor_total: litros * vu,
+        data: f.data, equipamento_id: Number(f.equipamento_id), local: f.local.trim(), litros, valor_unit: vu, valor_total: litros * vu,
         hora_inicial: hi, hora_final: hf,
         horas: (hi != null && hf != null) ? Math.max(0, hf - hi) : null,
         status: f.status, vencimento: f.status === "pendente" ? f.vencimento : null,
@@ -655,6 +768,128 @@ function abrirModalDiesel(id) {
       });
     },
     async aoExcluir() { await removerLancamentoVinculado(d?.lancamento_id); },
+  });
+}
+
+/* ═══════════════ MANUTENÇÃO ═══════════════ */
+const ROTULO_TIPO_MAN = { preventiva:"Preventiva", preditiva:"Preditiva", corretiva:"Corretiva" };
+const COR_TIPO_MAN = { preventiva:"#3ECF8E", preditiva:"#7A8CF0", corretiva:"#F0564A" };
+
+function renderManutencao() {
+  const hj = hoje();
+  let custoPecas = 0, custoTotal = 0, qtdPecas = 0;
+  const proximas = [];
+  for (const m of dados.man) {
+    if (m.realizada) { custoPecas += m.valor_pecas; custoTotal += m.valor_total; if (m.pecas) qtdPecas++; }
+    else proximas.push(m);
+  }
+  let aPagar = 0, vencido = 0;
+  for (const m of dados.man) {
+    if (m.realizada && m.status_pagamento === "pendente") {
+      aPagar += m.valor_total;
+      if (m.vencimento && m.vencimento < hj) vencido += m.valor_total;
+    }
+  }
+  proximas.sort((a,b) => (a.proxima_data || a.data).localeCompare(b.proxima_data || b.data));
+
+  $("kpis-manutencao").innerHTML = [
+    kpi("Gasto com manutenção", brl0(custoTotal), qtdPecas + " com troca de peça"),
+    kpi("Só peças", brl0(custoPecas), ""),
+    kpi("Manutenção a pagar", brl0(aPagar), vencido > 0 ? brl0(vencido) + " vencido" : "em dia", aPagar > 0 ? "neg" : "pos"),
+    kpi("Próximas agendadas", String(proximas.length), proximas[0] ? "mais próxima: " + fData(proximas[0].proxima_data || proximas[0].data) : "", "amarelo"),
+  ].join("");
+
+  $("man-proximas").innerHTML = proximas.length
+    ? proximas.map(m => `
+      <div class="man-proxima-linha">
+        <span class="chip" style="border-color:${COR_TIPO_MAN[m.tipo]};color:${COR_TIPO_MAN[m.tipo]}">${ROTULO_TIPO_MAN[m.tipo]}</span>
+        <span class="man-proxima-desc">${escHtml(m.descricao || "—")}${contexto.equipamentoId == null ? " · " + escHtml(nomeEquipamento(m.equipamento_id)) : ""}</span>
+        <span class="man-proxima-data">${fData(m.proxima_data || m.data)}${m.proxima_horimetro ? " · " + num(m.proxima_horimetro,0) + "h" : ""}</span>
+        <button class="btn-editar" onclick="abrirModalManutencao(${m.id})" title="Editar">✎</button>
+      </div>`).join("")
+    : '<div class="vazio">Nenhuma manutenção agendada.</div>';
+
+  const filtrado = dados.man.filter(m =>
+    (filtroManutencao.tipo === "todos" || m.tipo === filtroManutencao.tipo) &&
+    (filtroManutencao.status === "todos" || (filtroManutencao.status === "realizadas" ? m.realizada : !m.realizada))
+  );
+
+  $("man-corpo").innerHTML = filtrado.map(m => {
+    const venceu = m.status_pagamento === "pendente" && m.vencimento && m.vencimento < hj;
+    const statusHtml = !m.realizada
+      ? `<span class="chip chip-status chip-pendente">Agendada</span>`
+      : (m.status_pagamento === "pendente"
+        ? `<span class="chip chip-status ${venceu ? "chip-vencido" : "chip-pendente"}">${venceu ? "Vencido" : "A pagar"}</span>`
+        : `<span class="chip chip-status chip-pago">Pago</span>`);
+    const proxTxt = m.proxima_data ? fData(m.proxima_data) : (m.proxima_horimetro ? num(m.proxima_horimetro,0) + " h" : "—");
+    return `<tr>
+      <td class="td-data">${fData(m.data)}</td>
+      <td class="td-mudo">${contexto.equipamentoId == null ? escHtml(nomeEquipamento(m.equipamento_id)) : "—"}</td>
+      <td><span class="chip" style="border-color:${COR_TIPO_MAN[m.tipo]};color:${COR_TIPO_MAN[m.tipo]}">${ROTULO_TIPO_MAN[m.tipo]}</span></td>
+      <td class="num">${m.horimetro ? num(m.horimetro,0) : "—"}</td>
+      <td class="td-desc">${escHtml(m.descricao || "—")}${m.pecas ? `<div class="td-natureza">peças: ${escHtml(m.pecas)}</div>` : ""}</td>
+      <td class="td-mudo">${escHtml(m.fornecedor) || "—"}</td>
+      <td class="num neg">${m.valor_total ? brl(m.valor_total) : "—"}</td>
+      <td>${statusHtml}</td>
+      <td class="td-mudo">${proxTxt}</td>
+      <td><button class="btn-editar" onclick="abrirModalManutencao(${m.id})" title="Editar">✎</button></td>
+    </tr>`;
+  }).join("") ||
+  '<tr><td colspan="10" class="vazio">Nenhuma manutenção registrada para este filtro.</td></tr>';
+}
+
+function abrirModalManutencao(id) {
+  const m = id ? dados.man.find(x => x.id === id) : null;
+  abrirModal({
+    titulo: m ? "Editar manutenção" : "Nova manutenção",
+    tabela: "manutencoes", id,
+    campos: [
+      { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(m?.equipamento_id, false) },
+      { nome:"tipo", rotulo:"Tipo", tipo:"select", opcoes:["preventiva|Preventiva","preditiva|Preditiva","corretiva|Corretiva"], valor: m?.tipo || "preventiva" },
+      { nome:"data", rotulo:"Data (realizada ou prevista)", tipo:"date", valor: m?.data || hoje() },
+      { nome:"realizada", rotulo:"Já foi realizada", tipo:"checkbox", valor: m?.realizada ?? true },
+      { nome:"horimetro", rotulo:"Horímetro", tipo:"numero", valor: m?.horimetro ?? "" },
+      { nome:"descricao", rotulo:"Serviço realizado", tipo:"texto", largo:true, valor: m?.descricao || "" },
+      { nome:"pecas", rotulo:"Peças trocadas/compradas", tipo:"texto", largo:true, valor: m?.pecas || "" },
+      { nome:"fornecedor", rotulo:"Oficina / fornecedor", tipo:"texto", valor: m?.fornecedor || "" },
+      { nome:"valor_pecas", rotulo:"Valor peças (R$)", tipo:"numero", valor: m?.valor_pecas ?? "" },
+      { nome:"valor_mao_obra", rotulo:"Valor mão de obra (R$)", tipo:"numero", valor: m?.valor_mao_obra ?? "" },
+      { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: m?.natureza || "Variavel" },
+      { nome:"status_pagamento", rotulo:"Situação do pagamento", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar"], valor: m?.status_pagamento || "pago" },
+      { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: m?.vencimento || "" },
+      { nome:"proxima_data", rotulo:"Próxima revisão (data)", tipo:"date", valor: m?.proxima_data || "" },
+      { nome:"proxima_horimetro", rotulo:"Próxima revisão (horímetro)", tipo:"numero", valor: m?.proxima_horimetro ?? "" },
+    ],
+    montar(f) {
+      if (!f.equipamento_id) throw "Selecione o equipamento.";
+      if (!f.descricao.trim() && !f.pecas.trim()) throw "Descreva o serviço ou as peças.";
+      if (f.status_pagamento === "pendente" && !f.vencimento) throw "Informe o vencimento para manutenções a pagar.";
+      const vp = Number(f.valor_pecas) || 0;
+      const vm = Number(f.valor_mao_obra) || 0;
+      return {
+        equipamento_id: Number(f.equipamento_id), tipo: f.tipo, data: f.data, realizada: !!f.realizada,
+        horimetro: f.horimetro === "" ? null : Number(f.horimetro),
+        descricao: f.descricao.trim(), pecas: f.pecas.trim(), fornecedor: f.fornecedor.trim(),
+        valor_pecas: vp, valor_mao_obra: vm, valor_total: vp + vm,
+        natureza: f.natureza,
+        status_pagamento: f.realizada ? f.status_pagamento : "pendente",
+        vencimento: f.status_pagamento === "pendente" ? f.vencimento : null,
+        proxima_data: f.proxima_data || null,
+        proxima_horimetro: f.proxima_horimetro === "" ? null : Number(f.proxima_horimetro),
+      };
+    },
+    async aposSalvar(salvo) {
+      // só entra no extrato se já foi realizada E paga; senão fica só como
+      // registro (agendada) ou conta a pagar, sem mexer no caixa ainda.
+      await sincronizarLancamento({
+        origemId: salvo.id, tabelaOrigem: "manutencoes", lancamentoId: m?.lancamento_id ?? salvo.lancamento_id,
+        valor: (salvo.realizada && salvo.status_pagamento === "pago") ? salvo.valor_total : 0,
+        tipo: "saida", data: salvo.data, grupo: "Manutenção",
+        descricao: "Manutenção" + (salvo.fornecedor ? " - " + salvo.fornecedor : ""),
+        natureza: salvo.natureza,
+      });
+    },
+    async aoExcluir() { await removerLancamentoVinculado(m?.lancamento_id); },
   });
 }
 
@@ -727,6 +962,7 @@ function abrirModalAgenda(id) {
     tabela: "agenda", id,
     campos: [
       { nome:"item", rotulo:"Compromisso", tipo:"texto", largo:true, valor: a?.item || "" },
+      { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(true), valor: equipamentoPadrao(a?.equipamento_id, true) },
       { nome:"dia", rotulo:"Dia do vencimento", tipo:"texto", valor: a?.dia || "" },
       { nome:"mes", rotulo:"Mês", tipo:"select",
         opcoes: MESES.map((m,i) => `${i+1}|${m}`), valor: String(a?.mes || (new Date().getMonth()+1)) },
@@ -738,7 +974,7 @@ function abrirModalAgenda(id) {
       if (!f.item.trim()) throw "Informe o nome do compromisso.";
       const v = Number(f.valor);
       if (!v) throw "Informe um valor diferente de zero.";
-      return { item: f.item.trim(), dia: f.dia.trim(), mes: Number(f.mes), valor: v, pago: !!f.pago, natureza: f.natureza };
+      return { item: f.item.trim(), equipamento_id: f.equipamento_id ? Number(f.equipamento_id) : null, dia: f.dia.trim(), mes: Number(f.mes), valor: v, pago: !!f.pago, natureza: f.natureza };
     }
   });
 }
