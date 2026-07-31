@@ -29,7 +29,11 @@ const brl0 = (v) => (v ?? 0).toLocaleString("pt-BR", { style:"currency", currenc
 const num  = (v, d=1) => (v ?? 0).toLocaleString("pt-BR", { maximumFractionDigits:d });
 const mesLabel = (ym) => { const [a,m] = ym.split("-"); return `${MESES[+m-1]}/${a.slice(2)}`; };
 const fData = (iso) => { const [a,m,d] = iso.split("-"); return `${d}/${m}/${a.slice(2)}`; };
-const hoje = () => new Date().toISOString().slice(0,10);
+const hoje = () => {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
 const escHtml = (s) => String(s ?? "").replace(/[&<>"']/g, c =>
   ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 
@@ -105,6 +109,8 @@ async function iniciarApp() {
   $("ext-filtro-mes").addEventListener("change", e => { filtroExt.mes = e.target.value; renderExtrato(); });
   $("ext-filtro-grupo").addEventListener("change", e => { filtroExt.grupo = e.target.value; renderExtrato(); });
   $("ext-busca").addEventListener("input", e => { filtroExt.busca = e.target.value; renderExtrato(); });
+  $("ext-exportar").addEventListener("click", exportarExtratoCSV);
+  $("rec-exportar").addEventListener("click", exportarRecebimentosCSV);
 
   // cliques delegados (cartões de cliente e linhas da agenda)
   $("rec-clientes").addEventListener("click", (ev) => {
@@ -140,10 +146,10 @@ async function carregarTudo() {
 
     const si = (cfg.data || []).find(c => c.chave === "saldo_inicial");
     dados.saldoInicial = si ? Number(si.valor) : 0;
-    dados.lanc = (lanc.data || []).map(normNum);
-    dados.rec  = (rec.data  || []).map(normNum);
-    dados.die  = (die.data  || []).map(normNum);
-    dados.age  = (age.data  || []).map(normNum);
+    dados.lanc = (lanc.data || []).map(o => normNum(o, "lancamentos"));
+    dados.rec  = (rec.data  || []).map(o => normNum(o, "recebimentos"));
+    dados.die  = (die.data  || []).map(o => normNum(o, "diesel"));
+    dados.age  = (age.data  || []).map(o => normNum(o, "agenda"));
 
     $("carregando").classList.add("oculto");
     $("aba-painel").classList.remove("oculto");
@@ -154,10 +160,22 @@ async function carregarTudo() {
   }
 }
 
-// Supabase devolve numeric como string — converte tudo que for número
-function normNum(obj) {
+// Supabase devolve numeric como string — converte tudo que for número,
+// exceto os campos que são texto por natureza (mesmo quando só têm dígitos,
+// como o "dia" do vencimento na agenda — "05" precisa continuar string,
+// senão a comparação com o dataset do HTML, que é sempre string, falha).
+const CAMPOS_TEXTO = {
+  lancamentos:  new Set(["data", "banco", "grupo", "subgrupo", "descricao"]),
+  recebimentos: new Set(["data", "cliente", "forma"]),
+  diesel:       new Set(["data"]),
+  agenda:       new Set(["item", "dia"]),
+};
+
+function normNum(obj, tabela) {
+  const pular = CAMPOS_TEXTO[tabela] || new Set();
   const o = { ...obj };
   for (const k in o) {
+    if (pular.has(k)) continue;
     if (o[k] !== null && o[k] !== "" && typeof o[k] === "string" && /^-?\d+(\.\d+)?$/.test(o[k])) {
       o[k] = Number(o[k]);
     }
@@ -200,10 +218,15 @@ function renderSaldoTopo() {
 /* ═══════════════ PAINEL ═══════════════ */
 function renderPainel() {
   // KPIs
-  let ent = 0, sai = 0;
-  for (const l of dados.lanc) { ent += l.entrada; sai += l.saida; }
-  let horas = 0, faturado = 0;
-  for (const r of dados.rec) { horas += r.horas; faturado += r.valor_total; }
+  let ent = 0, sai = 0, saiOperacional = 0;
+  for (const l of dados.lanc) {
+    ent += l.entrada;
+    sai += l.saida;
+    if (l.grupo !== "Investimento") saiOperacional += l.saida;
+  }
+  let horas = 0, faturado = 0, recebido = 0;
+  for (const r of dados.rec) { horas += r.horas; faturado += r.valor_total; recebido += r.valor_pago; }
+  const emAberto = faturado - recebido;
   let litros = 0, custoDie = 0, horasMaq = 0;
   for (const d of dados.die) {
     litros += d.litros; custoDie += d.valor_total;
@@ -212,12 +235,18 @@ function renderPainel() {
   const custoHora = horasMaq > 0 ? custoDie / horasMaq : 0;
   const s = saldoAtual();
   const res = ent - sai;
+  // resultado operacional: exclui saídas de "Investimento" (compra de equipamento,
+  // consórcio, capitalização) — mostra se a operação do dia a dia é lucrativa,
+  // separado de aportes de capital que distorcem o resultado bruto.
+  const resOperacional = ent - saiOperacional;
 
   $("kpis-painel").innerHTML = [
     kpi("Saldo em caixa", brl(s), "bancos + dinheiro", s >= 0 ? "pos" : "neg"),
     kpi("Entradas no período", brl0(ent), "", "pos"),
     kpi("Saídas no período", brl0(sai), "", "neg"),
     kpi("Resultado", brl0(res), "entradas − saídas", res >= 0 ? "pos" : "neg"),
+    kpi("Resultado operacional", brl0(resOperacional), "sem Investimento", resOperacional >= 0 ? "pos" : "neg"),
+    kpi("Em aberto a receber", brl0(emAberto), "faturado − recebido", emAberto > 0.5 ? "neg" : "pos"),
     kpi("Horas faturadas", num(horas) + " h", brl0(faturado) + " gerados"),
     kpi("Diesel por hora", brl(custoHora), num(litros,0) + " L · " + brl0(custoDie)),
   ].join("");
@@ -427,7 +456,15 @@ function abrirModalRecebimento(id) {
         valor_pago: Number(f.valor_pago) || 0,
         forma: f.forma,
       };
-    }
+    },
+    async aposSalvar(salvo) {
+      await sincronizarLancamento({
+        origemId: salvo.id, tabelaOrigem: "recebimentos", lancamentoId: r?.lancamento_id ?? salvo.lancamento_id,
+        valor: salvo.valor_pago, tipo: "entrada", data: salvo.data,
+        grupo: "Recebimentos", descricao: "Recebimento - " + salvo.cliente,
+      });
+    },
+    async aoExcluir() { await removerLancamentoVinculado(r?.lancamento_id); },
   });
 }
 
@@ -492,7 +529,15 @@ function abrirModalDiesel(id) {
         hora_inicial: hi, hora_final: hf,
         horas: (hi != null && hf != null) ? Math.max(0, hf - hi) : null,
       };
-    }
+    },
+    async aposSalvar(salvo) {
+      await sincronizarLancamento({
+        origemId: salvo.id, tabelaOrigem: "diesel", lancamentoId: d?.lancamento_id ?? salvo.lancamento_id,
+        valor: salvo.valor_total, tipo: "saida", data: salvo.data,
+        grupo: "Combustível", descricao: "Abastecimento (diesel)",
+      });
+    },
+    async aoExcluir() { await removerLancamentoVinculado(d?.lancamento_id); },
   });
 }
 
@@ -502,9 +547,10 @@ function renderAgenda() {
   const porItem = {};
   for (const a of dados.age) {
     const chave = a.item + "§" + a.dia;
-    if (!porItem[chave]) porItem[chave] = { item: a.item, dia: a.dia, valores: {}, ids: {} };
+    if (!porItem[chave]) porItem[chave] = { item: a.item, dia: a.dia, valores: {}, ids: {}, pagos: {} };
     porItem[chave].valores[a.mes] = (porItem[chave].valores[a.mes] || 0) + a.valor;
     porItem[chave].ids[a.mes] = a.id;
+    porItem[chave].pagos[a.mes] = !!a.pago;
   }
   const itens = Object.values(porItem)
     .map(i => ({ ...i, total: Object.values(i.valores).reduce((s,v) => s+v, 0) }))
@@ -532,7 +578,7 @@ function renderAgenda() {
     <tr class="linha-clicavel" data-item="${escHtml(i.item)}" data-dia="${escHtml(i.dia)}">
       <td class="col-fixa td-desc">${escHtml(i.item)}</td>
       <td class="num td-mudo">${escHtml(i.dia) || "—"}</td>
-      ${meses.map(m => `<td class="num ${i.valores[m] ? "" : "td-zero"}">${i.valores[m] ? num(i.valores[m],0) : "·"}</td>`).join("")}
+      ${meses.map(m => `<td class="num ${i.valores[m] ? (i.pagos[m] ? "pago" : "") : "td-zero"}">${i.valores[m] ? num(i.valores[m],0) : "·"}</td>`).join("")}
       <td class="num td-total">${brl0(i.total)}</td>
     </tr>`).join("") +
     `<tr class="linha-total">
@@ -567,13 +613,14 @@ function abrirModalAgenda(id) {
       { nome:"dia", rotulo:"Dia do vencimento", tipo:"texto", valor: a?.dia || "" },
       { nome:"mes", rotulo:"Mês", tipo:"select",
         opcoes: MESES.map((m,i) => `${i+1}|${m}`), valor: String(a?.mes || (new Date().getMonth()+1)) },
-      { nome:"valor", rotulo:"Valor (R$)", tipo:"numero", valor: a?.valor ?? "" },
+      { nome:"valor", rotulo:"Valor (R$) — use negativo para estorno", tipo:"numero", valor: a?.valor ?? "" },
+      { nome:"pago", rotulo:"Já foi pago", tipo:"checkbox", valor: a?.pago ?? false },
     ],
     montar(f) {
       if (!f.item.trim()) throw "Informe o nome do compromisso.";
       const v = Number(f.valor);
-      if (!v || v <= 0) throw "Informe um valor maior que zero.";
-      return { item: f.item.trim(), dia: f.dia.trim(), mes: Number(f.mes), valor: v };
+      if (!v) throw "Informe um valor diferente de zero.";
+      return { item: f.item.trim(), dia: f.dia.trim(), mes: Number(f.mes), valor: v, pago: !!f.pago };
     }
   });
 }
@@ -588,6 +635,10 @@ function abrirModal(ctx) {
 
   $("modal-campos").innerHTML = ctx.campos.map(c => {
     const largo = c.largo ? "form-larga" : "";
+    if (c.tipo === "checkbox") {
+      return `<label class="campo-checkbox ${largo}">
+        <input type="checkbox" data-campo="${c.nome}" ${c.valor ? "checked" : ""}> ${c.rotulo}</label>`;
+    }
     if (c.tipo === "select") {
       const ops = c.opcoes.map(o => {
         const [val, rot] = String(o).includes("|") ? o.split("|") : [o, o];
@@ -619,7 +670,9 @@ function fecharModal() {
 
 function lerFormulario() {
   const f = {};
-  document.querySelectorAll("#modal-campos [data-campo]").forEach(el => f[el.dataset.campo] = el.value);
+  document.querySelectorAll("#modal-campos [data-campo]").forEach(el => {
+    f[el.dataset.campo] = el.type === "checkbox" ? el.checked : el.value;
+  });
   return f;
 }
 
@@ -635,15 +688,22 @@ async function salvarRegistro() {
 
   btn.disabled = true; btn.textContent = "Salvando…";
   const q = modalCtx.id
-    ? sb.from(modalCtx.tabela).update(reg).eq("id", modalCtx.id)
-    : sb.from(modalCtx.tabela).insert(reg);
-  const { error } = await q;
-  btn.disabled = false; btn.textContent = "Salvar";
+    ? sb.from(modalCtx.tabela).update(reg).eq("id", modalCtx.id).select().single()
+    : sb.from(modalCtx.tabela).insert(reg).select().single();
+  const { data: salvo, error } = await q;
   if (error) {
+    btn.disabled = false; btn.textContent = "Salvar";
     erro.textContent = "Não foi possível salvar: " + error.message;
     erro.classList.remove("oculto");
     return;
   }
+
+  if (modalCtx.aposSalvar) {
+    try { await modalCtx.aposSalvar(salvo); }
+    catch (e) { console.error("Falha ao sincronizar com o extrato:", e); }
+  }
+
+  btn.disabled = false; btn.textContent = "Salvar";
   fecharModal();
   toast("Registro salvo.");
   await carregarTudo();
@@ -652,6 +712,12 @@ async function salvarRegistro() {
 async function excluirRegistro() {
   if (!modalCtx || !modalCtx.id) return;
   if (!confirm("Excluir este registro? Essa ação não pode ser desfeita.")) return;
+
+  if (modalCtx.aoExcluir) {
+    try { await modalCtx.aoExcluir(); }
+    catch (e) { console.error("Falha ao remover lançamento vinculado:", e); }
+  }
+
   const { error } = await sb.from(modalCtx.tabela).delete().eq("id", modalCtx.id);
   if (error) {
     $("modal-erro").textContent = "Não foi possível excluir: " + error.message;
@@ -661,6 +727,87 @@ async function excluirRegistro() {
   fecharModal();
   toast("Registro excluído.");
   await carregarTudo();
+}
+
+/* ═══════════ SINCRONIZAÇÃO AUTOMÁTICA COM O EXTRATO ═══════════
+   Recebimentos (valor pago) e Diesel (valor total) geram/atualizam
+   um lançamento correspondente no extrato, evitando digitar duas
+   vezes e os números divergirem entre as abas. */
+async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, valor, tipo, data, grupo, descricao, banco = "Bradesco" }) {
+  // sem valor: se existia um lançamento vinculado, remove
+  if (!valor || valor <= 0) {
+    if (lancamentoId) {
+      await sb.from("lancamentos").delete().eq("id", lancamentoId);
+      await sb.from(tabelaOrigem).update({ lancamento_id: null }).eq("id", origemId);
+    }
+    return;
+  }
+  const campos = {
+    data, banco, grupo, subgrupo: "",
+    entrada: tipo === "entrada" ? valor : 0,
+    saida:   tipo === "saida"   ? valor : 0,
+    descricao,
+  };
+  if (lancamentoId) {
+    await sb.from("lancamentos").update(campos).eq("id", lancamentoId);
+  } else {
+    const { data: novo, error } = await sb.from("lancamentos").insert(campos).select().single();
+    if (!error && novo) {
+      await sb.from(tabelaOrigem).update({ lancamento_id: novo.id }).eq("id", origemId);
+    }
+  }
+}
+
+async function removerLancamentoVinculado(lancamentoId) {
+  if (!lancamentoId) return;
+  await sb.from("lancamentos").delete().eq("id", lancamentoId);
+}
+
+/* ═══════════════ EXPORTAÇÃO CSV ═══════════════ */
+function baixarCSV(nomeArquivo, cabecalho, linhas) {
+  const escCsv = (v) => {
+    const s = String(v ?? "");
+    return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const conteudo = [cabecalho, ...linhas].map(l => l.map(escCsv).join(";")).join("\r\n");
+  const blob = new Blob(["\uFEFF" + conteudo], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = nomeArquivo;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function exportarExtratoCSV() {
+  let acc = dados.saldoInicial;
+  const comSaldo = dados.lanc.map(l => ({ ...l, saldo: (acc += l.entrada - l.saida) }));
+  const q = filtroExt.busca.trim().toLowerCase();
+  const filtrado = comSaldo.filter(l =>
+    (filtroExt.mes === "todos" || l.data.slice(0,7) === filtroExt.mes) &&
+    (filtroExt.grupo === "todos" || l.grupo === filtroExt.grupo) &&
+    (!q || (l.descricao + " " + l.subgrupo + " " + l.grupo).toLowerCase().includes(q))
+  );
+  const linhas = filtrado.map(l => [
+    l.data, l.grupo, l.subgrupo, l.descricao, l.banco,
+    (l.entrada || 0).toFixed(2).replace(".", ","),
+    (l.saida || 0).toFixed(2).replace(".", ","),
+    l.saldo.toFixed(2).replace(".", ","),
+  ]);
+  baixarCSV("extrato.csv", ["Data","Grupo","Subgrupo","Descrição","Conta","Entrada","Saída","Saldo"], linhas);
+}
+
+function exportarRecebimentosCSV() {
+  const filtrado = dados.rec.filter(r => filtroCliente === "todos" || r.cliente === filtroCliente);
+  const linhas = filtrado.map(r => [
+    r.data, r.cliente, r.hora_inicial ?? "", r.hora_final ?? "",
+    (r.horas || 0).toFixed(2).replace(".", ","),
+    (r.valor_hora || 0).toFixed(2).replace(".", ","),
+    (r.valor_total || 0).toFixed(2).replace(".", ","),
+    (r.valor_pago || 0).toFixed(2).replace(".", ","),
+    r.forma || "",
+  ]);
+  baixarCSV("recebimentos.csv",
+    ["Data","Cliente","Horímetro inicial","Horímetro final","Horas","R$/h","Faturado","Pago","Forma"], linhas);
 }
 
 /* ═══════════════ GRÁFICOS (Chart.js) ═══════════════ */
