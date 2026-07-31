@@ -10,6 +10,7 @@ let sb = null;                 // cliente Supabase
 const dados = { saldoInicial: 0, lanc: [], rec: [], die: [], age: [] };
 let filtroExt = { mes: "todos", grupo: "todos", busca: "" };
 let filtroCliente = "todos";
+let filtroPainel = { periodo: "tudo", natureza: "todos", tipoFluxo: "bar", agrupar: "grupo", visual: "lista" };
 const graficos = {};           // instâncias Chart.js
 
 const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
@@ -21,6 +22,8 @@ const CORES_GRUPO = {
   "Tarifas":"#8B919C","Taxas fixas":"#6B7280","Outras despesas":"#A3A8B4",
   "Recebimentos":"#3ECF8E"
 };
+const CORES_NATUREZA = { "Custo fixo":"#7A8CF0", "Custo variável":"#F5B301", "Investimento":"#C77DFF" };
+const ROTULO_NATUREZA = { Fixo:"Custo fixo", Variavel:"Custo variável", Investimento:"Investimento" };
 
 /* ── Utilidades ────────────────────────────────────────── */
 const $ = (id) => document.getElementById(id);
@@ -43,6 +46,17 @@ function toast(msg) {
   t.classList.remove("oculto");
   clearTimeout(t._timer);
   t._timer = setTimeout(() => t.classList.add("oculto"), 3200);
+}
+
+// Liga um grupo de botões "segmentado" (ex.: Barras / Linhas): ao clicar,
+// marca o botão como ativo e chama aoMudar(valor).
+function ligarSegmentado(idContainer, aoMudar) {
+  $(idContainer).addEventListener("click", (ev) => {
+    const btn = ev.target.closest("button[data-valor]");
+    if (!btn) return;
+    $(idContainer).querySelectorAll("button").forEach(b => b.classList.toggle("ativo", b === btn));
+    aoMudar(btn.dataset.valor);
+  });
 }
 
 /* ── Inicialização ─────────────────────────────────────── */
@@ -111,6 +125,13 @@ async function iniciarApp() {
   $("ext-busca").addEventListener("input", e => { filtroExt.busca = e.target.value; renderExtrato(); });
   $("ext-exportar").addEventListener("click", exportarExtratoCSV);
   $("rec-exportar").addEventListener("click", exportarRecebimentosCSV);
+
+  // filtros e alternadores do painel
+  $("pnl-periodo").addEventListener("change", e => { filtroPainel.periodo = e.target.value; renderPainel(); });
+  $("pnl-natureza").addEventListener("change", e => { filtroPainel.natureza = e.target.value; renderPainel(); });
+  ligarSegmentado("pnl-tipo-fluxo", (v) => { filtroPainel.tipoFluxo = v; renderPainel(); });
+  ligarSegmentado("pnl-agrupar", (v) => { filtroPainel.agrupar = v; renderPainel(); });
+  ligarSegmentado("pnl-visual", (v) => { filtroPainel.visual = v; renderPainel(); });
 
   // cliques delegados (cartões de cliente e linhas da agenda)
   $("rec-clientes").addEventListener("click", (ev) => {
@@ -216,83 +237,147 @@ function renderSaldoTopo() {
 }
 
 /* ═══════════════ PAINEL ═══════════════ */
+
+// Usa os meses do Extrato como referência da linha do tempo (é o dado mais
+// completo) e aplica a mesma janela a qualquer lista que tenha campo "data".
+function noPeriodo(lista) {
+  if (filtroPainel.periodo === "tudo") return lista;
+  const mesesTodos = [...new Set(dados.lanc.map(l => l.data.slice(0,7)))].sort();
+  if (!mesesTodos.length) return lista;
+  const n = { mes_atual:1, "3m":3, "6m":6, "12m":12 }[filtroPainel.periodo] || mesesTodos.length;
+  const janela = new Set(mesesTodos.slice(-n));
+  return lista.filter(x => janela.has(x.data.slice(0,7)));
+}
+
 function renderPainel() {
-  // KPIs
+  const periodoLanc = noPeriodo(dados.lanc);
+  const periodoRec  = noPeriodo(dados.rec);
+  const periodoDie  = noPeriodo(dados.die);
+
+  // KPIs — "Saldo em caixa" e "Em aberto a receber" são o estado atual do
+  // negócio (não mudam com o filtro de período); os demais refletem só a
+  // janela selecionada, pra comparar meses/trimestres entre si.
   let ent = 0, sai = 0, saiOperacional = 0;
-  for (const l of dados.lanc) {
+  for (const l of periodoLanc) {
     ent += l.entrada;
     sai += l.saida;
-    if (l.grupo !== "Investimento") saiOperacional += l.saida;
+    if (l.natureza !== "Investimento") saiOperacional += l.saida;
   }
-  let horas = 0, faturado = 0, recebido = 0;
-  for (const r of dados.rec) { horas += r.horas; faturado += r.valor_total; recebido += r.valor_pago; }
-  const emAberto = faturado - recebido;
+  let horas = 0, faturado = 0;
+  for (const r of periodoRec) { horas += r.horas; faturado += r.valor_total; }
+  let faturadoTotal = 0, recebidoTotal = 0;
+  for (const r of dados.rec) { faturadoTotal += r.valor_total; recebidoTotal += r.valor_pago; }
+  const emAberto = faturadoTotal - recebidoTotal;
   let litros = 0, custoDie = 0, horasMaq = 0;
-  for (const d of dados.die) {
+  for (const d of periodoDie) {
     litros += d.litros; custoDie += d.valor_total;
     if (d.horas) horasMaq += d.horas;
   }
   const custoHora = horasMaq > 0 ? custoDie / horasMaq : 0;
   const s = saldoAtual();
   const res = ent - sai;
-  // resultado operacional: exclui saídas de "Investimento" (compra de equipamento,
-  // consórcio, capitalização) — mostra se a operação do dia a dia é lucrativa,
-  // separado de aportes de capital que distorcem o resultado bruto.
+  // resultado operacional: exclui saídas classificadas como "Investimento"
+  // (compra de equipamento, consórcio, capitalização) — mostra se a operação
+  // do dia a dia é lucrativa, separado de aportes de capital.
   const resOperacional = ent - saiOperacional;
 
   $("kpis-painel").innerHTML = [
-    kpi("Saldo em caixa", brl(s), "bancos + dinheiro", s >= 0 ? "pos" : "neg"),
-    kpi("Entradas no período", brl0(ent), "", "pos"),
-    kpi("Saídas no período", brl0(sai), "", "neg"),
+    kpi("Saldo em caixa", brl(s), "bancos + dinheiro · total", s >= 0 ? "pos" : "neg"),
+    kpi("Entradas", brl0(ent), "", "pos"),
+    kpi("Saídas", brl0(sai), "", "neg"),
     kpi("Resultado", brl0(res), "entradas − saídas", res >= 0 ? "pos" : "neg"),
     kpi("Resultado operacional", brl0(resOperacional), "sem Investimento", resOperacional >= 0 ? "pos" : "neg"),
-    kpi("Em aberto a receber", brl0(emAberto), "faturado − recebido", emAberto > 0.5 ? "neg" : "pos"),
+    kpi("Em aberto a receber", brl0(emAberto), "faturado − recebido · total", emAberto > 0.5 ? "neg" : "pos"),
     kpi("Horas faturadas", num(horas) + " h", brl0(faturado) + " gerados"),
     kpi("Diesel por hora", brl(custoHora), num(litros,0) + " L · " + brl0(custoDie)),
   ].join("");
 
-  // Fluxo mensal
+  // Fluxo mensal — respeita o período; barras ou linhas conforme o alternador
   const porMes = {};
-  for (const l of dados.lanc) {
+  for (const l of periodoLanc) {
     const ym = l.data.slice(0,7);
     if (!porMes[ym]) porMes[ym] = { entradas:0, saidas:0 };
     porMes[ym].entradas += l.entrada;
     porMes[ym].saidas   += l.saida;
   }
   const yms = Object.keys(porMes).sort();
+  // saldo acumulado sempre considera o histórico completo (é o saldo real),
+  // mesmo quando o gráfico mostra só uma janela de meses
   let acc = dados.saldoInicial;
-  const saldos = yms.map(ym => (acc += porMes[ym].entradas - porMes[ym].saidas));
+  const saldoPorMes = {};
+  for (const l of dados.lanc.slice().sort((a,b) => a.data.localeCompare(b.data))) {
+    const ym = l.data.slice(0,7);
+    acc += l.entrada - l.saida;
+    saldoPorMes[ym] = acc;
+  }
+  const tipo = filtroPainel.tipoFluxo; // "bar" | "line"
 
   desenharGrafico("graf-fluxo", {
     type: "bar",
     data: {
       labels: yms.map(mesLabel),
       datasets: [
-        { label:"Entradas", data: yms.map(y => porMes[y].entradas), backgroundColor:"#3ECF8E", borderRadius:3, maxBarThickness:34 },
-        { label:"Saídas",   data: yms.map(y => porMes[y].saidas),   backgroundColor:"#F0564A", borderRadius:3, maxBarThickness:34 },
-        { label:"Saldo", type:"line", data: saldos, borderColor:"#F5B301", backgroundColor:"#F5B301",
+        { label:"Entradas", type: tipo, data: yms.map(y => porMes[y].entradas), backgroundColor:"#3ECF8E", borderColor:"#3ECF8E", borderRadius:3, maxBarThickness:34, tension:.2, fill:false },
+        { label:"Saídas",   type: tipo, data: yms.map(y => porMes[y].saidas),   backgroundColor:"#F0564A", borderColor:"#F0564A", borderRadius:3, maxBarThickness:34, tension:.2, fill:false },
+        { label:"Saldo", type:"line", data: yms.map(y => saldoPorMes[y]), borderColor:"#F5B301", backgroundColor:"#F5B301",
           borderWidth:2.5, pointRadius:3, tension:.15 },
       ]
     },
     options: opcoesGrafico({ moeda:true })
   });
 
-  // Saídas por grupo (barras CSS)
-  const porGrupo = {};
-  for (const l of dados.lanc) {
+  renderComposicao(periodoLanc);
+}
+
+// "Para onde vai o dinheiro" — agrupa por grupo ou por natureza (custo fixo/
+// variável/investimento), com filtro de natureza aplicado, e mostra como
+// lista de barras (CSS) ou gráfico de pizza (Chart.js), conforme escolhido.
+function renderComposicao(periodoLanc) {
+  const porNatureza = filtroPainel.agrupar === "natureza";
+  const bucket = {};
+  for (const l of periodoLanc) {
     if (!l.saida || l.grupo === "Recebimentos") continue;
-    porGrupo[l.grupo] = (porGrupo[l.grupo] || 0) + l.saida;
+    if (filtroPainel.natureza !== "todos" && l.natureza !== filtroPainel.natureza) continue;
+    const chave = porNatureza ? (ROTULO_NATUREZA[l.natureza] || "Custo variável") : l.grupo;
+    bucket[chave] = (bucket[chave] || 0) + l.saida;
   }
-  const lista = Object.entries(porGrupo).sort((a,b) => b[1]-a[1]);
-  const max = lista.length ? lista[0][1] : 1;
-  $("grupos-painel").innerHTML = lista.map(([g,v]) => `
-    <div class="grupo-linha">
-      <span class="grupo-nome">${escHtml(g)}</span>
-      <div class="grupo-barra-fundo">
-        <div class="grupo-barra" style="width:${(v/max*100).toFixed(1)}%;background:${CORES_GRUPO[g]||"#8B919C"}"></div>
-      </div>
-      <span class="grupo-valor">${brl0(v)}</span>
-    </div>`).join("") || '<div class="vazio">Sem saídas registradas.</div>';
+  const lista = Object.entries(bucket).sort((a,b) => b[1]-a[1]);
+  const cores = porNatureza ? CORES_NATUREZA : CORES_GRUPO;
+
+  const mostrarPizza = filtroPainel.visual === "pizza" && lista.length > 0;
+  $("grupos-painel").classList.toggle("oculto", mostrarPizza);
+  $("composicao-grafico-caixa").classList.toggle("oculto", !mostrarPizza);
+
+  if (!mostrarPizza) {
+    const max = lista.length ? lista[0][1] : 1;
+    $("grupos-painel").innerHTML = lista.map(([g,v]) => `
+      <div class="grupo-linha">
+        <span class="grupo-nome">${escHtml(g)}</span>
+        <div class="grupo-barra-fundo">
+          <div class="grupo-barra" style="width:${(v/max*100).toFixed(1)}%;background:${cores[g]||"#8B919C"}"></div>
+        </div>
+        <span class="grupo-valor">${brl0(v)}</span>
+      </div>`).join("") || '<div class="vazio">Sem saídas para este filtro.</div>';
+    return;
+  }
+
+  desenharGrafico("graf-composicao", {
+    type: "doughnut",
+    data: {
+      labels: lista.map(([g]) => g),
+      datasets: [{ data: lista.map(([,v]) => v), backgroundColor: lista.map(([g]) => cores[g] || "#8B919C"), borderColor:"#1E2128", borderWidth:2 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position:"right", labels: { color:"#8B919C", font:{ family:"Inter", size:11 }, boxWidth:12 } },
+        tooltip: {
+          backgroundColor:"#1E2128", borderColor:"#2C3038", borderWidth:1, titleColor:"#E8EAED", bodyColor:"#E8EAED",
+          callbacks: { label: (c) => `${c.label}: ${brl0(c.parsed)}` }
+        }
+      }
+    }
+  });
 }
 
 function kpi(rotulo, valor, sub, cls) {
@@ -337,9 +422,13 @@ function renderExtrato() {
 
   $("ext-corpo").innerHTML = filtrado.map(l => {
     const valor = l.entrada > 0 ? l.entrada : -l.saida;
+    const natTxt = l.natureza && l.natureza !== "Receita" ? ROTULO_NATUREZA[l.natureza] || l.natureza : "";
     return `<tr>
       <td class="td-data">${fData(l.data)}</td>
-      <td><span class="chip" style="border-color:${CORES_GRUPO[l.grupo]||"#3A3F48"};color:${CORES_GRUPO[l.grupo]||"#A3A8B4"}">${escHtml(l.grupo)}</span></td>
+      <td>
+        <span class="chip" style="border-color:${CORES_GRUPO[l.grupo]||"#3A3F48"};color:${CORES_GRUPO[l.grupo]||"#A3A8B4"}">${escHtml(l.grupo)}</span>
+        ${natTxt ? `<div class="td-natureza">${escHtml(natTxt)}</div>` : ""}
+      </td>
       <td class="td-desc">${escHtml(l.descricao || l.subgrupo || "—")}</td>
       <td class="td-mudo">${escHtml(l.banco)}</td>
       <td class="num ${valor >= 0 ? "pos" : "neg"}">${brl(valor)}</td>
@@ -360,6 +449,9 @@ function abrirModalLancamento(id) {
       { nome:"data", rotulo:"Data", tipo:"date", valor: l?.data || hoje() },
       { nome:"_tipo", rotulo:"Tipo", tipo:"select", opcoes:["saida|Saída","entrada|Entrada"], valor: tipo },
       { nome:"grupo", rotulo:"Grupo", tipo:"select", opcoes: GRUPOS_SAIDA.concat("Recebimentos"), valor: l?.grupo || "Combustível" },
+      { nome:"natureza", rotulo:"Natureza (só p/ saída)", tipo:"select",
+        opcoes:["Variavel|Custo variável","Fixo|Custo fixo","Investimento|Investimento"],
+        valor: (l?.natureza && l.natureza !== "Receita") ? l.natureza : (l?.grupo === "Investimento" ? "Investimento" : "Variavel") },
       { nome:"banco", rotulo:"Conta", tipo:"select", opcoes:["Bradesco","Caixa"], valor: l?.banco || "Bradesco" },
       { nome:"_valor", rotulo:"Valor (R$)", tipo:"numero", valor: l ? (l.entrada > 0 ? l.entrada : l.saida) : "" },
       { nome:"descricao", rotulo:"Descrição", tipo:"texto", largo:true, valor: l?.descricao || "" },
@@ -375,6 +467,7 @@ function abrirModalLancamento(id) {
         entrada: f._tipo === "entrada" ? v : 0,
         saida:   f._tipo === "saida"   ? v : 0,
         descricao: f.descricao.trim(),
+        natureza: f._tipo === "entrada" ? "Receita" : f.natureza,
       };
     }
   });
@@ -534,6 +627,7 @@ function abrirModalDiesel(id) {
       { nome:"hora_final", rotulo:"Horímetro final", tipo:"numero", valor: d?.hora_final ?? "" },
       { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar (fiado)"], valor: d?.status || "pago" },
       { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: d?.vencimento || "" },
+      { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel" },
     ],
     montar(f) {
       const litros = Number(f.litros) || 0;
@@ -547,6 +641,7 @@ function abrirModalDiesel(id) {
         hora_inicial: hi, hora_final: hf,
         horas: (hi != null && hf != null) ? Math.max(0, hf - hi) : null,
         status: f.status, vencimento: f.status === "pendente" ? f.vencimento : null,
+        natureza: f.natureza,
       };
     },
     async aposSalvar(salvo) {
@@ -556,6 +651,7 @@ function abrirModalDiesel(id) {
         origemId: salvo.id, tabelaOrigem: "diesel", lancamentoId: d?.lancamento_id ?? salvo.lancamento_id,
         valor: salvo.status === "pago" ? salvo.valor_total : 0, tipo: "saida", data: salvo.data,
         grupo: "Combustível", descricao: "Abastecimento" + (salvo.local ? " - " + salvo.local : ""),
+        natureza: salvo.natureza,
       });
     },
     async aoExcluir() { await removerLancamentoVinculado(d?.lancamento_id); },
@@ -635,13 +731,14 @@ function abrirModalAgenda(id) {
       { nome:"mes", rotulo:"Mês", tipo:"select",
         opcoes: MESES.map((m,i) => `${i+1}|${m}`), valor: String(a?.mes || (new Date().getMonth()+1)) },
       { nome:"valor", rotulo:"Valor (R$) — use negativo para estorno", tipo:"numero", valor: a?.valor ?? "" },
+      { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Fixo|Custo fixo","Variavel|Custo variável","Investimento|Investimento"], valor: a?.natureza || "Fixo" },
       { nome:"pago", rotulo:"Já foi pago", tipo:"checkbox", valor: a?.pago ?? false },
     ],
     montar(f) {
       if (!f.item.trim()) throw "Informe o nome do compromisso.";
       const v = Number(f.valor);
       if (!v) throw "Informe um valor diferente de zero.";
-      return { item: f.item.trim(), dia: f.dia.trim(), mes: Number(f.mes), valor: v, pago: !!f.pago };
+      return { item: f.item.trim(), dia: f.dia.trim(), mes: Number(f.mes), valor: v, pago: !!f.pago, natureza: f.natureza };
     }
   });
 }
@@ -754,7 +851,7 @@ async function excluirRegistro() {
    Recebimentos (valor pago) e Diesel (valor total) geram/atualizam
    um lançamento correspondente no extrato, evitando digitar duas
    vezes e os números divergirem entre as abas. */
-async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, valor, tipo, data, grupo, descricao, banco = "Bradesco" }) {
+async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, valor, tipo, data, grupo, descricao, natureza = "Variavel", banco = "Bradesco" }) {
   // sem valor: se existia um lançamento vinculado, remove
   if (!valor || valor <= 0) {
     if (lancamentoId) {
@@ -768,6 +865,7 @@ async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, val
     entrada: tipo === "entrada" ? valor : 0,
     saida:   tipo === "saida"   ? valor : 0,
     descricao,
+    natureza: tipo === "entrada" ? "Receita" : natureza,
   };
   if (lancamentoId) {
     await sb.from("lancamentos").update(campos).eq("id", lancamentoId);

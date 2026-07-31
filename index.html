@@ -82,18 +82,53 @@
 
       <!-- ─── PAINEL ─── -->
       <section id="aba-painel" class="secao oculto">
+        <div class="filtros">
+          <select id="pnl-periodo">
+            <option value="tudo">Todo o período</option>
+            <option value="mes_atual">Mês atual</option>
+            <option value="3m">Últimos 3 meses</option>
+            <option value="6m">Últimos 6 meses</option>
+            <option value="12m">Últimos 12 meses</option>
+          </select>
+          <select id="pnl-natureza">
+            <option value="todos">Todas as naturezas</option>
+            <option value="Fixo">Só custo fixo</option>
+            <option value="Variavel">Só custo variável</option>
+            <option value="Investimento">Só investimento</option>
+          </select>
+        </div>
+
         <div class="kpi-grade" id="kpis-painel"></div>
 
         <div class="cartao">
-          <h2 class="titulo-risco"><span>Fluxo de caixa mensal</span></h2>
-          <p class="cartao-nota">barras: entradas e saídas · linha: saldo acumulado</p>
+          <div class="cartao-cabeca">
+            <h2 class="titulo-risco"><span>Fluxo de caixa mensal</span></h2>
+            <div class="segmentado" id="pnl-tipo-fluxo">
+              <button type="button" data-valor="bar" class="ativo">Barras</button>
+              <button type="button" data-valor="line">Linhas</button>
+            </div>
+          </div>
+          <p class="cartao-nota">entradas e saídas do período · linha amarela: saldo acumulado (sempre total)</p>
           <div class="grafico-caixa"><canvas id="graf-fluxo"></canvas></div>
         </div>
 
         <div class="cartao">
-          <h2 class="titulo-risco"><span>Para onde vai o dinheiro</span></h2>
-          <p class="cartao-nota">saídas por grupo, todo o período</p>
+          <div class="cartao-cabeca">
+            <h2 class="titulo-risco"><span>Para onde vai o dinheiro</span></h2>
+            <div class="cartao-controles">
+              <div class="segmentado" id="pnl-agrupar">
+                <button type="button" data-valor="grupo" class="ativo">Por grupo</button>
+                <button type="button" data-valor="natureza">Por natureza</button>
+              </div>
+              <div class="segmentado" id="pnl-visual">
+                <button type="button" data-valor="lista" class="ativo">Lista</button>
+                <button type="button" data-valor="pizza">Pizza</button>
+              </div>
+            </div>
+          </div>
+          <p class="cartao-nota">saídas no período e na natureza selecionados acima</p>
           <div class="grupos" id="grupos-painel"></div>
+          <div class="grafico-caixa grafico-baixo oculto" id="composicao-grafico-caixa"><canvas id="graf-composicao"></canvas></div>
         </div>
       </section>
 
