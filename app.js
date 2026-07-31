@@ -167,12 +167,22 @@ function normNum(obj) {
 
 function renderTudo() {
   renderSaldoTopo();
-  renderPainel();
-  prepararFiltrosExtrato();
-  renderExtrato();
-  renderRecebimentos();
-  renderDiesel();
-  renderAgenda();
+  rodarSemTravar(renderPainel, "Painel");
+  rodarSemTravar(prepararFiltrosExtrato, "Extrato (filtros)");
+  rodarSemTravar(renderExtrato, "Extrato");
+  rodarSemTravar(renderRecebimentos, "Recebimentos");
+  rodarSemTravar(renderDiesel, "Diesel");
+  rodarSemTravar(renderAgenda, "Agenda");
+}
+
+// Executa uma função de renderização isoladamente: se uma aba falhar
+// (ex.: um gráfico), as demais abas continuam sendo exibidas normalmente.
+function rodarSemTravar(fn, nome) {
+  try { fn(); }
+  catch (e) {
+    console.error("Falha ao renderizar " + nome + ":", e);
+    toast("Não foi possível carregar '" + nome + "' — veja o console (F12) para detalhes.");
+  }
 }
 
 /* ── Cálculos ──────────────────────────────────────────── */
@@ -655,6 +665,10 @@ async function excluirRegistro() {
 
 /* ═══════════════ GRÁFICOS (Chart.js) ═══════════════ */
 function desenharGrafico(idCanvas, cfg) {
+  if (typeof Chart === "undefined") {
+    console.error("Chart.js não carregou — o gráfico '" + idCanvas + "' não pôde ser desenhado.");
+    return;
+  }
   if (graficos[idCanvas]) graficos[idCanvas].destroy();
   graficos[idCanvas] = new Chart($(idCanvas), cfg);
 }
