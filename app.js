@@ -470,18 +470,24 @@ function abrirModalRecebimento(id) {
 
 /* ═══════════════ DIESEL ═══════════════ */
 function renderDiesel() {
-  let litros = 0, custo = 0, horas = 0;
+  let litros = 0, custo = 0, horas = 0, aPagar = 0, vencido = 0;
   const pontos = [];
+  const hj = hoje();
   for (const d of dados.die) {
     litros += d.litros; custo += d.valor_total;
     if (d.horas) horas += d.horas;
     if (d.valor_unit > 0 && d.litros > 0) pontos.push({ x: fData(d.data), y: d.valor_unit });
+    if (d.status === "pendente") {
+      aPagar += d.valor_total;
+      if (d.vencimento && d.vencimento < hj) vencido += d.valor_total;
+    }
   }
   $("kpis-diesel").innerHTML = [
     kpi("Diesel consumido", num(litros,0) + " L", brl0(custo) + " no período"),
     kpi("Preço médio do litro", brl(litros > 0 ? custo/litros : 0)),
     kpi("Consumo da máquina", num(horas > 0 ? litros/horas : 0, 1) + " L/h", num(horas,0) + " h no horímetro"),
     kpi("Custo de diesel por hora", brl(horas > 0 ? custo/horas : 0), "", "amarelo"),
+    kpi("Diesel a pagar", brl0(aPagar), vencido > 0 ? brl0(vencido) + " vencido" : "em dia", aPagar > 0 ? "neg" : "pos"),
   ].join("");
 
   desenharGrafico("graf-diesel", {
@@ -494,16 +500,24 @@ function renderDiesel() {
     options: opcoesGrafico({ legenda:false, decimais:2 })
   });
 
-  $("die-corpo").innerHTML = dados.die.slice().reverse().map(d => `<tr>
+  $("die-corpo").innerHTML = dados.die.slice().reverse().map(d => {
+    const venceu = d.status === "pendente" && d.vencimento && d.vencimento < hj;
+    const statusHtml = d.status === "pendente"
+      ? `<span class="chip chip-status ${venceu ? "chip-vencido" : "chip-pendente"}">${venceu ? "Vencido" : "A pagar"}</span>`
+      : `<span class="chip chip-status chip-pago">Pago</span>`;
+    return `<tr>
     <td class="td-data">${fData(d.data)}</td>
+    <td class="td-desc">${escHtml(d.local) || "—"}</td>
     <td class="num td-mudo">${d.hora_inicial != null ? num(d.hora_inicial) + " → " + num(d.hora_final) : "s/ inf."}</td>
     <td class="num">${d.horas ? num(d.horas) : "—"}</td>
     <td class="num">${d.litros ? num(d.litros,0) : "—"}</td>
     <td class="num td-mudo">${d.valor_unit ? brl(d.valor_unit) : "—"}</td>
     <td class="num neg">${d.valor_total ? brl(d.valor_total) : "—"}</td>
+    <td>${statusHtml}${d.status === "pendente" && d.vencimento ? `<div class="td-vencimento">vence ${fData(d.vencimento)}</div>` : ""}</td>
     <td><button class="btn-editar" onclick="abrirModalDiesel(${d.id})" title="Editar">✎</button></td>
-  </tr>`).join("") ||
-  '<tr><td colspan="7" class="vazio">Nenhum abastecimento registrado.</td></tr>';
+  </tr>`;
+  }).join("") ||
+  '<tr><td colspan="9" class="vazio">Nenhum abastecimento registrado.</td></tr>';
 }
 
 function abrirModalDiesel(id) {
@@ -513,28 +527,35 @@ function abrirModalDiesel(id) {
     tabela: "diesel", id,
     campos: [
       { nome:"data", rotulo:"Data", tipo:"date", valor: d?.data || hoje() },
+      { nome:"local", rotulo:"Local / fornecedor", tipo:"texto", largo:true, valor: d?.local || "" },
       { nome:"litros", rotulo:"Litros", tipo:"numero", valor: d?.litros ?? "" },
       { nome:"valor_unit", rotulo:"Preço do litro (R$)", tipo:"numero", valor: d?.valor_unit ?? "" },
       { nome:"hora_inicial", rotulo:"Horímetro inicial", tipo:"numero", valor: d?.hora_inicial ?? "" },
       { nome:"hora_final", rotulo:"Horímetro final", tipo:"numero", valor: d?.hora_final ?? "" },
+      { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar (fiado)"], valor: d?.status || "pago" },
+      { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: d?.vencimento || "" },
     ],
     montar(f) {
       const litros = Number(f.litros) || 0;
       const vu = Number(f.valor_unit) || 0;
       if (!litros && !vu) throw "Informe pelo menos os litros e o preço.";
+      if (f.status === "pendente" && !f.vencimento) throw "Informe o vencimento para abastecimentos a pagar.";
       const hi = f.hora_inicial === "" ? null : Number(f.hora_inicial);
       const hf = f.hora_final === "" ? null : Number(f.hora_final);
       return {
-        data: f.data, litros, valor_unit: vu, valor_total: litros * vu,
+        data: f.data, local: f.local.trim(), litros, valor_unit: vu, valor_total: litros * vu,
         hora_inicial: hi, hora_final: hf,
         horas: (hi != null && hf != null) ? Math.max(0, hf - hi) : null,
+        status: f.status, vencimento: f.status === "pendente" ? f.vencimento : null,
       };
     },
     async aposSalvar(salvo) {
+      // só vira saída de caixa quando estiver PAGO — se está "a pagar",
+      // o dinheiro ainda não saiu, então não deve mexer no extrato/saldo.
       await sincronizarLancamento({
         origemId: salvo.id, tabelaOrigem: "diesel", lancamentoId: d?.lancamento_id ?? salvo.lancamento_id,
-        valor: salvo.valor_total, tipo: "saida", data: salvo.data,
-        grupo: "Combustível", descricao: "Abastecimento (diesel)",
+        valor: salvo.status === "pago" ? salvo.valor_total : 0, tipo: "saida", data: salvo.data,
+        grupo: "Combustível", descricao: "Abastecimento" + (salvo.local ? " - " + salvo.local : ""),
       });
     },
     async aoExcluir() { await removerLancamentoVinculado(d?.lancamento_id); },
