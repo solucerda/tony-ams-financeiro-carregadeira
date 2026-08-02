@@ -226,6 +226,7 @@ select, input[type="text"], input[type="date"], input[type="number"], input[type
 }
 select:focus, input:focus { outline: none; border-color: var(--amarelo); }
 .busca { flex: 1; min-width: 160px; }
+input[data-moeda="1"] { text-align: right; font-family: var(--fonte-mono); }
 
 .btn-primario {
   background: var(--amarelo); color: var(--fundo); border: none; border-radius: 8px;
@@ -333,8 +334,6 @@ select:focus, input:focus { outline: none; border-color: var(--amarelo); }
 .campo-checkbox input { width: 16px; height: 16px; accent-color: var(--verde); cursor: pointer; }
 
 /* ── Agenda: item quitado ──────────────────────────────── */
-.tabela-agenda td.pago { color: var(--verde); font-weight: 600; }
-.legenda-pago { color: var(--verde); }
 .form-erro { color: var(--vermelho); font-size: 13px; margin-top: 10px; }
 .modal-acoes {
   display: flex; gap: 8px; align-items: center; flex: 0 0 auto;

@@ -42,6 +42,40 @@ const hoje = () => {
 const escHtml = (s) => String(s ?? "").replace(/[&<>"']/g, c =>
   ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 
+/* ── Máscara monetária (campos tipo "moeda": R$ 0,00) ─────
+   Formata sempre a partir dos dígitos digitados — "." e ","
+   (e qualquer outro caractere que não seja número) são simplesmente
+   ignorados, então colar "1.234,56" ou "1234.56" também funciona,
+   o resultado final é sempre "1.234,56". */
+function moedaMascara(v) {
+  if (v === "" || v == null) return "";
+  const negativo = Number(v) < 0;
+  const digitos = Math.round(Math.abs(Number(v) || 0) * 100).toString();
+  return (negativo ? "-" : "") + formatarDigitosMoeda(digitos);
+}
+function formatarDigitosMoeda(digitos) {
+  digitos = digitos.replace(/^0+(?=\d)/, "");
+  while (digitos.length < 3) digitos = "0" + digitos;
+  const centavos = digitos.slice(-2);
+  const inteiro = digitos.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return inteiro + "," + centavos;
+}
+function ligarMascaraMoeda(input) {
+  const permiteNegativo = input.dataset.negativo === "1";
+  input.addEventListener("input", () => {
+    const negativo = permiteNegativo && input.value.includes("-");
+    const digitos = input.value.replace(/\D/g, "") || "0";
+    input.value = (negativo ? "-" : "") + formatarDigitosMoeda(digitos);
+  });
+}
+// converte "1.234,56" (ou "-1.234,56") de volta para número
+function numDeMoeda(str) {
+  if (str == null || str === "") return 0;
+  const limpo = String(str).replace(/\./g, "").replace(",", ".");
+  const n = parseFloat(limpo);
+  return isNaN(n) ? 0 : n;
+}
+
 function toast(msg) {
   const t = $("toast");
   t.textContent = msg;
@@ -602,11 +636,11 @@ function abrirModalLancamento(id) {
         valor: (l?.natureza && l.natureza !== "Receita") ? l.natureza : (l?.grupo === "Investimento" ? "Investimento" : "Variavel") },
       { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(l?.centro_custo_id) },
       { nome:"banco", rotulo:"Conta", tipo:"select", opcoes:["Bradesco","Caixa"], valor: l?.banco || "Bradesco" },
-      { nome:"_valor", rotulo:"Valor (R$)", tipo:"numero", valor: l ? (l.entrada > 0 ? l.entrada : l.saida) : "" },
+      { nome:"_valor", rotulo:"Valor (R$)", tipo:"moeda", valor: l ? (l.entrada > 0 ? l.entrada : l.saida) : "" },
       { nome:"descricao", rotulo:"Descrição", tipo:"texto", largo:true, valor: l?.descricao || "" },
     ],
     montar(f) {
-      const v = Number(f._valor);
+      const v = numDeMoeda(f._valor);
       if (!v || v <= 0) throw "Informe um valor maior que zero.";
       return {
         data: f.data,
@@ -683,8 +717,8 @@ function abrirModalRecebimento(id) {
       { nome:"cliente", rotulo:"Cliente", tipo:"texto", valor: r?.cliente || "", lista: clientes },
       { nome:"hora_inicial", rotulo:"Horímetro inicial", tipo:"numero", valor: r?.hora_inicial ?? "" },
       { nome:"hora_final", rotulo:"Horímetro final", tipo:"numero", valor: r?.hora_final ?? "" },
-      { nome:"valor_hora", rotulo:"Valor da hora (R$)", tipo:"numero", valor: r?.valor_hora ?? 350 },
-      { nome:"valor_pago", rotulo:"Valor pago (R$)", tipo:"numero", valor: r?.valor_pago ?? 0 },
+      { nome:"valor_hora", rotulo:"Valor da hora (R$)", tipo:"moeda", valor: r?.valor_hora ?? 350 },
+      { nome:"valor_pago", rotulo:"Valor pago (R$)", tipo:"moeda", valor: r?.valor_pago ?? 0 },
       { nome:"forma", rotulo:"Forma de pagamento", tipo:"select", largo:true,
         opcoes:["|—","Bradesco- Empresa","Caixa - Dinheiro","Pix","Cheque"], valor: r?.forma || "" },
     ],
@@ -694,12 +728,12 @@ function abrirModalRecebimento(id) {
       const hi = f.hora_inicial === "" ? null : Number(f.hora_inicial);
       const hf = f.hora_final === "" ? null : Number(f.hora_final);
       const horas = (hi != null && hf != null) ? Math.max(0, hf - hi) : 0;
-      const vh = Number(f.valor_hora) || 0;
+      const vh = numDeMoeda(f.valor_hora);
       return {
         data: f.data, equipamento_id: Number(f.equipamento_id), cliente: f.cliente.trim(),
         hora_inicial: hi, hora_final: hf, horas,
         valor_hora: vh, valor_total: horas * vh,
-        valor_pago: Number(f.valor_pago) || 0,
+        valor_pago: numDeMoeda(f.valor_pago),
         forma: f.forma,
       };
     },
@@ -776,7 +810,7 @@ function abrirModalDiesel(id) {
       { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(d?.equipamento_id, false) },
       { nome:"local", rotulo:"Local / fornecedor", tipo:"texto", largo:true, valor: d?.local || "" },
       { nome:"litros", rotulo:"Litros", tipo:"numero", valor: d?.litros ?? "" },
-      { nome:"valor_unit", rotulo:"Preço do litro (R$)", tipo:"numero", valor: d?.valor_unit ?? "" },
+      { nome:"valor_unit", rotulo:"Preço do litro (R$)", tipo:"moeda", valor: d?.valor_unit ?? "" },
       { nome:"hora_inicial", rotulo:"Horímetro inicial", tipo:"numero", valor: d?.hora_inicial ?? "" },
       { nome:"hora_final", rotulo:"Horímetro final", tipo:"numero", valor: d?.hora_final ?? "" },
       { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar (fiado)"], valor: d?.status || "pago" },
@@ -786,7 +820,7 @@ function abrirModalDiesel(id) {
     ],
     montar(f) {
       const litros = Number(f.litros) || 0;
-      const vu = Number(f.valor_unit) || 0;
+      const vu = numDeMoeda(f.valor_unit);
       if (!litros && !vu) throw "Informe pelo menos os litros e o preço.";
       if (!f.equipamento_id) throw "Selecione o equipamento.";
       if (f.status === "pendente" && !f.vencimento) throw "Informe o vencimento para abastecimentos a pagar.";
@@ -895,8 +929,8 @@ function abrirModalManutencao(id) {
       { nome:"descricao", rotulo:"Serviço realizado", tipo:"texto", largo:true, valor: m?.descricao || "" },
       { nome:"pecas", rotulo:"Peças trocadas/compradas", tipo:"texto", largo:true, valor: m?.pecas || "" },
       { nome:"fornecedor", rotulo:"Oficina / fornecedor", tipo:"texto", valor: m?.fornecedor || "" },
-      { nome:"valor_pecas", rotulo:"Valor peças (R$)", tipo:"numero", valor: m?.valor_pecas ?? "" },
-      { nome:"valor_mao_obra", rotulo:"Valor mão de obra (R$)", tipo:"numero", valor: m?.valor_mao_obra ?? "" },
+      { nome:"valor_pecas", rotulo:"Valor peças (R$)", tipo:"moeda", valor: m?.valor_pecas ?? "" },
+      { nome:"valor_mao_obra", rotulo:"Valor mão de obra (R$)", tipo:"moeda", valor: m?.valor_mao_obra ?? "" },
       { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: m?.natureza || "Variavel" },
       { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(m?.centro_custo_id) },
       { nome:"status_pagamento", rotulo:"Situação do pagamento", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar"], valor: m?.status_pagamento || "pago" },
@@ -908,8 +942,8 @@ function abrirModalManutencao(id) {
       if (!f.equipamento_id) throw "Selecione o equipamento.";
       if (!f.descricao.trim() && !f.pecas.trim()) throw "Descreva o serviço ou as peças.";
       if (f.status_pagamento === "pendente" && !f.vencimento) throw "Informe o vencimento para manutenções a pagar.";
-      const vp = Number(f.valor_pecas) || 0;
-      const vm = Number(f.valor_mao_obra) || 0;
+      const vp = numDeMoeda(f.valor_pecas);
+      const vm = numDeMoeda(f.valor_mao_obra);
       return {
         equipamento_id: Number(f.equipamento_id), tipo: f.tipo, data: f.data, realizada: !!f.realizada,
         horimetro: f.horimetro === "" ? null : Number(f.horimetro),
@@ -1039,10 +1073,9 @@ function renderAgenda() {
   const porItem = {};
   for (const a of doAno) {
     const chave = a.item + "§" + a.dia;
-    if (!porItem[chave]) porItem[chave] = { item: a.item, dia: a.dia, valores: {}, ids: {}, pagos: {} };
+    if (!porItem[chave]) porItem[chave] = { item: a.item, dia: a.dia, valores: {}, ids: {} };
     porItem[chave].valores[a.mes] = (porItem[chave].valores[a.mes] || 0) + a.valor;
     porItem[chave].ids[a.mes] = a.id;
-    porItem[chave].pagos[a.mes] = !!a.pago;
   }
   const itens = Object.values(porItem)
     .map(i => ({ ...i, total: Object.values(i.valores).reduce((s,v) => s+v, 0) }))
@@ -1070,7 +1103,7 @@ function renderAgenda() {
     <tr class="linha-clicavel" data-item="${escHtml(i.item)}" data-dia="${escHtml(i.dia)}">
       <td class="col-fixa td-desc">${escHtml(i.item)}</td>
       <td class="num td-mudo">${escHtml(i.dia) || "—"}</td>
-      ${meses.map(m => `<td class="num ${i.valores[m] ? (i.pagos[m] ? "pago" : "") : "td-zero"}">${i.valores[m] ? num(i.valores[m],0) : "·"}</td>`).join("")}
+      ${meses.map(m => `<td class="num ${i.valores[m] ? "" : "td-zero"}">${i.valores[m] ? num(i.valores[m],0) : "·"}</td>`).join("")}
       <td class="num td-total">${brl0(i.total)}</td>
     </tr>`).join("") +
     (itens.length ? `<tr class="linha-total">
@@ -1106,10 +1139,9 @@ function abrirModalAgenda(id) {
     { nome:"dia", rotulo:"Dia do vencimento", tipo:"texto", valor: a?.dia || "" },
     { nome:"mes", rotulo:"Mês", tipo:"select",
       opcoes: MESES.map((m,i) => `${i+1}|${m}`), valor: String(a?.mes || (new Date().getMonth()+1)) },
-    { nome:"valor", rotulo:"Valor (R$) — use negativo para estorno", tipo:"numero", valor: a?.valor ?? "" },
+    { nome:"valor", rotulo:"Valor (R$) — use negativo para estorno", tipo:"moeda", negativo: true, valor: a?.valor ?? "" },
     { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Fixo|Custo fixo","Variavel|Custo variável","Investimento|Investimento"], valor: a?.natureza || "Fixo" },
     { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(a?.centro_custo_id) },
-    { nome:"pago", rotulo:"Já foi pago", tipo:"checkbox", valor: a?.pago ?? false },
   ];
   if (!id) {
     campos.push({ nome:"replicarMeses", rotulo:"Repetir por mais quantos meses (0 = só este)", tipo:"numero", valor: 0 });
@@ -1121,13 +1153,13 @@ function abrirModalAgenda(id) {
     campos,
     montar(f) {
       if (!f.item.trim()) throw "Informe o nome do compromisso.";
-      const v = Number(f.valor);
+      const v = numDeMoeda(f.valor);
       if (!v) throw "Informe um valor diferente de zero.";
       const anoNum = Number(f.ano);
       if (!anoNum || anoNum < 2000) throw "Informe um ano válido.";
       return {
         item: f.item.trim(), equipamento_id: f.equipamento_id ? Number(f.equipamento_id) : null,
-        ano: anoNum, dia: f.dia.trim(), mes: Number(f.mes), valor: v, pago: !!f.pago,
+        ano: anoNum, dia: f.dia.trim(), mes: Number(f.mes), valor: v,
         natureza: f.natureza, centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
         _replicarMeses: id ? 0 : (Number(f.replicarMeses) || 0),
       };
@@ -1202,7 +1234,6 @@ function abrirModalConferirVencimentos(reg, qtdExtra) {
       return ocorrencias.map((o, i) => ({
         ...reg, ano: o.ano, mes: o.mes,
         dia: String(f["dia_" + i] ?? "").trim() || o.diaFinal,
-        pago: i === 0 ? reg.pago : false,
       }));
     },
     async aoSalvar(linhas) {
@@ -1259,6 +1290,11 @@ function abrirModal(ctx) {
       }).join("");
       return `<label class="${largo}">${c.rotulo}<select data-campo="${c.nome}">${ops}</select></label>`;
     }
+    if (c.tipo === "moeda") {
+      return `<label class="${largo}">${c.rotulo}
+        <input type="text" inputmode="decimal" data-campo="${c.nome}" data-moeda="1" data-negativo="${c.negativo ? 1 : 0}" value="${escHtml(moedaMascara(c.valor))}">
+      </label>`;
+    }
     const tipo = c.tipo === "date" ? "date" : c.tipo === "numero" ? "number" : "text";
     const extra = c.tipo === "numero" ? 'step="any" inputmode="decimal"' : "";
     const listaId = c.lista ? `lista-${c.nome}` : "";
@@ -1268,6 +1304,10 @@ function abrirModal(ctx) {
       <input type="${tipo}" ${extra} data-campo="${c.nome}" value="${escHtml(c.valor)}" ${c.lista ? `list="${listaId}"` : ""}>
       ${listaHtml}</label>`;
   }).join("");
+
+  // aplica a máscara monetária nos campos "moeda" (formata a cada tecla e
+  // absorve ponto/vírgula digitados — quem manda é o dígito, não o separador)
+  document.querySelectorAll('#modal-campos [data-moeda]').forEach(ligarMascaraMoeda);
 
   const btnExcluir = $("modal-excluir");
   btnExcluir.classList.toggle("oculto", !ctx.id);
