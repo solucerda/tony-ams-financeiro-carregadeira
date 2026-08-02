@@ -103,6 +103,7 @@
         <button class="aba" data-aba="diesel">Diesel</button>
         <button class="aba" data-aba="manutencao">Manutenção</button>
         <button class="aba" data-aba="agenda">Agenda</button>
+        <button class="aba" data-aba="administracao">Administração</button>
       </nav>
     </header>
 
@@ -290,14 +291,37 @@
         </div>
         <p class="rodape-nota">Valores em reais. Coluna "Dia" indica o vencimento. Clique em um compromisso para editar. <span class="legenda-pago">●</span> verde = já pago.</p>
       </section>
+
+      <!-- ─── ADMINISTRAÇÃO ─── -->
+      <section id="aba-administracao" class="secao oculto">
+        <div class="cartao">
+          <div class="cartao-cabeca">
+            <h2 class="titulo-risco"><span>Equipamentos</span></h2>
+            <button class="btn-primario" id="admin-novo-equip">+ Novo equipamento</button>
+          </div>
+          <p class="cartao-nota">aparecem no seletor de equipamento e nos formulários de lançamento. Desative em vez de excluir se já tiver lançamentos vinculados.</p>
+          <div id="admin-equipamentos"></div>
+        </div>
+
+        <div class="cartao">
+          <div class="cartao-cabeca">
+            <h2 class="titulo-risco"><span>Centros de custo</span></h2>
+            <button class="btn-primario" id="admin-novo-centro">+ Novo centro de custo</button>
+          </div>
+          <p class="cartao-nota">cartões de crédito, financiamentos, contas — o que financia cada gasto. Desative em vez de excluir se já tiver lançamentos.</p>
+          <div id="admin-centros"></div>
+        </div>
+      </section>
     </main>
 
     <!-- ─── MODAL GENÉRICO ─── -->
     <div id="modal-fundo" class="modal-fundo oculto">
       <div class="modal">
-        <h3 id="modal-titulo">—</h3>
-        <div class="form-grade" id="modal-campos"></div>
-        <div class="form-erro oculto" id="modal-erro"></div>
+        <h3 id="modal-titulo" class="modal-cabeca">—</h3>
+        <div class="modal-corpo">
+          <div class="form-grade" id="modal-campos"></div>
+          <div class="form-erro oculto" id="modal-erro"></div>
+        </div>
         <div class="modal-acoes">
           <button class="btn-perigo oculto" id="modal-excluir">Excluir</button>
           <span class="modal-espaco"></span>

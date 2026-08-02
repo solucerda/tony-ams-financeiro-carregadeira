@@ -7,7 +7,7 @@
 
 /* ── Estado global ─────────────────────────────────────── */
 let sb = null;                 // cliente Supabase
-const dados = { saldoInicial: 0, lanc: [], rec: [], die: [], age: [], man: [], equipamentos: [] };
+const dados = { saldoInicial: 0, lanc: [], rec: [], die: [], age: [], man: [], equipamentos: [], centrosCusto: [] };
 let filtroExt = { mes: "todos", grupo: "todos", busca: "" };
 let filtroCliente = "todos";
 let filtroPainel = { periodo: "tudo", natureza: "todos", tipoFluxo: "bar", agrupar: "grupo", visual: "lista" };
@@ -25,11 +25,7 @@ const CORES_GRUPO = {
 };
 const CORES_NATUREZA = { "Custo fixo":"#7A8CF0", "Custo variável":"#F5B301", "Investimento":"#C77DFF" };
 const ROTULO_NATUREZA = { Fixo:"Custo fixo", Variavel:"Custo variável", Investimento:"Investimento" };
-const CENTROS_CUSTO = ["Operacional","Administrativo","Comercial","Manutenção","Financeiro","Diretoria"];
-const CORES_CENTRO = {
-  "Operacional":"#3ECF8E","Administrativo":"#7A8CF0","Comercial":"#F5B301",
-  "Manutenção":"#FF8C42","Financeiro":"#4EC9D4","Diretoria":"#C77DFF"
-};
+const PALETA_CENTROS = ["#3ECF8E","#7A8CF0","#F5B301","#FF8C42","#4EC9D4","#C77DFF","#F0564A","#8B919C"];
 
 /* ── Utilidades ────────────────────────────────────────── */
 const $ = (id) => document.getElementById(id);
@@ -70,7 +66,7 @@ function ligarSegmentado(idContainer, aoMudar) {
 // "Total do negócio" o usuário escolhe. incluirGeral permite despesas/
 // compromissos que não são de uma máquina específica (ex.: contabilidade).
 function opcoesEquipamento(incluirGeral) {
-  const opts = dados.equipamentos.map(e => `${e.id}|${e.nome}`);
+  const opts = dados.equipamentos.filter(e => e.ativo).map(e => `${e.id}|${e.nome}`);
   if (incluirGeral) opts.push("|Geral (sem máquina específica)");
   return opts;
 }
@@ -78,11 +74,35 @@ function equipamentoPadrao(valorAtual, incluirGeral) {
   if (valorAtual != null) return String(valorAtual);
   if (contexto.equipamentoId != null) return String(contexto.equipamentoId);
   if (incluirGeral) return "";
-  return dados.equipamentos[0] ? String(dados.equipamentos[0].id) : "";
+  const primeiro = dados.equipamentos.find(e => e.ativo);
+  return primeiro ? String(primeiro.id) : "";
 }
 function nomeEquipamento(id) {
   const e = dados.equipamentos.find(x => x.id === id);
   return e ? e.nome : "";
+}
+
+// Mesma lógica do equipamento, mas para centro de custo (cartão de crédito,
+// financiamento, conta corrente etc.) — lista vem do cadastro, gerenciável
+// na aba Administração.
+function opcoesCentroCusto(incluirNenhum) {
+  const ativos = dados.centrosCusto.filter(c => c.ativo);
+  const opts = ativos.map(c => `${c.id}|${c.nome}`);
+  if (incluirNenhum) opts.push("|Não classificado");
+  return opts;
+}
+function centroCustoPadrao(valorAtual) {
+  if (valorAtual != null) return String(valorAtual);
+  const primeiro = dados.centrosCusto.find(c => c.ativo);
+  return primeiro ? String(primeiro.id) : "";
+}
+function nomeCentroCusto(id) {
+  const c = dados.centrosCusto.find(x => x.id === id);
+  return c ? c.nome : "";
+}
+function corCentroCusto(id) {
+  const idx = dados.centrosCusto.findIndex(x => x.id === id);
+  return idx >= 0 ? PALETA_CENTROS[idx % PALETA_CENTROS.length] : "#8B919C";
 }
 
 /* ── Inicialização ─────────────────────────────────────── */
@@ -215,6 +235,8 @@ async function iniciarApp() {
   $("die-novo").addEventListener("click", () => abrirModalDiesel(null));
   $("age-novo").addEventListener("click", () => abrirModalAgenda(null));
   $("man-novo").addEventListener("click", () => abrirModalManutencao(null));
+  $("admin-novo-equip").addEventListener("click", () => abrirModalEquipamentoAdmin(null));
+  $("admin-novo-centro").addEventListener("click", () => abrirModalCentroCusto(null));
 
   // filtros do extrato
   $("ext-filtro-mes").addEventListener("change", e => { filtroExt.mes = e.target.value; renderExtrato(); });
@@ -265,15 +287,17 @@ async function carregarTudo() {
     // nada — traz tudo, inclusive despesas gerais sem equipamento definido.
     const comEquip = (q) => contexto.equipamentoId != null ? q.eq("equipamento_id", contexto.equipamentoId) : q;
 
-    const [cfg, lanc, rec, die, age, man] = await Promise.all([
+    const [cfg, lanc, rec, die, age, man, equipTodos, centros] = await Promise.all([
       sb.from("config").select("*"),
       comEquip(sb.from("lancamentos").select("*")).order("data").order("id"),
       comEquip(sb.from("recebimentos").select("*")).order("data").order("id"),
       comEquip(sb.from("diesel").select("*")).order("data").order("id"),
       comEquip(sb.from("agenda").select("*")).order("item").order("mes"),
       comEquip(sb.from("manutencoes").select("*")).order("data", { ascending: false }),
+      sb.from("equipamentos").select("*").order("nome"),
+      sb.from("centros_custo").select("*").order("nome"),
     ]);
-    const erro = cfg.error || lanc.error || rec.error || die.error || age.error || man.error;
+    const erro = cfg.error || lanc.error || rec.error || die.error || age.error || man.error || equipTodos.error || centros.error;
     if (erro) throw erro;
 
     const si = (cfg.data || []).find(c => c.chave === "saldo_inicial");
@@ -283,6 +307,8 @@ async function carregarTudo() {
     dados.die  = (die.data  || []).map(o => normNum(o, "diesel"));
     dados.age  = (age.data  || []).map(o => normNum(o, "agenda"));
     dados.man  = (man.data  || []).map(o => normNum(o, "manutencoes"));
+    dados.equipamentos = equipTodos.data || [];
+    dados.centrosCusto = centros.data || [];
 
     $("carregando").classList.add("oculto");
     $("aba-painel").classList.remove("oculto");
@@ -327,6 +353,7 @@ function renderTudo() {
   rodarSemTravar(renderDiesel, "Diesel");
   rodarSemTravar(renderManutencao, "Manutenção");
   rodarSemTravar(renderAgenda, "Agenda");
+  rodarSemTravar(renderAdministracao, "Administração");
 }
 
 // Executa uma função de renderização isoladamente: se uma aba falhar
@@ -454,12 +481,14 @@ function renderComposicao(periodoLanc) {
     if (!l.saida || l.grupo === "Recebimentos") continue;
     if (filtroPainel.natureza !== "todos" && l.natureza !== filtroPainel.natureza) continue;
     const chave = modoAgrupar === "natureza" ? (ROTULO_NATUREZA[l.natureza] || "Custo variável")
-      : modoAgrupar === "centro" ? (l.centro_custo || "Operacional")
+      : modoAgrupar === "centro" ? (nomeCentroCusto(l.centro_custo_id) || "Não classificado")
       : l.grupo;
     bucket[chave] = (bucket[chave] || 0) + l.saida;
   }
   const lista = Object.entries(bucket).sort((a,b) => b[1]-a[1]);
-  const cores = modoAgrupar === "natureza" ? CORES_NATUREZA : modoAgrupar === "centro" ? CORES_CENTRO : CORES_GRUPO;
+  const coresCentro = {};
+  dados.centrosCusto.forEach(c => coresCentro[c.nome] = corCentroCusto(c.id));
+  const cores = modoAgrupar === "natureza" ? CORES_NATUREZA : modoAgrupar === "centro" ? coresCentro : CORES_GRUPO;
 
   const mostrarPizza = filtroPainel.visual === "pizza" && lista.length > 0;
   $("grupos-painel").classList.toggle("oculto", mostrarPizza);
@@ -540,7 +569,7 @@ function renderExtrato() {
   $("ext-corpo").innerHTML = filtrado.map(l => {
     const valor = l.entrada > 0 ? l.entrada : -l.saida;
     const natTxt = l.natureza && l.natureza !== "Receita" ? ROTULO_NATUREZA[l.natureza] || l.natureza : "";
-    const subTxt = [natTxt, l.centro_custo].filter(Boolean).join(" · ");
+    const subTxt = [natTxt, nomeCentroCusto(l.centro_custo_id)].filter(Boolean).join(" · ");
     return `<tr>
       <td class="td-data">${fData(l.data)}</td>
       <td>
@@ -571,7 +600,7 @@ function abrirModalLancamento(id) {
       { nome:"natureza", rotulo:"Natureza (só p/ saída)", tipo:"select",
         opcoes:["Variavel|Custo variável","Fixo|Custo fixo","Investimento|Investimento"],
         valor: (l?.natureza && l.natureza !== "Receita") ? l.natureza : (l?.grupo === "Investimento" ? "Investimento" : "Variavel") },
-      { nome:"centro_custo", rotulo:"Centro de custo", tipo:"select", opcoes: CENTROS_CUSTO, valor: l?.centro_custo || "Operacional" },
+      { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(l?.centro_custo_id) },
       { nome:"banco", rotulo:"Conta", tipo:"select", opcoes:["Bradesco","Caixa"], valor: l?.banco || "Bradesco" },
       { nome:"_valor", rotulo:"Valor (R$)", tipo:"numero", valor: l ? (l.entrada > 0 ? l.entrada : l.saida) : "" },
       { nome:"descricao", rotulo:"Descrição", tipo:"texto", largo:true, valor: l?.descricao || "" },
@@ -589,7 +618,7 @@ function abrirModalLancamento(id) {
         saida:   f._tipo === "saida"   ? v : 0,
         descricao: f.descricao.trim(),
         natureza: f._tipo === "entrada" ? "Receita" : f.natureza,
-        centro_custo: f.centro_custo,
+        centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
       };
     }
   });
@@ -753,7 +782,7 @@ function abrirModalDiesel(id) {
       { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar (fiado)"], valor: d?.status || "pago" },
       { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: d?.vencimento || "" },
       { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel" },
-      { nome:"centro_custo", rotulo:"Centro de custo", tipo:"select", opcoes: CENTROS_CUSTO, valor: d?.centro_custo || "Operacional" },
+      { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(d?.centro_custo_id) },
     ],
     montar(f) {
       const litros = Number(f.litros) || 0;
@@ -768,7 +797,7 @@ function abrirModalDiesel(id) {
         hora_inicial: hi, hora_final: hf,
         horas: (hi != null && hf != null) ? Math.max(0, hf - hi) : null,
         status: f.status, vencimento: f.status === "pendente" ? f.vencimento : null,
-        natureza: f.natureza, centro_custo: f.centro_custo,
+        natureza: f.natureza, centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
       };
     },
     async aposSalvar(salvo) {
@@ -778,7 +807,7 @@ function abrirModalDiesel(id) {
         origemId: salvo.id, tabelaOrigem: "diesel", lancamentoId: d?.lancamento_id ?? salvo.lancamento_id,
         valor: salvo.status === "pago" ? salvo.valor_total : 0, tipo: "saida", data: salvo.data,
         grupo: "Combustível", descricao: "Abastecimento" + (salvo.local ? " - " + salvo.local : ""),
-        natureza: salvo.natureza, centroCusto: salvo.centro_custo,
+        natureza: salvo.natureza, centroCustoId: salvo.centro_custo_id,
       });
     },
     async aoExcluir() { await removerLancamentoVinculado(d?.lancamento_id); },
@@ -869,7 +898,7 @@ function abrirModalManutencao(id) {
       { nome:"valor_pecas", rotulo:"Valor peças (R$)", tipo:"numero", valor: m?.valor_pecas ?? "" },
       { nome:"valor_mao_obra", rotulo:"Valor mão de obra (R$)", tipo:"numero", valor: m?.valor_mao_obra ?? "" },
       { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: m?.natureza || "Variavel" },
-      { nome:"centro_custo", rotulo:"Centro de custo", tipo:"select", opcoes: CENTROS_CUSTO, valor: m?.centro_custo || "Manutenção" },
+      { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(m?.centro_custo_id) },
       { nome:"status_pagamento", rotulo:"Situação do pagamento", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar"], valor: m?.status_pagamento || "pago" },
       { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: m?.vencimento || "" },
       { nome:"proxima_data", rotulo:"Próxima revisão (data)", tipo:"date", valor: m?.proxima_data || "" },
@@ -886,7 +915,7 @@ function abrirModalManutencao(id) {
         horimetro: f.horimetro === "" ? null : Number(f.horimetro),
         descricao: f.descricao.trim(), pecas: f.pecas.trim(), fornecedor: f.fornecedor.trim(),
         valor_pecas: vp, valor_mao_obra: vm, valor_total: vp + vm,
-        natureza: f.natureza, centro_custo: f.centro_custo,
+        natureza: f.natureza, centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
         status_pagamento: f.realizada ? f.status_pagamento : "pendente",
         vencimento: f.status_pagamento === "pendente" ? f.vencimento : null,
         proxima_data: f.proxima_data || null,
@@ -901,10 +930,63 @@ function abrirModalManutencao(id) {
         valor: (salvo.realizada && salvo.status_pagamento === "pago") ? salvo.valor_total : 0,
         tipo: "saida", data: salvo.data, grupo: "Manutenção",
         descricao: "Manutenção" + (salvo.fornecedor ? " - " + salvo.fornecedor : ""),
-        natureza: salvo.natureza, centroCusto: salvo.centro_custo,
+        natureza: salvo.natureza, centroCustoId: salvo.centro_custo_id,
       });
     },
     async aoExcluir() { await removerLancamentoVinculado(m?.lancamento_id); },
+  });
+}
+
+/* ═══════════════ ADMINISTRAÇÃO ═══════════════ */
+function renderAdministracao() {
+  $("admin-equipamentos").innerHTML = dados.equipamentos.length
+    ? dados.equipamentos.map(e => `
+      <div class="admin-linha">
+        <span class="admin-linha-nome">${escHtml(e.nome)}</span>
+        ${e.ativo ? "" : `<span class="chip chip-status chip-pendente">Inativo</span>`}
+        <button class="btn-editar" onclick="abrirModalEquipamentoAdmin(${e.id})" title="Editar">✎</button>
+      </div>`).join("")
+    : '<div class="vazio">Nenhum equipamento cadastrado.</div>';
+
+  $("admin-centros").innerHTML = dados.centrosCusto.length
+    ? dados.centrosCusto.map(c => `
+      <div class="admin-linha">
+        <span class="admin-linha-nome">${escHtml(c.nome)}</span>
+        ${c.ativo ? "" : `<span class="chip chip-status chip-pendente">Inativo</span>`}
+        <button class="btn-editar" onclick="abrirModalCentroCusto(${c.id})" title="Editar">✎</button>
+      </div>`).join("")
+    : '<div class="vazio">Nenhum centro de custo cadastrado.</div>';
+}
+
+function abrirModalEquipamentoAdmin(id) {
+  const e = id ? dados.equipamentos.find(x => x.id === id) : null;
+  abrirModal({
+    titulo: e ? "Editar equipamento" : "Novo equipamento",
+    tabela: "equipamentos", id,
+    campos: [
+      { nome:"nome", rotulo:"Nome", tipo:"texto", largo:true, valor: e?.nome || "" },
+      { nome:"ativo", rotulo:"Ativo (aparece no seletor e nos formulários)", tipo:"checkbox", valor: e?.ativo ?? true },
+    ],
+    montar(f) {
+      if (!f.nome.trim()) throw "Informe o nome do equipamento.";
+      return { nome: f.nome.trim(), ativo: !!f.ativo };
+    }
+  });
+}
+
+function abrirModalCentroCusto(id) {
+  const c = id ? dados.centrosCusto.find(x => x.id === id) : null;
+  abrirModal({
+    titulo: c ? "Editar centro de custo" : "Novo centro de custo",
+    tabela: "centros_custo", id,
+    campos: [
+      { nome:"nome", rotulo:"Nome (ex.: Cartão Nubank, Financiamento Caixa)", tipo:"texto", largo:true, valor: c?.nome || "" },
+      { nome:"ativo", rotulo:"Ativo (aparece nos formulários)", tipo:"checkbox", valor: c?.ativo ?? true },
+    ],
+    montar(f) {
+      if (!f.nome.trim()) throw "Informe o nome do centro de custo.";
+      return { nome: f.nome.trim(), ativo: !!f.ativo };
+    }
   });
 }
 
@@ -1006,6 +1088,7 @@ function abrirModalAgendaItem(item, dia) {
   abrirModal({
     titulo: "Compromisso: " + item,
     tabela: "_escolha_agenda",
+    rotuloSalvar: "Continuar",
     campos: [
       { nome:"_id", rotulo:"Escolha o mês para editar", tipo:"select", largo:true, opcoes: opcoes, valor: String(linhas[0].id) },
     ],
@@ -1025,7 +1108,7 @@ function abrirModalAgenda(id) {
       opcoes: MESES.map((m,i) => `${i+1}|${m}`), valor: String(a?.mes || (new Date().getMonth()+1)) },
     { nome:"valor", rotulo:"Valor (R$) — use negativo para estorno", tipo:"numero", valor: a?.valor ?? "" },
     { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Fixo|Custo fixo","Variavel|Custo variável","Investimento|Investimento"], valor: a?.natureza || "Fixo" },
-    { nome:"centro_custo", rotulo:"Centro de custo", tipo:"select", opcoes: CENTROS_CUSTO, valor: a?.centro_custo || "Administrativo" },
+    { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(a?.centro_custo_id) },
     { nome:"pago", rotulo:"Já foi pago", tipo:"checkbox", valor: a?.pago ?? false },
   ];
   if (!id) {
@@ -1045,7 +1128,7 @@ function abrirModalAgenda(id) {
       return {
         item: f.item.trim(), equipamento_id: f.equipamento_id ? Number(f.equipamento_id) : null,
         ano: anoNum, dia: f.dia.trim(), mes: Number(f.mes), valor: v, pago: !!f.pago,
-        natureza: f.natureza, centro_custo: f.centro_custo,
+        natureza: f.natureza, centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
         _replicarMeses: id ? 0 : (Number(f.replicarMeses) || 0),
       };
     },
@@ -1108,6 +1191,7 @@ function abrirModalConferirVencimentos(reg, qtdExtra) {
   abrirModal({
     titulo: `Confira os vencimentos (${ocorrencias.length} meses)`,
     tabela: "_confirma_agenda",
+    rotuloSalvar: "Criar compromissos",
     campos: ocorrencias.map((o, i) => ({
       nome: "dia_" + i,
       rotulo: `${MESES[o.mes-1]}/${o.ano}` + (o.ajustado ? " — ajustado p/ dia útil" : ""),
@@ -1143,7 +1227,7 @@ async function salvarAgendaFinal(id, linhas) {
   let error;
   if (id) ({ error } = await sb.from("agenda").update(linhas[0]).eq("id", id));
   else ({ error } = await sb.from("agenda").insert(linhas));
-  btn.disabled = false; btn.textContent = "Salvar";
+  btn.disabled = false; btn.textContent = id ? "Editar" : "Salvar";
   if (error) {
     $("modal-erro").textContent = "Não foi possível salvar: " + error.message;
     $("modal-erro").classList.remove("oculto");
@@ -1188,6 +1272,7 @@ function abrirModal(ctx) {
   const btnExcluir = $("modal-excluir");
   btnExcluir.classList.toggle("oculto", !ctx.id);
   btnExcluir.onclick = () => excluirRegistro();
+  $("modal-salvar").textContent = ctx.rotuloSalvar || (ctx.id ? "Editar" : "Salvar");
   $("modal-salvar").onclick = () => salvarRegistro();
   $("modal-fundo").classList.remove("oculto");
 }
@@ -1221,7 +1306,7 @@ async function salvarRegistro() {
     : sb.from(modalCtx.tabela).insert(reg).select().single();
   const { data: salvo, error } = await q;
   if (error) {
-    btn.disabled = false; btn.textContent = "Salvar";
+    btn.disabled = false; btn.textContent = modalCtx.id ? "Editar" : "Salvar";
     erro.textContent = "Não foi possível salvar: " + error.message;
     erro.classList.remove("oculto");
     return;
@@ -1232,9 +1317,10 @@ async function salvarRegistro() {
     catch (e) { console.error("Falha ao sincronizar com o extrato:", e); }
   }
 
-  btn.disabled = false; btn.textContent = "Salvar";
+  const eraEdicao = !!modalCtx.id;
+  btn.disabled = false; btn.textContent = eraEdicao ? "Editar" : "Salvar";
   fecharModal();
-  toast("Registro salvo.");
+  toast(eraEdicao ? "Registro atualizado." : "Registro criado.");
   await carregarTudo();
 }
 
@@ -1262,7 +1348,7 @@ async function excluirRegistro() {
    Recebimentos (valor pago) e Diesel (valor total) geram/atualizam
    um lançamento correspondente no extrato, evitando digitar duas
    vezes e os números divergirem entre as abas. */
-async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, valor, tipo, data, grupo, descricao, natureza = "Variavel", centroCusto = "Operacional", banco = "Bradesco" }) {
+async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, valor, tipo, data, grupo, descricao, natureza = "Variavel", centroCustoId = null, banco = "Bradesco" }) {
   // sem valor: se existia um lançamento vinculado, remove
   if (!valor || valor <= 0) {
     if (lancamentoId) {
@@ -1277,7 +1363,7 @@ async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, val
     saida:   tipo === "saida"   ? valor : 0,
     descricao,
     natureza: tipo === "entrada" ? "Receita" : natureza,
-    centro_custo: centroCusto,
+    centro_custo_id: centroCustoId,
   };
   if (lancamentoId) {
     await sb.from("lancamentos").update(campos).eq("id", lancamentoId);
