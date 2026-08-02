@@ -1073,9 +1073,10 @@ function renderAgenda() {
   const porItem = {};
   for (const a of doAno) {
     const chave = a.item + "§" + a.dia;
-    if (!porItem[chave]) porItem[chave] = { item: a.item, dia: a.dia, valores: {}, ids: {} };
+    if (!porItem[chave]) porItem[chave] = { item: a.item, dia: a.dia, valores: {}, ids: {}, pagos: {} };
     porItem[chave].valores[a.mes] = (porItem[chave].valores[a.mes] || 0) + a.valor;
     porItem[chave].ids[a.mes] = a.id;
+    porItem[chave].pagos[a.mes] = a.status_pagamento === "pago";
   }
   const itens = Object.values(porItem)
     .map(i => ({ ...i, total: Object.values(i.valores).reduce((s,v) => s+v, 0) }))
@@ -1103,7 +1104,7 @@ function renderAgenda() {
     <tr class="linha-clicavel" data-item="${escHtml(i.item)}" data-dia="${escHtml(i.dia)}">
       <td class="col-fixa td-desc">${escHtml(i.item)}</td>
       <td class="num td-mudo">${escHtml(i.dia) || "—"}</td>
-      ${meses.map(m => `<td class="num ${i.valores[m] ? "" : "td-zero"}">${i.valores[m] ? num(i.valores[m],0) : "·"}</td>`).join("")}
+      ${meses.map(m => `<td class="num ${i.valores[m] ? (i.pagos[m] ? "pago" : "") : "td-zero"}">${i.valores[m] ? num(i.valores[m],0) : "·"}</td>`).join("")}
       <td class="num td-total">${brl0(i.total)}</td>
     </tr>`).join("") +
     (itens.length ? `<tr class="linha-total">
@@ -1135,6 +1136,7 @@ function abrirModalAgenda(id) {
   const campos = [
     { nome:"item", rotulo:"Compromisso", tipo:"texto", largo:true, valor: a?.item || "" },
     { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(true), valor: equipamentoPadrao(a?.equipamento_id, true) },
+    { nome:"grupo", rotulo:"Grupo (no extrato, quando der baixa)", tipo:"select", opcoes: GRUPOS_SAIDA, valor: a?.grupo || "Outras despesas" },
     { nome:"ano", rotulo:"Ano", tipo:"numero", valor: a?.ano || anoAgenda },
     { nome:"dia", rotulo:"Dia do vencimento", tipo:"texto", valor: a?.dia || "" },
     { nome:"mes", rotulo:"Mês", tipo:"select",
@@ -1142,6 +1144,8 @@ function abrirModalAgenda(id) {
     { nome:"valor", rotulo:"Valor (R$) — use negativo para estorno", tipo:"moeda", negativo: true, valor: a?.valor ?? "" },
     { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Fixo|Custo fixo","Variavel|Custo variável","Investimento|Investimento"], valor: a?.natureza || "Fixo" },
     { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(a?.centro_custo_id) },
+    { nome:"status_pagamento", rotulo:"Situação", tipo:"select", opcoes:["pendente|Em aberto","pago|Dar baixa (pago)"], valor: a?.status_pagamento || "pendente" },
+    { nome:"data_pagamento", rotulo:"Data do pagamento (se deu baixa)", tipo:"date", valor: a?.data_pagamento || hoje() },
   ];
   if (!id) {
     campos.push({ nome:"replicarMeses", rotulo:"Repetir por mais quantos meses (0 = só este)", tipo:"numero", valor: 0 });
@@ -1157,10 +1161,12 @@ function abrirModalAgenda(id) {
       if (!v) throw "Informe um valor diferente de zero.";
       const anoNum = Number(f.ano);
       if (!anoNum || anoNum < 2000) throw "Informe um ano válido.";
+      if (f.status_pagamento === "pago" && !f.data_pagamento) throw "Informe a data do pagamento.";
       return {
         item: f.item.trim(), equipamento_id: f.equipamento_id ? Number(f.equipamento_id) : null,
-        ano: anoNum, dia: f.dia.trim(), mes: Number(f.mes), valor: v,
+        grupo: f.grupo, ano: anoNum, dia: f.dia.trim(), mes: Number(f.mes), valor: v,
         natureza: f.natureza, centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
+        status_pagamento: f.status_pagamento, data_pagamento: f.status_pagamento === "pago" ? f.data_pagamento : null,
         _replicarMeses: id ? 0 : (Number(f.replicarMeses) || 0),
       };
     },
@@ -1193,8 +1199,9 @@ function abrirModalAgenda(id) {
         if (ajustar && mesmoMes) reg.dia = String(ajustada.getDate());
       }
 
-      await salvarAgendaFinal(id, [reg]);
+      await salvarAgendaFinal(id, [reg], a?.lancamento_id ?? null);
     },
+    async aoExcluir() { await removerLancamentoVinculado(a?.lancamento_id); },
   });
 }
 
@@ -1234,6 +1241,8 @@ function abrirModalConferirVencimentos(reg, qtdExtra) {
       return ocorrencias.map((o, i) => ({
         ...reg, ano: o.ano, mes: o.mes,
         dia: String(f["dia_" + i] ?? "").trim() || o.diaFinal,
+        status_pagamento: i === 0 ? reg.status_pagamento : "pendente",
+        data_pagamento: i === 0 ? reg.data_pagamento : null,
       }));
     },
     async aoSalvar(linhas) {
@@ -1252,20 +1261,42 @@ function abrirModalConferirVencimentos(reg, qtdExtra) {
   });
 }
 
-async function salvarAgendaFinal(id, linhas) {
+async function salvarAgendaFinal(id, linhas, lancamentoIdExistente = null) {
   const btn = $("modal-salvar");
   btn.disabled = true; btn.textContent = "Salvando…";
-  let error;
-  if (id) ({ error } = await sb.from("agenda").update(linhas[0]).eq("id", id));
-  else ({ error } = await sb.from("agenda").insert(linhas));
+  let salvos, error;
+  if (id) {
+    ({ data: salvos, error } = await sb.from("agenda").update(linhas[0]).eq("id", id).select());
+  } else {
+    ({ data: salvos, error } = await sb.from("agenda").insert(linhas).select());
+  }
   btn.disabled = false; btn.textContent = id ? "Editar" : "Salvar";
   if (error) {
     $("modal-erro").textContent = "Não foi possível salvar: " + error.message;
     $("modal-erro").classList.remove("oculto");
     return;
   }
+
+  // dar baixa gera (ou atualiza) a movimentação no extrato; voltar pra
+  // "em aberto" remove a movimentação, exatamente como no Diesel/Manutenção.
+  for (const s of salvos || []) {
+    const linkAtual = id ? lancamentoIdExistente : null;
+    const tipo = s.valor >= 0 ? "saida" : "entrada";
+    const dataVencimento = calcularDataAgenda(s.ano, s.mes, s.dia);
+    const dataLancamento = s.data_pagamento || (dataVencimento ? isoLocal(dataVencimento) : hoje());
+    try {
+      await sincronizarLancamento({
+        origemId: s.id, tabelaOrigem: "agenda", lancamentoId: linkAtual,
+        valor: s.status_pagamento === "pago" ? Math.abs(s.valor) : 0, tipo,
+        data: dataLancamento,
+        grupo: s.grupo || "Outras despesas", descricao: s.item,
+        natureza: s.natureza, centroCustoId: s.centro_custo_id,
+      });
+    } catch (e) { console.error("Falha ao sincronizar baixa da agenda:", e); }
+  }
+
   fecharModal();
-  toast(linhas.length > 1 ? linhas.length + " compromissos criados." : "Registro salvo.");
+  toast(salvos && salvos.length > 1 ? salvos.length + " compromissos criados." : "Registro salvo.");
   await carregarTudo();
 }
 
