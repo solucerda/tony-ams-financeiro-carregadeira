@@ -229,6 +229,9 @@ async function iniciarApp() {
   $("man-filtro-tipo").addEventListener("change", e => { filtroManutencao.tipo = e.target.value; renderManutencao(); });
   ligarSegmentado("man-filtro-status", (v) => { filtroManutencao.status = v; renderManutencao(); });
 
+  // ano da agenda
+  $("age-filtro-ano").addEventListener("change", e => { anoAgenda = Number(e.target.value); renderAgenda(); });
+
   // cliques delegados (cartões de cliente e linhas da agenda)
   $("rec-clientes").addEventListener("click", (ev) => {
     const card = ev.target.closest("[data-cliente]");
@@ -894,10 +897,53 @@ function abrirModalManutencao(id) {
 }
 
 /* ═══════════════ AGENDA ═══════════════ */
+const NOME_DIA_SEMANA = ["domingo","segunda-feira","terça-feira","quarta-feira","quinta-feira","sexta-feira","sábado"];
+let anoAgenda = Number(hoje().slice(0,4));
+
+function ultimoDiaMes(ano, mes) { return new Date(ano, mes, 0).getDate(); }
+
+// Calcula a data real de um vencimento (ano/mês/dia-texto), ajustando o dia
+// se o mês não tiver tantos dias (ex.: "31" em abril vira dia 30).
+// Retorna null se "dia" não for um número (campo ficou vazio ou é texto livre).
+function calcularDataAgenda(ano, mes, diaTxt) {
+  const diaNum = parseInt(diaTxt, 10);
+  if (isNaN(diaNum) || diaNum <= 0) return null;
+  const diaClamp = Math.min(diaNum, ultimoDiaMes(ano, mes));
+  return new Date(ano, mes - 1, diaClamp);
+}
+function ehDiaUtil(data) { const d = data.getDay(); return d !== 0 && d !== 6; }
+const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+
+// Gera as ocorrências de um compromisso replicado por N meses seguidos
+// (qtdExtra = quantos meses ALÉM do inicial, ex.: 11 pra fechar 12 meses).
+function gerarOcorrenciasAgenda(ano, mesIni, diaTxt, qtdExtra) {
+  const ocorrencias = [];
+  for (let i = 0; i <= qtdExtra; i++) {
+    const idx = mesIni - 1 + i;
+    const anoI = ano + Math.floor(idx / 12);
+    const mesI = (idx % 12) + 1;
+    ocorrencias.push({ ano: anoI, mes: mesI, data: calcularDataAgenda(anoI, mesI, diaTxt) });
+  }
+  return ocorrencias;
+}
+
+function prepararFiltroAgendaAno() {
+  const anos = new Set(dados.age.map(a => a.ano));
+  anos.add(anoAgenda); anos.add(Number(hoje().slice(0,4)));
+  const lista = [...anos].sort((a,b) => a-b);
+  const sel = $("age-filtro-ano");
+  const atual = sel.value || String(anoAgenda);
+  sel.innerHTML = lista.map(a => `<option value="${a}">${a}</option>`).join("");
+  sel.value = lista.includes(Number(atual)) ? atual : String(anoAgenda);
+  anoAgenda = Number(sel.value);
+}
+
 function renderAgenda() {
-  const meses = [...new Set(dados.age.map(a => a.mes))].sort((a,b) => a-b);
+  prepararFiltroAgendaAno();
+  const doAno = dados.age.filter(a => a.ano === anoAgenda);
+  const meses = [...new Set(doAno.map(a => a.mes))].sort((a,b) => a-b);
   const porItem = {};
-  for (const a of dados.age) {
+  for (const a of doAno) {
     const chave = a.item + "§" + a.dia;
     if (!porItem[chave]) porItem[chave] = { item: a.item, dia: a.dia, valores: {}, ids: {}, pagos: {} };
     porItem[chave].valores[a.mes] = (porItem[chave].valores[a.mes] || 0) + a.valor;
@@ -910,7 +956,7 @@ function renderAgenda() {
 
   const totaisMes = meses.map(m => itens.reduce((s,i) => s + (i.valores[m] || 0), 0));
   const totalGeral = totaisMes.reduce((s,v) => s+v, 0);
-  $("age-total-nota").textContent = "total previsto: " + brl0(totalGeral);
+  $("age-total-nota").textContent = anoAgenda + " · total previsto: " + brl0(totalGeral);
 
   desenharGrafico("graf-agenda", {
     type: "bar",
@@ -933,16 +979,17 @@ function renderAgenda() {
       ${meses.map(m => `<td class="num ${i.valores[m] ? (i.pagos[m] ? "pago" : "") : "td-zero"}">${i.valores[m] ? num(i.valores[m],0) : "·"}</td>`).join("")}
       <td class="num td-total">${brl0(i.total)}</td>
     </tr>`).join("") +
-    `<tr class="linha-total">
+    (itens.length ? `<tr class="linha-total">
       <td class="col-fixa">Total do mês</td><td></td>
       ${totaisMes.map(t => `<td class="num">${num(t,0)}</td>`).join("")}
       <td class="num td-total">${brl0(totalGeral)}</td>
-    </tr>`;
+    </tr>` : `<tr><td colspan="${meses.length+3}" class="vazio">Nenhum compromisso em ${anoAgenda}.</td></tr>`);
 }
 
 // clicar num compromisso: escolhe o mês a editar via modal
 function abrirModalAgendaItem(item, dia) {
-  const linhas = dados.age.filter(a => a.item === item && a.dia === dia);
+  const linhas = dados.age.filter(a => a.item === item && a.dia === dia && a.ano === anoAgenda);
+  if (!linhas.length) return;
   const opcoes = linhas.map(a => `${a.id}|${MESES[a.mes-1]} — ${brl0(a.valor)}`);
   abrirModal({
     titulo: "Compromisso: " + item,
@@ -957,25 +1004,75 @@ function abrirModalAgendaItem(item, dia) {
 
 function abrirModalAgenda(id) {
   const a = id ? dados.age.find(x => x.id === id) : null;
+  const campos = [
+    { nome:"item", rotulo:"Compromisso", tipo:"texto", largo:true, valor: a?.item || "" },
+    { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(true), valor: equipamentoPadrao(a?.equipamento_id, true) },
+    { nome:"ano", rotulo:"Ano", tipo:"numero", valor: a?.ano || anoAgenda },
+    { nome:"dia", rotulo:"Dia do vencimento", tipo:"texto", valor: a?.dia || "" },
+    { nome:"mes", rotulo:"Mês", tipo:"select",
+      opcoes: MESES.map((m,i) => `${i+1}|${m}`), valor: String(a?.mes || (new Date().getMonth()+1)) },
+    { nome:"valor", rotulo:"Valor (R$) — use negativo para estorno", tipo:"numero", valor: a?.valor ?? "" },
+    { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Fixo|Custo fixo","Variavel|Custo variável","Investimento|Investimento"], valor: a?.natureza || "Fixo" },
+    { nome:"pago", rotulo:"Já foi pago", tipo:"checkbox", valor: a?.pago ?? false },
+  ];
+  if (!id) {
+    campos.push({ nome:"replicarMeses", rotulo:"Repetir por mais quantos meses (0 = só este)", tipo:"numero", valor: 0 });
+  }
+
   abrirModal({
     titulo: a ? "Editar compromisso" : "Novo compromisso",
     tabela: "agenda", id,
-    campos: [
-      { nome:"item", rotulo:"Compromisso", tipo:"texto", largo:true, valor: a?.item || "" },
-      { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(true), valor: equipamentoPadrao(a?.equipamento_id, true) },
-      { nome:"dia", rotulo:"Dia do vencimento", tipo:"texto", valor: a?.dia || "" },
-      { nome:"mes", rotulo:"Mês", tipo:"select",
-        opcoes: MESES.map((m,i) => `${i+1}|${m}`), valor: String(a?.mes || (new Date().getMonth()+1)) },
-      { nome:"valor", rotulo:"Valor (R$) — use negativo para estorno", tipo:"numero", valor: a?.valor ?? "" },
-      { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Fixo|Custo fixo","Variavel|Custo variável","Investimento|Investimento"], valor: a?.natureza || "Fixo" },
-      { nome:"pago", rotulo:"Já foi pago", tipo:"checkbox", valor: a?.pago ?? false },
-    ],
+    campos,
     montar(f) {
       if (!f.item.trim()) throw "Informe o nome do compromisso.";
       const v = Number(f.valor);
       if (!v) throw "Informe um valor diferente de zero.";
-      return { item: f.item.trim(), equipamento_id: f.equipamento_id ? Number(f.equipamento_id) : null, dia: f.dia.trim(), mes: Number(f.mes), valor: v, pago: !!f.pago, natureza: f.natureza };
-    }
+      const anoNum = Number(f.ano);
+      if (!anoNum || anoNum < 2000) throw "Informe um ano válido.";
+      return {
+        item: f.item.trim(), equipamento_id: f.equipamento_id ? Number(f.equipamento_id) : null,
+        ano: anoNum, dia: f.dia.trim(), mes: Number(f.mes), valor: v, pago: !!f.pago, natureza: f.natureza,
+        _replicarMeses: id ? 0 : (Number(f.replicarMeses) || 0),
+      };
+    },
+    async aoSalvar(reg) {
+      const qtdExtra = reg._replicarMeses;
+      delete reg._replicarMeses;
+
+      const ocorrencias = id
+        ? [{ ano: reg.ano, mes: reg.mes, data: calcularDataAgenda(reg.ano, reg.mes, reg.dia) }]
+        : gerarOcorrenciasAgenda(reg.ano, reg.mes, reg.dia, qtdExtra);
+
+      const naoUteis = ocorrencias.filter(o => o.data && !ehDiaUtil(o.data));
+      if (naoUteis.length) {
+        const lista = naoUteis.map(o => `${fData(isoLocal(o.data))} (${NOME_DIA_SEMANA[o.data.getDay()]})`).join(", ");
+        const continuar = confirm(
+          `Atenção: o vencimento cai em dia não útil em ${naoUteis.length === 1 ? "esta data" : "estas datas"}:\n${lista}\n\nDeseja continuar mesmo assim?`
+        );
+        if (!continuar) return;
+      }
+
+      const btn = $("modal-salvar");
+      btn.disabled = true; btn.textContent = "Salvando…";
+
+      let error;
+      if (id) {
+        ({ error } = await sb.from("agenda").update(reg).eq("id", id));
+      } else {
+        const linhas = ocorrencias.map((o, i) => ({ ...reg, ano: o.ano, mes: o.mes, pago: i === 0 ? reg.pago : false }));
+        ({ error } = await sb.from("agenda").insert(linhas));
+      }
+
+      btn.disabled = false; btn.textContent = "Salvar";
+      if (error) {
+        $("modal-erro").textContent = "Não foi possível salvar: " + error.message;
+        $("modal-erro").classList.remove("oculto");
+        return;
+      }
+      fecharModal();
+      toast(ocorrencias.length > 1 ? ocorrencias.length + " compromissos criados." : "Registro salvo.");
+      await carregarTudo();
+    },
   });
 }
 
@@ -1038,7 +1135,7 @@ async function salvarRegistro() {
   try { reg = modalCtx.montar(lerFormulario()); }
   catch (msg) { erro.textContent = msg; erro.classList.remove("oculto"); return; }
 
-  if (modalCtx.aoSalvar) { modalCtx.aoSalvar(reg); return; }
+  if (modalCtx.aoSalvar) { await modalCtx.aoSalvar(reg); return; }
 
   btn.disabled = true; btn.textContent = "Salvando…";
   const q = modalCtx.id
