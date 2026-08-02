@@ -25,6 +25,11 @@ const CORES_GRUPO = {
 };
 const CORES_NATUREZA = { "Custo fixo":"#7A8CF0", "Custo variável":"#F5B301", "Investimento":"#C77DFF" };
 const ROTULO_NATUREZA = { Fixo:"Custo fixo", Variavel:"Custo variável", Investimento:"Investimento" };
+const CENTROS_CUSTO = ["Operacional","Administrativo","Comercial","Manutenção","Financeiro","Diretoria"];
+const CORES_CENTRO = {
+  "Operacional":"#3ECF8E","Administrativo":"#7A8CF0","Comercial":"#F5B301",
+  "Manutenção":"#FF8C42","Financeiro":"#4EC9D4","Diretoria":"#C77DFF"
+};
 
 /* ── Utilidades ────────────────────────────────────────── */
 const $ = (id) => document.getElementById(id);
@@ -443,16 +448,18 @@ function renderPainel() {
 // variável/investimento), com filtro de natureza aplicado, e mostra como
 // lista de barras (CSS) ou gráfico de pizza (Chart.js), conforme escolhido.
 function renderComposicao(periodoLanc) {
-  const porNatureza = filtroPainel.agrupar === "natureza";
+  const modoAgrupar = filtroPainel.agrupar; // "grupo" | "natureza" | "centro"
   const bucket = {};
   for (const l of periodoLanc) {
     if (!l.saida || l.grupo === "Recebimentos") continue;
     if (filtroPainel.natureza !== "todos" && l.natureza !== filtroPainel.natureza) continue;
-    const chave = porNatureza ? (ROTULO_NATUREZA[l.natureza] || "Custo variável") : l.grupo;
+    const chave = modoAgrupar === "natureza" ? (ROTULO_NATUREZA[l.natureza] || "Custo variável")
+      : modoAgrupar === "centro" ? (l.centro_custo || "Operacional")
+      : l.grupo;
     bucket[chave] = (bucket[chave] || 0) + l.saida;
   }
   const lista = Object.entries(bucket).sort((a,b) => b[1]-a[1]);
-  const cores = porNatureza ? CORES_NATUREZA : CORES_GRUPO;
+  const cores = modoAgrupar === "natureza" ? CORES_NATUREZA : modoAgrupar === "centro" ? CORES_CENTRO : CORES_GRUPO;
 
   const mostrarPizza = filtroPainel.visual === "pizza" && lista.length > 0;
   $("grupos-painel").classList.toggle("oculto", mostrarPizza);
@@ -533,11 +540,12 @@ function renderExtrato() {
   $("ext-corpo").innerHTML = filtrado.map(l => {
     const valor = l.entrada > 0 ? l.entrada : -l.saida;
     const natTxt = l.natureza && l.natureza !== "Receita" ? ROTULO_NATUREZA[l.natureza] || l.natureza : "";
+    const subTxt = [natTxt, l.centro_custo].filter(Boolean).join(" · ");
     return `<tr>
       <td class="td-data">${fData(l.data)}</td>
       <td>
         <span class="chip" style="border-color:${CORES_GRUPO[l.grupo]||"#3A3F48"};color:${CORES_GRUPO[l.grupo]||"#A3A8B4"}">${escHtml(l.grupo)}</span>
-        ${natTxt ? `<div class="td-natureza">${escHtml(natTxt)}</div>` : ""}
+        ${subTxt ? `<div class="td-natureza">${escHtml(subTxt)}</div>` : ""}
       </td>
       <td class="td-desc">${escHtml(l.descricao || l.subgrupo || "—")}</td>
       <td class="td-mudo">${escHtml(l.banco)}</td>
@@ -563,6 +571,7 @@ function abrirModalLancamento(id) {
       { nome:"natureza", rotulo:"Natureza (só p/ saída)", tipo:"select",
         opcoes:["Variavel|Custo variável","Fixo|Custo fixo","Investimento|Investimento"],
         valor: (l?.natureza && l.natureza !== "Receita") ? l.natureza : (l?.grupo === "Investimento" ? "Investimento" : "Variavel") },
+      { nome:"centro_custo", rotulo:"Centro de custo", tipo:"select", opcoes: CENTROS_CUSTO, valor: l?.centro_custo || "Operacional" },
       { nome:"banco", rotulo:"Conta", tipo:"select", opcoes:["Bradesco","Caixa"], valor: l?.banco || "Bradesco" },
       { nome:"_valor", rotulo:"Valor (R$)", tipo:"numero", valor: l ? (l.entrada > 0 ? l.entrada : l.saida) : "" },
       { nome:"descricao", rotulo:"Descrição", tipo:"texto", largo:true, valor: l?.descricao || "" },
@@ -580,6 +589,7 @@ function abrirModalLancamento(id) {
         saida:   f._tipo === "saida"   ? v : 0,
         descricao: f.descricao.trim(),
         natureza: f._tipo === "entrada" ? "Receita" : f.natureza,
+        centro_custo: f.centro_custo,
       };
     }
   });
@@ -743,6 +753,7 @@ function abrirModalDiesel(id) {
       { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar (fiado)"], valor: d?.status || "pago" },
       { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: d?.vencimento || "" },
       { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel" },
+      { nome:"centro_custo", rotulo:"Centro de custo", tipo:"select", opcoes: CENTROS_CUSTO, valor: d?.centro_custo || "Operacional" },
     ],
     montar(f) {
       const litros = Number(f.litros) || 0;
@@ -757,7 +768,7 @@ function abrirModalDiesel(id) {
         hora_inicial: hi, hora_final: hf,
         horas: (hi != null && hf != null) ? Math.max(0, hf - hi) : null,
         status: f.status, vencimento: f.status === "pendente" ? f.vencimento : null,
-        natureza: f.natureza,
+        natureza: f.natureza, centro_custo: f.centro_custo,
       };
     },
     async aposSalvar(salvo) {
@@ -767,7 +778,7 @@ function abrirModalDiesel(id) {
         origemId: salvo.id, tabelaOrigem: "diesel", lancamentoId: d?.lancamento_id ?? salvo.lancamento_id,
         valor: salvo.status === "pago" ? salvo.valor_total : 0, tipo: "saida", data: salvo.data,
         grupo: "Combustível", descricao: "Abastecimento" + (salvo.local ? " - " + salvo.local : ""),
-        natureza: salvo.natureza,
+        natureza: salvo.natureza, centroCusto: salvo.centro_custo,
       });
     },
     async aoExcluir() { await removerLancamentoVinculado(d?.lancamento_id); },
@@ -858,6 +869,7 @@ function abrirModalManutencao(id) {
       { nome:"valor_pecas", rotulo:"Valor peças (R$)", tipo:"numero", valor: m?.valor_pecas ?? "" },
       { nome:"valor_mao_obra", rotulo:"Valor mão de obra (R$)", tipo:"numero", valor: m?.valor_mao_obra ?? "" },
       { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: m?.natureza || "Variavel" },
+      { nome:"centro_custo", rotulo:"Centro de custo", tipo:"select", opcoes: CENTROS_CUSTO, valor: m?.centro_custo || "Manutenção" },
       { nome:"status_pagamento", rotulo:"Situação do pagamento", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar"], valor: m?.status_pagamento || "pago" },
       { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: m?.vencimento || "" },
       { nome:"proxima_data", rotulo:"Próxima revisão (data)", tipo:"date", valor: m?.proxima_data || "" },
@@ -874,7 +886,7 @@ function abrirModalManutencao(id) {
         horimetro: f.horimetro === "" ? null : Number(f.horimetro),
         descricao: f.descricao.trim(), pecas: f.pecas.trim(), fornecedor: f.fornecedor.trim(),
         valor_pecas: vp, valor_mao_obra: vm, valor_total: vp + vm,
-        natureza: f.natureza,
+        natureza: f.natureza, centro_custo: f.centro_custo,
         status_pagamento: f.realizada ? f.status_pagamento : "pendente",
         vencimento: f.status_pagamento === "pendente" ? f.vencimento : null,
         proxima_data: f.proxima_data || null,
@@ -889,7 +901,7 @@ function abrirModalManutencao(id) {
         valor: (salvo.realizada && salvo.status_pagamento === "pago") ? salvo.valor_total : 0,
         tipo: "saida", data: salvo.data, grupo: "Manutenção",
         descricao: "Manutenção" + (salvo.fornecedor ? " - " + salvo.fornecedor : ""),
-        natureza: salvo.natureza,
+        natureza: salvo.natureza, centroCusto: salvo.centro_custo,
       });
     },
     async aoExcluir() { await removerLancamentoVinculado(m?.lancamento_id); },
@@ -1013,6 +1025,7 @@ function abrirModalAgenda(id) {
       opcoes: MESES.map((m,i) => `${i+1}|${m}`), valor: String(a?.mes || (new Date().getMonth()+1)) },
     { nome:"valor", rotulo:"Valor (R$) — use negativo para estorno", tipo:"numero", valor: a?.valor ?? "" },
     { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Fixo|Custo fixo","Variavel|Custo variável","Investimento|Investimento"], valor: a?.natureza || "Fixo" },
+    { nome:"centro_custo", rotulo:"Centro de custo", tipo:"select", opcoes: CENTROS_CUSTO, valor: a?.centro_custo || "Administrativo" },
     { nome:"pago", rotulo:"Já foi pago", tipo:"checkbox", valor: a?.pago ?? false },
   ];
   if (!id) {
@@ -1031,7 +1044,8 @@ function abrirModalAgenda(id) {
       if (!anoNum || anoNum < 2000) throw "Informe um ano válido.";
       return {
         item: f.item.trim(), equipamento_id: f.equipamento_id ? Number(f.equipamento_id) : null,
-        ano: anoNum, dia: f.dia.trim(), mes: Number(f.mes), valor: v, pago: !!f.pago, natureza: f.natureza,
+        ano: anoNum, dia: f.dia.trim(), mes: Number(f.mes), valor: v, pago: !!f.pago,
+        natureza: f.natureza, centro_custo: f.centro_custo,
         _replicarMeses: id ? 0 : (Number(f.replicarMeses) || 0),
       };
     },
@@ -1039,41 +1053,105 @@ function abrirModalAgenda(id) {
       const qtdExtra = reg._replicarMeses;
       delete reg._replicarMeses;
 
-      const ocorrencias = id
-        ? [{ ano: reg.ano, mes: reg.mes, data: calcularDataAgenda(reg.ano, reg.mes, reg.dia) }]
-        : gerarOcorrenciasAgenda(reg.ano, reg.mes, reg.dia, qtdExtra);
-
-      const naoUteis = ocorrencias.filter(o => o.data && !ehDiaUtil(o.data));
-      if (naoUteis.length) {
-        const lista = naoUteis.map(o => `${fData(isoLocal(o.data))} (${NOME_DIA_SEMANA[o.data.getDay()]})`).join(", ");
-        const continuar = confirm(
-          `Atenção: o vencimento cai em dia não útil em ${naoUteis.length === 1 ? "esta data" : "estas datas"}:\n${lista}\n\nDeseja continuar mesmo assim?`
-        );
-        if (!continuar) return;
-      }
-
-      const btn = $("modal-salvar");
-      btn.disabled = true; btn.textContent = "Salvando…";
-
-      let error;
-      if (id) {
-        ({ error } = await sb.from("agenda").update(reg).eq("id", id));
-      } else {
-        const linhas = ocorrencias.map((o, i) => ({ ...reg, ano: o.ano, mes: o.mes, pago: i === 0 ? reg.pago : false }));
-        ({ error } = await sb.from("agenda").insert(linhas));
-      }
-
-      btn.disabled = false; btn.textContent = "Salvar";
-      if (error) {
-        $("modal-erro").textContent = "Não foi possível salvar: " + error.message;
-        $("modal-erro").classList.remove("oculto");
+      // vários meses à frente: abre uma etapa pra conferir/ajustar cada
+      // vencimento antes de criar (dias em fim de semana já vêm sugeridos
+      // com o próximo dia útil, mas dá pra editar qualquer um).
+      if (!id && qtdExtra > 0) {
+        fecharModal();
+        abrirModalConferirVencimentos(reg, qtdExtra);
         return;
       }
-      fecharModal();
-      toast(ocorrencias.length > 1 ? ocorrencias.length + " compromissos criados." : "Registro salvo.");
-      await carregarTudo();
+
+      // ocorrência única (nova ou edição): ajusta automaticamente se cair
+      // em dia não útil, perguntando antes.
+      const dataCalc = calcularDataAgenda(reg.ano, reg.mes, reg.dia);
+      if (dataCalc && !ehDiaUtil(dataCalc)) {
+        const ajustada = proximoDiaUtil(dataCalc);
+        const mesmoMes = ajustada.getMonth() + 1 === reg.mes && ajustada.getFullYear() === reg.ano;
+        const ajustar = confirm(
+          `O vencimento (${fData(isoLocal(dataCalc))}, ${NOME_DIA_SEMANA[dataCalc.getDay()]}) cai em dia não útil.\n\n` +
+          (mesmoMes
+            ? `Clique OK para ajustar automaticamente para o próximo dia útil (${fData(isoLocal(ajustada))}, ${NOME_DIA_SEMANA[ajustada.getDay()]}), ou Cancelar para manter a data original.`
+            : `O próximo dia útil (${fData(isoLocal(ajustada))}) já cai no mês seguinte, então não dá pra ajustar automaticamente sem mudar o mês. Clique OK para manter mesmo assim, ou Cancelar para editar.`)
+        );
+        if (!ajustar && mesmoMes) return;
+        if (ajustar && mesmoMes) reg.dia = String(ajustada.getDate());
+      }
+
+      await salvarAgendaFinal(id, [reg]);
     },
   });
+}
+
+// próximo dia útil a partir de uma data (avança até sair de sábado/domingo)
+function proximoDiaUtil(data) {
+  const d = new Date(data);
+  while (!ehDiaUtil(d)) d.setDate(d.getDate() + 1);
+  return d;
+}
+
+// Etapa de conferência: um campo de dia por mês, já sugerindo o próximo dia
+// útil quando a data cai em fim de semana, mas editável antes de confirmar.
+function abrirModalConferirVencimentos(reg, qtdExtra) {
+  const ocorrencias = gerarOcorrenciasAgenda(reg.ano, reg.mes, reg.dia, qtdExtra).map(o => {
+    let diaFinal = reg.dia, ajustado = false;
+    if (o.data && !ehDiaUtil(o.data)) {
+      const adj = proximoDiaUtil(o.data);
+      if (adj.getMonth() + 1 === o.mes && adj.getFullYear() === o.ano) {
+        diaFinal = String(adj.getDate());
+        ajustado = true;
+      }
+    }
+    return { ...o, diaFinal, ajustado };
+  });
+
+  abrirModal({
+    titulo: `Confira os vencimentos (${ocorrencias.length} meses)`,
+    tabela: "_confirma_agenda",
+    campos: ocorrencias.map((o, i) => ({
+      nome: "dia_" + i,
+      rotulo: `${MESES[o.mes-1]}/${o.ano}` + (o.ajustado ? " — ajustado p/ dia útil" : ""),
+      tipo: "texto",
+      valor: o.diaFinal,
+    })),
+    montar(f) {
+      return ocorrencias.map((o, i) => ({
+        ...reg, ano: o.ano, mes: o.mes,
+        dia: String(f["dia_" + i] ?? "").trim() || o.diaFinal,
+        pago: i === 0 ? reg.pago : false,
+      }));
+    },
+    async aoSalvar(linhas) {
+      // se o usuário editou algum dia manualmente pra um que ainda cai em
+      // fim de semana, avisa antes de gravar (mas não bloqueia).
+      const problemas = linhas.filter(l => {
+        const d = calcularDataAgenda(l.ano, l.mes, l.dia);
+        return d && !ehDiaUtil(d);
+      });
+      if (problemas.length) {
+        const lista = problemas.map(l => `${MESES[l.mes-1]}/${l.ano} (dia ${l.dia})`).join(", ");
+        if (!confirm(`Ainda há vencimento em dia não útil em: ${lista}.\n\nCriar assim mesmo?`)) return;
+      }
+      await salvarAgendaFinal(null, linhas);
+    }
+  });
+}
+
+async function salvarAgendaFinal(id, linhas) {
+  const btn = $("modal-salvar");
+  btn.disabled = true; btn.textContent = "Salvando…";
+  let error;
+  if (id) ({ error } = await sb.from("agenda").update(linhas[0]).eq("id", id));
+  else ({ error } = await sb.from("agenda").insert(linhas));
+  btn.disabled = false; btn.textContent = "Salvar";
+  if (error) {
+    $("modal-erro").textContent = "Não foi possível salvar: " + error.message;
+    $("modal-erro").classList.remove("oculto");
+    return;
+  }
+  fecharModal();
+  toast(linhas.length > 1 ? linhas.length + " compromissos criados." : "Registro salvo.");
+  await carregarTudo();
 }
 
 /* ═══════════════ MODAL GENÉRICO + CRUD ═══════════════ */
@@ -1184,7 +1262,7 @@ async function excluirRegistro() {
    Recebimentos (valor pago) e Diesel (valor total) geram/atualizam
    um lançamento correspondente no extrato, evitando digitar duas
    vezes e os números divergirem entre as abas. */
-async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, valor, tipo, data, grupo, descricao, natureza = "Variavel", banco = "Bradesco" }) {
+async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, valor, tipo, data, grupo, descricao, natureza = "Variavel", centroCusto = "Operacional", banco = "Bradesco" }) {
   // sem valor: se existia um lançamento vinculado, remove
   if (!valor || valor <= 0) {
     if (lancamentoId) {
@@ -1199,6 +1277,7 @@ async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, val
     saida:   tipo === "saida"   ? valor : 0,
     descricao,
     natureza: tipo === "entrada" ? "Receita" : natureza,
+    centro_custo: centroCusto,
   };
   if (lancamentoId) {
     await sb.from("lancamentos").update(campos).eq("id", lancamentoId);
