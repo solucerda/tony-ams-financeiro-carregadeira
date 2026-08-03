@@ -898,13 +898,12 @@ function abrirModalRecebimento(id) {
 
 /* ═══════════════ DIESEL ═══════════════ */
 function renderDiesel() {
-  let litros = 0, custo = 0, horas = 0, km = 0, aPagar = 0, vencido = 0;
+  let litros = 0, custo = 0, horas = 0, aPagar = 0, vencido = 0;
   const pontos = [];
   const hj = hoje();
   for (const d of dados.die) {
     litros += d.litros; custo += d.valor_total;
     if (d.horas) horas += d.horas;
-    if (d.hodometro_inicial != null && d.hodometro_final != null) km += Math.max(0, d.hodometro_final - d.hodometro_inicial);
     if (d.valor_unit > 0 && d.litros > 0) pontos.push({ x: fData(d.data), y: d.valor_unit });
     if (d.status === "pendente") {
       aPagar += d.valor_total;
@@ -915,12 +914,8 @@ function renderDiesel() {
     kpi("Combustível consumido", num(litros,0) + " L", brl0(custo) + " no período"),
     kpi("Preço médio do litro", brl(litros > 0 ? custo/litros : 0)),
   ];
-  // mostra L/h só se tiver dado de horímetro (máquina), km/L só se tiver
-  // dado de hodômetro (veículo) — os dois podem aparecer juntos no modo
-  // "Total do negócio", com máquina e carro de apoio misturados.
   if (horas > 0) kpisBase.push(kpi("Consumo por hora", num(litros/horas, 1) + " L/h", num(horas,0) + " h no horímetro"));
-  if (km > 0) kpisBase.push(kpi("Consumo do veículo", num(km/litros, 1) + " km/L", num(km,0) + " km rodados"));
-  kpisBase.push(kpi("Custo por hora/km", brl(horas > 0 ? custo/horas : 0), horas > 0 ? "por hora" : "", "amarelo"));
+  kpisBase.push(kpi("Custo por hora", brl(horas > 0 ? custo/horas : 0), "", "amarelo"));
   kpisBase.push(kpi("Combustível a pagar", brl0(aPagar), vencido > 0 ? brl0(vencido) + " vencido" : "em dia", aPagar > 0 ? "neg" : "pos"));
   $("kpis-diesel").innerHTML = kpisBase.join("");
 
@@ -939,9 +934,7 @@ function renderDiesel() {
     const statusHtml = d.status === "pendente"
       ? `<span class="chip chip-status ${venceu ? "chip-vencido" : "chip-pendente"}">${venceu ? "Vencido" : "A pagar"}</span>`
       : `<span class="chip chip-status chip-pago">Pago</span>`;
-    const medicao = d.hodometro_inicial != null
-      ? num(d.hodometro_inicial,0) + " → " + num(d.hodometro_final,0) + " km"
-      : (d.hora_inicial != null ? num(d.hora_inicial) + " → " + num(d.hora_final) + " h" : "s/ inf.");
+    const medicao = d.hora_inicial != null ? num(d.hora_inicial) + " → " + num(d.hora_final) + " h" : "s/ inf.";
     return `<tr>
     <td class="td-data">${fData(d.data)}</td>
     <td>
@@ -983,24 +976,11 @@ function abrirModalDiesel(id) {
           document.querySelectorAll('#modal-campos [data-grupo-cond="carroApoio"]').forEach(el => el.classList.add("oculto"));
         }
       } },
-    { nome:"combustivel", rotulo:"Combustível", tipo:"select",
-      opcoes:["Diesel|Diesel","Gasolina|Gasolina","Etanol|Etanol","Flex|Flex"],
-      valor: d?.combustivel || (tipoEquip === "Veiculo" ? "Gasolina" : "Diesel") },
-    { nome:"local", rotulo:"Local / fornecedor", tipo:"texto", largo:true, valor: d?.local || "", lista: nomesAtivos(dados.fornecedores) },
-    { nome:"litros", rotulo:"Litros", tipo:"numero", valor: d?.litros ?? "" },
-    { nome:"valor_unit", rotulo:"Preço do litro (R$)", tipo:"moeda", valor: d?.valor_unit ?? "" },
-    { nome:"hora_inicial", rotulo:"Horímetro inicial (máquina)", tipo:"numero", valor: d?.hora_inicial ?? "" },
-    { nome:"hora_final", rotulo:"Horímetro final (máquina)", tipo:"numero", valor: d?.hora_final ?? "" },
-    { nome:"hodometro_inicial", rotulo:"Hodômetro inicial — km (veículo)", tipo:"numero", valor: d?.hodometro_inicial ?? "" },
-    { nome:"hodometro_final", rotulo:"Hodômetro final — km (veículo)", tipo:"numero", valor: d?.hodometro_final ?? "" },
-    { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar (fiado)"], valor: d?.status || "pago" },
-    { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: d?.vencimento || "" },
-    { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel" },
-    { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(d?.centro_custo_id) },
   ];
 
-  // disponível pra qualquer abastecimento (novo ou edição) de uma máquina,
-  // desde que já exista algum equipamento cadastrado como Veículo.
+  // logo no topo do formulário — é a primeira decisão a tomar, antes de
+  // preencher o resto. Disponível pra qualquer abastecimento (novo ou
+  // edição) de uma máquina, desde que já exista um Veículo cadastrado.
   if (temVeiculoCadastrado) {
     campos.push(
       { nome:"tem_carro_apoio", rotulo:"Houve carro de apoio nesse abastecimento?", tipo:"checkbox", controla:"carroApoio",
@@ -1012,6 +992,21 @@ function abrirModalDiesel(id) {
       { nome:"carro_valor_unit", rotulo:"Preço do litro do carro (R$)", tipo:"moeda", valor:"", grupoCondicional:"carroApoio", oculto:true },
     );
   }
+
+  campos.push(
+    { nome:"combustivel", rotulo:"Combustível", tipo:"select",
+      opcoes:["Diesel|Diesel","Gasolina|Gasolina","Etanol|Etanol","Flex|Flex"],
+      valor: d?.combustivel || (tipoEquip === "Veiculo" ? "Gasolina" : "Diesel") },
+    { nome:"local", rotulo:"Local / fornecedor", tipo:"texto", largo:true, valor: d?.local || "", lista: nomesAtivos(dados.fornecedores) },
+    { nome:"litros", rotulo:"Litros", tipo:"numero", valor: d?.litros ?? "" },
+    { nome:"valor_unit", rotulo:"Preço do litro (R$)", tipo:"moeda", valor: d?.valor_unit ?? "" },
+    { nome:"hora_inicial", rotulo:"Horímetro inicial", tipo:"numero", valor: d?.hora_inicial ?? "" },
+    { nome:"hora_final", rotulo:"Horímetro final", tipo:"numero", valor: d?.hora_final ?? "" },
+    { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar (fiado)"], valor: d?.status || "pago" },
+    { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: d?.vencimento || "" },
+    { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel" },
+    { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(d?.centro_custo_id) },
+  );
 
   abrirModal({
     titulo: d ? "Editar abastecimento" : "Novo abastecimento",
@@ -1025,8 +1020,6 @@ function abrirModalDiesel(id) {
       if (f.status === "pendente" && !f.vencimento) throw "Informe o vencimento para abastecimentos a pagar.";
       const hi = f.hora_inicial === "" ? null : Number(f.hora_inicial);
       const hf = f.hora_final === "" ? null : Number(f.hora_final);
-      const ki = f.hodometro_inicial === "" ? null : Number(f.hodometro_inicial);
-      const kf = f.hodometro_final === "" ? null : Number(f.hodometro_final);
 
       carroApoioForm = null;
       if (f.tem_carro_apoio) {
@@ -1045,7 +1038,6 @@ function abrirModalDiesel(id) {
         local: f.local.trim(), litros, valor_unit: vu, valor_total: litros * vu,
         hora_inicial: hi, hora_final: hf,
         horas: (hi != null && hf != null) ? Math.max(0, hf - hi) : null,
-        hodometro_inicial: ki, hodometro_final: kf,
         status: f.status, vencimento: f.status === "pendente" ? f.vencimento : null,
         natureza: f.natureza, centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
       };
@@ -1330,7 +1322,7 @@ function criarModalCadastro(tabela, chaveDados, tituloSingular, camposExtra = []
 }
 
 const abrirModalEquipamentoAdmin = criarModalCadastro("equipamentos", "equipamentos", "equipamento", [
-  { nome:"tipo", rotulo:"Tipo", tipo:"select", opcoes:["Maquina|Máquina (controla por horímetro)","Veiculo|Veículo (controla por hodômetro/km)"] },
+  { nome:"tipo", rotulo:"Tipo", tipo:"select", opcoes:["Maquina|Máquina (controla por horímetro)","Veiculo|Veículo (carro de apoio)"] },
 ]);
 const abrirModalCentroCusto      = criarModalCadastro("centros_custo", "centrosCusto", "centro de custo");
 const abrirModalFornecedor       = criarModalCadastro("fornecedores", "fornecedores", "fornecedor");
