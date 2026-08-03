@@ -117,6 +117,10 @@ function nomeEquipamento(id) {
   const e = dados.equipamentos.find(x => x.id === id);
   return e ? e.nome : "";
 }
+function tipoEquipamento(id) {
+  const e = dados.equipamentos.find(x => x.id === id);
+  return e ? (e.tipo || "Maquina") : "Maquina";
+}
 
 // Mesma lógica do equipamento, mas para centro de custo (cartão de crédito,
 // financiamento, conta corrente etc.) — lista vem do cadastro, gerenciável
@@ -329,7 +333,7 @@ async function iniciarApp() {
   $("age-corpo").addEventListener("click", (ev) => {
     if (ev.target.closest(".linha-total")) return;
     const tr = ev.target.closest("[data-item]");
-    if (tr) abrirModalAgendaItem(tr.dataset.item, tr.dataset.dia);
+    if (tr) abrirModalAgendaItem(tr.dataset.item, tr.dataset.dia, tr.dataset.agregado === "1");
   });
 
   // modal
@@ -524,9 +528,9 @@ function renderPainel() {
     kpi("Resultado", brl0(res), "entradas − saídas", res >= 0 ? "pos" : "neg"),
     kpi("Resultado operacional", brl0(resOperacional), "sem Investimento", resOperacional >= 0 ? "pos" : "neg"),
     kpi("Em aberto a receber", brl0(emAberto), "faturado − recebido · total", emAberto > 0.5 ? "neg" : "pos"),
-    kpi("Contas a pagar", brl0(aPagar), "diesel, manutenção, agenda · total", aPagar > 0.5 ? "neg" : "pos"),
+    kpi("Contas a pagar", brl0(aPagar), "abastecimento, manutenção, agenda · total", aPagar > 0.5 ? "neg" : "pos"),
     kpi("Horas faturadas", num(horas) + " h", brl0(faturado) + " gerados"),
-    kpi("Diesel por hora", brl(custoHora), num(litros,0) + " L · " + brl0(custoDie)),
+    kpi("Combustível por hora", brl(custoHora), num(litros,0) + " L · " + brl0(custoDie)),
   ].join("");
 
   // Fluxo mensal — respeita o período; barras ou linhas conforme o alternador
@@ -713,7 +717,7 @@ function renderExtrato() {
 // na origem, senão a próxima sincronização sobrescreve a mudança.
 function origemDoLancamento(id) {
   const d = dados.die.find(x => x.lancamento_id === id);
-  if (d) return { tabela: "Diesel", fn: "abrirModalDiesel", id: d.id };
+  if (d) return { tabela: "Abastecimento", fn: "abrirModalDiesel", id: d.id };
   const m = dados.man.find(x => x.lancamento_id === id);
   if (m) return { tabela: "Manutenção", fn: "abrirModalManutencao", id: m.id };
   const a = dados.age.find(x => x.lancamento_id === id);
@@ -891,25 +895,31 @@ function abrirModalRecebimento(id) {
 
 /* ═══════════════ DIESEL ═══════════════ */
 function renderDiesel() {
-  let litros = 0, custo = 0, horas = 0, aPagar = 0, vencido = 0;
+  let litros = 0, custo = 0, horas = 0, km = 0, aPagar = 0, vencido = 0;
   const pontos = [];
   const hj = hoje();
   for (const d of dados.die) {
     litros += d.litros; custo += d.valor_total;
     if (d.horas) horas += d.horas;
+    if (d.hodometro_inicial != null && d.hodometro_final != null) km += Math.max(0, d.hodometro_final - d.hodometro_inicial);
     if (d.valor_unit > 0 && d.litros > 0) pontos.push({ x: fData(d.data), y: d.valor_unit });
     if (d.status === "pendente") {
       aPagar += d.valor_total;
       if (d.vencimento && d.vencimento < hj) vencido += d.valor_total;
     }
   }
-  $("kpis-diesel").innerHTML = [
-    kpi("Diesel consumido", num(litros,0) + " L", brl0(custo) + " no período"),
+  const kpisBase = [
+    kpi("Combustível consumido", num(litros,0) + " L", brl0(custo) + " no período"),
     kpi("Preço médio do litro", brl(litros > 0 ? custo/litros : 0)),
-    kpi("Consumo da máquina", num(horas > 0 ? litros/horas : 0, 1) + " L/h", num(horas,0) + " h no horímetro"),
-    kpi("Custo de diesel por hora", brl(horas > 0 ? custo/horas : 0), "", "amarelo"),
-    kpi("Diesel a pagar", brl0(aPagar), vencido > 0 ? brl0(vencido) + " vencido" : "em dia", aPagar > 0 ? "neg" : "pos"),
-  ].join("");
+  ];
+  // mostra L/h só se tiver dado de horímetro (máquina), km/L só se tiver
+  // dado de hodômetro (veículo) — os dois podem aparecer juntos no modo
+  // "Total do negócio", com máquina e carro de apoio misturados.
+  if (horas > 0) kpisBase.push(kpi("Consumo por hora", num(litros/horas, 1) + " L/h", num(horas,0) + " h no horímetro"));
+  if (km > 0) kpisBase.push(kpi("Consumo do veículo", num(km/litros, 1) + " km/L", num(km,0) + " km rodados"));
+  kpisBase.push(kpi("Custo por hora/km", brl(horas > 0 ? custo/horas : 0), horas > 0 ? "por hora" : "", "amarelo"));
+  kpisBase.push(kpi("Combustível a pagar", brl0(aPagar), vencido > 0 ? brl0(vencido) + " vencido" : "em dia", aPagar > 0 ? "neg" : "pos"));
+  $("kpis-diesel").innerHTML = kpisBase.join("");
 
   desenharGrafico("graf-diesel", {
     type: "line",
@@ -926,11 +936,16 @@ function renderDiesel() {
     const statusHtml = d.status === "pendente"
       ? `<span class="chip chip-status ${venceu ? "chip-vencido" : "chip-pendente"}">${venceu ? "Vencido" : "A pagar"}</span>`
       : `<span class="chip chip-status chip-pago">Pago</span>`;
+    const medicao = d.hodometro_inicial != null
+      ? num(d.hodometro_inicial,0) + " → " + num(d.hodometro_final,0) + " km"
+      : (d.hora_inicial != null ? num(d.hora_inicial) + " → " + num(d.hora_final) + " h" : "s/ inf.");
     return `<tr>
     <td class="td-data">${fData(d.data)}</td>
-    <td class="td-desc">${escHtml(d.local) || "—"}</td>
-    <td class="num td-mudo">${d.hora_inicial != null ? num(d.hora_inicial) + " → " + num(d.hora_final) : "s/ inf."}</td>
-    <td class="num">${d.horas ? num(d.horas) : "—"}</td>
+    <td>
+      ${escHtml(nomeEquipamento(d.equipamento_id)) || "—"}
+      <div class="td-natureza">${escHtml(d.combustivel || "Diesel")}${d.local ? " · " + escHtml(d.local) : ""}</div>
+    </td>
+    <td class="num td-mudo">${medicao}</td>
     <td class="num">${d.litros ? num(d.litros,0) : "—"}</td>
     <td class="num td-mudo">${d.valor_unit ? brl(d.valor_unit) : "—"}</td>
     <td class="num neg">${d.valor_total ? brl(d.valor_total) : "—"}</td>
@@ -938,22 +953,28 @@ function renderDiesel() {
     <td><button class="btn-editar" onclick="abrirModalDiesel(${d.id})" title="Editar">✎</button></td>
   </tr>`;
   }).join("") ||
-  '<tr><td colspan="9" class="vazio">Nenhum abastecimento registrado.</td></tr>';
+  '<tr><td colspan="8" class="vazio">Nenhum abastecimento registrado.</td></tr>';
 }
 
 function abrirModalDiesel(id) {
   const d = id ? dados.die.find(x => x.id === id) : null;
+  const tipoEquip = tipoEquipamento(d?.equipamento_id ?? (contexto.equipamentoId != null ? contexto.equipamentoId : null));
   abrirModal({
     titulo: d ? "Editar abastecimento" : "Novo abastecimento",
     tabela: "diesel", id,
     campos: [
       { nome:"data", rotulo:"Data", tipo:"date", valor: d?.data || hoje() },
       { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(d?.equipamento_id, false) },
+      { nome:"combustivel", rotulo:"Combustível", tipo:"select",
+        opcoes:["Diesel|Diesel","Gasolina|Gasolina","Etanol|Etanol","Flex|Flex"],
+        valor: d?.combustivel || (tipoEquip === "Veiculo" ? "Gasolina" : "Diesel") },
       { nome:"local", rotulo:"Local / fornecedor", tipo:"texto", largo:true, valor: d?.local || "", lista: nomesAtivos(dados.fornecedores) },
       { nome:"litros", rotulo:"Litros", tipo:"numero", valor: d?.litros ?? "" },
       { nome:"valor_unit", rotulo:"Preço do litro (R$)", tipo:"moeda", valor: d?.valor_unit ?? "" },
-      { nome:"hora_inicial", rotulo:"Horímetro inicial", tipo:"numero", valor: d?.hora_inicial ?? "" },
-      { nome:"hora_final", rotulo:"Horímetro final", tipo:"numero", valor: d?.hora_final ?? "" },
+      { nome:"hora_inicial", rotulo:"Horímetro inicial (máquina)", tipo:"numero", valor: d?.hora_inicial ?? "" },
+      { nome:"hora_final", rotulo:"Horímetro final (máquina)", tipo:"numero", valor: d?.hora_final ?? "" },
+      { nome:"hodometro_inicial", rotulo:"Hodômetro inicial — km (veículo)", tipo:"numero", valor: d?.hodometro_inicial ?? "" },
+      { nome:"hodometro_final", rotulo:"Hodômetro final — km (veículo)", tipo:"numero", valor: d?.hodometro_final ?? "" },
       { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar (fiado)"], valor: d?.status || "pago" },
       { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: d?.vencimento || "" },
       { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel" },
@@ -967,10 +988,14 @@ function abrirModalDiesel(id) {
       if (f.status === "pendente" && !f.vencimento) throw "Informe o vencimento para abastecimentos a pagar.";
       const hi = f.hora_inicial === "" ? null : Number(f.hora_inicial);
       const hf = f.hora_final === "" ? null : Number(f.hora_final);
+      const ki = f.hodometro_inicial === "" ? null : Number(f.hodometro_inicial);
+      const kf = f.hodometro_final === "" ? null : Number(f.hodometro_final);
       return {
-        data: f.data, equipamento_id: Number(f.equipamento_id), local: f.local.trim(), litros, valor_unit: vu, valor_total: litros * vu,
+        data: f.data, equipamento_id: Number(f.equipamento_id), combustivel: f.combustivel,
+        local: f.local.trim(), litros, valor_unit: vu, valor_total: litros * vu,
         hora_inicial: hi, hora_final: hf,
         horas: (hi != null && hf != null) ? Math.max(0, hf - hi) : null,
+        hodometro_inicial: ki, hodometro_final: kf,
         status: f.status, vencimento: f.status === "pendente" ? f.vencimento : null,
         natureza: f.natureza, centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
       };
@@ -988,7 +1013,7 @@ function abrirModalDiesel(id) {
       // vencimento — some sozinho quando você dá baixa aqui no Diesel.
       await sincronizarAgendaEspelho({
         origemId: salvo.id, origemTabela: "diesel", agendaId: d?.agenda_id ?? salvo.agenda_id,
-        pendente: salvo.status === "pendente", item: "Abastecimento" + (salvo.local ? " - " + salvo.local : ""),
+        pendente: salvo.status === "pendente", item: "Combustível a pagar",
         data: salvo.vencimento, valor: salvo.valor_total,
         natureza: salvo.natureza, centroCustoId: salvo.centro_custo_id, equipamentoId: salvo.equipamento_id,
         grupo: "Combustível",
@@ -1125,7 +1150,7 @@ function abrirModalManutencao(id) {
       // some sozinho quando a manutenção é realizada e paga.
       await sincronizarAgendaEspelho({
         origemId: salvo.id, origemTabela: "manutencoes", agendaId: m?.agenda_id ?? salvo.agenda_id,
-        pendente, item: "Manutenção" + (salvo.fornecedor ? " - " + salvo.fornecedor : ""),
+        pendente, item: "Manutenção a pagar",
         data: salvo.vencimento || salvo.data, valor: salvo.valor_total,
         natureza: salvo.natureza, centroCustoId: salvo.centro_custo_id, equipamentoId: salvo.equipamento_id,
         grupo: "Manutenção",
@@ -1225,7 +1250,9 @@ function criarModalCadastro(tabela, chaveDados, tituloSingular, camposExtra = []
   };
 }
 
-const abrirModalEquipamentoAdmin = criarModalCadastro("equipamentos", "equipamentos", "equipamento");
+const abrirModalEquipamentoAdmin = criarModalCadastro("equipamentos", "equipamentos", "equipamento", [
+  { nome:"tipo", rotulo:"Tipo", tipo:"select", opcoes:["Maquina|Máquina (controla por horímetro)","Veiculo|Veículo (controla por hodômetro/km)"] },
+]);
 const abrirModalCentroCusto      = criarModalCadastro("centros_custo", "centrosCusto", "centro de custo");
 const abrirModalFornecedor       = criarModalCadastro("fornecedores", "fornecedores", "fornecedor");
 const abrirModalGrupoDespesa     = criarModalCadastro("grupos_despesa", "gruposDespesa", "grupo de despesa");
@@ -1305,11 +1332,15 @@ function renderAgenda() {
   const meses = [...new Set(doAno.map(a => a.mes))].sort((a,b) => a-b);
   const porItem = {};
   for (const a of doAno) {
-    const chave = a.item + "§" + a.dia;
-    if (!porItem[chave]) porItem[chave] = { item: a.item, dia: a.dia, valores: {}, ids: {}, pagos: {}, origem: a.origem_tabela };
+    // compromissos espelhados (Diesel/Manutenção "a pagar") se agrupam numa
+    // única linha por item, ignorando o dia individual de cada um — o
+    // detalhamento por abastecimento/manutenção aparece ao clicar.
+    const agregado = !!a.origem_tabela;
+    const chave = agregado ? ("§AGREGADO§" + a.item) : (a.item + "§" + a.dia);
+    if (!porItem[chave]) porItem[chave] = { item: a.item, dia: agregado ? "vários" : a.dia, valores: {}, idsPorMes: {}, pagos: {}, origem: a.origem_tabela, agregado };
     porItem[chave].valores[a.mes] = (porItem[chave].valores[a.mes] || 0) + a.valor;
-    porItem[chave].ids[a.mes] = a.id;
-    porItem[chave].pagos[a.mes] = a.status_pagamento === "pago";
+    (porItem[chave].idsPorMes[a.mes] = porItem[chave].idsPorMes[a.mes] || []).push(a.id);
+    if (!agregado) porItem[chave].pagos[a.mes] = a.status_pagamento === "pago";
   }
   const itens = Object.values(porItem)
     .map(i => ({ ...i, total: Object.values(i.valores).reduce((s,v) => s+v, 0) }))
@@ -1334,9 +1365,10 @@ function renderAgenda() {
     <th class="num">Total</th></tr>`;
 
   $("age-corpo").innerHTML = itens.map(i => {
-    const rotuloOrigem = i.origem === "diesel" ? "via Diesel" : i.origem === "manutencoes" ? "via Manutenção" : "";
-    return `<tr class="linha-clicavel" data-item="${escHtml(i.item)}" data-dia="${escHtml(i.dia)}">
-      <td class="col-fixa td-desc">${escHtml(i.item)}${rotuloOrigem ? `<div class="td-natureza">${rotuloOrigem}</div>` : ""}</td>
+    const rotuloOrigem = i.origem === "diesel" ? "via Abastecimento" : i.origem === "manutencoes" ? "via Manutenção" : "";
+    const qtdTotal = Object.values(i.idsPorMes).reduce((s,arr) => s + arr.length, 0);
+    return `<tr class="linha-clicavel" data-item="${escHtml(i.item)}" data-dia="${escHtml(i.dia)}" data-agregado="${i.agregado ? "1" : "0"}">
+      <td class="col-fixa td-desc">${escHtml(i.item)}${rotuloOrigem ? `<div class="td-natureza">${rotuloOrigem}${qtdTotal>1 ? " · " + qtdTotal + " itens" : ""}</div>` : ""}</td>
       <td class="num td-mudo">${escHtml(i.dia) || "—"}</td>
       ${meses.map(m => `<td class="num ${i.valores[m] ? (i.pagos[m] ? "pago" : "") : "td-zero"}">${i.valores[m] ? num(i.valores[m],0) : "·"}</td>`).join("")}
       <td class="num td-total">${brl0(i.total)}</td>
@@ -1350,21 +1382,59 @@ function renderAgenda() {
 }
 
 // clicar num compromisso: escolhe o mês a editar via modal
-function abrirModalAgendaItem(item, dia) {
-  const linhas = dados.age.filter(a => a.item === item && a.dia === dia && a.ano === anoAgenda);
+function abrirModalAgendaItem(item, dia, agregado) {
+  const linhas = agregado
+    ? dados.age.filter(a => a.item === item && a.origem_tabela && a.ano === anoAgenda)
+    : dados.age.filter(a => a.item === item && a.dia === dia && a.ano === anoAgenda);
   if (!linhas.length) return;
-  // só uma ocorrência: já resolve direto
-  if (linhas.length === 1) { abrirLinhaDaAgenda(linhas[0].id); return; }
-  const opcoes = linhas.map(a => `${a.id}|${MESES[a.mes-1]} — ${brl0(a.valor)}`);
+
+  // agrupa por mês — cada mês pode ter 1 ou vários itens (ex.: 2 abastecimentos no mesmo mês)
+  const porMes = {};
+  linhas.forEach(a => { (porMes[a.mes] = porMes[a.mes] || []).push(a); });
+  const meses = Object.keys(porMes).map(Number).sort((a,b) => a-b);
+
+  if (meses.length === 1) { abrirGrupoAgendaDoMes(porMes[meses[0]]); return; }
+
+  _agendaPorMesAtual = porMes;
+  const html = meses.map(m => {
+    const grupo = porMes[m];
+    const total = grupo.reduce((s,a) => s+a.valor, 0);
+    return `<button type="button" class="detalhe-linha" onclick="fecharModal(); abrirMesDaAgenda(${m})">
+      <span>${MESES[m-1]}${grupo.length > 1 ? " · " + grupo.length + " itens" : ""}</span>
+      <b>${brl0(total)}</b>
+    </button>`;
+  }).join("");
   abrirModal({
     titulo: "Compromisso: " + item,
     tabela: "_escolha_agenda",
-    rotuloSalvar: "Continuar",
-    campos: [
-      { nome:"_id", rotulo:"Escolha o mês", tipo:"select", largo:true, opcoes: opcoes, valor: String(linhas[0].id) },
-    ],
-    montar(f) { return { _id: Number(f._id) }; },
-    aoSalvar(reg) { fecharModal(); abrirLinhaDaAgenda(reg._id); }
+    corpoCustom: `<div class="detalhe-lista">${html}</div>`,
+    semSalvar: true,
+  });
+}
+
+let _agendaPorMesAtual = null;
+function abrirMesDaAgenda(mes) {
+  if (!_agendaPorMesAtual) return;
+  abrirGrupoAgendaDoMes(_agendaPorMesAtual[mes]);
+}
+
+// Um item só nesse mês: resolve direto. Vários (ex.: 2 abastecimentos a
+// pagar no mesmo mês): mostra a lista pra escolher qual abrir.
+function abrirGrupoAgendaDoMes(grupo) {
+  if (grupo.length === 1) { abrirLinhaDaAgenda(grupo[0].id); return; }
+  const ordenado = grupo.slice().sort((a,b) => (a.dia || "").localeCompare(b.dia || "", "pt", { numeric: true }));
+  const html = ordenado.map(a => {
+    const origemTxt = a.origem_tabela === "diesel" ? "Abastecimento" : a.origem_tabela === "manutencoes" ? "Manutenção" : "";
+    return `<button type="button" class="detalhe-linha" onclick="fecharModal(); abrirLinhaDaAgenda(${a.id})">
+      <span>${a.dia ? "dia " + escHtml(a.dia) : ""}${origemTxt ? (a.dia ? " · " : "") + origemTxt : ""}</span>
+      <b>${brl0(a.valor)}</b>
+    </button>`;
+  }).join("");
+  abrirModal({
+    titulo: `${grupo.length} itens — ${MESES[grupo[0].mes-1]}`,
+    tabela: "_detalhe_agenda",
+    corpoCustom: `<div class="detalhe-lista">${html}</div>`,
+    semSalvar: true,
   });
 }
 
@@ -1386,23 +1456,21 @@ function abrirModalEscolhaAcaoAgenda(id) {
   const a = dados.age.find(x => x.id === id);
   if (!a) return;
   const jaPago = a.status_pagamento === "pago";
+  const html = `<div class="acao-botoes">
+    <button type="button" class="acao-botao acao-destaque" onclick="fecharModal(); abrirModalBaixaAgenda(${id})">
+      <span class="acao-titulo">${jaPago ? "Estornar baixa" : "Dar baixa"}</span>
+      <span class="acao-sub">${jaPago ? "voltar para em aberto" : "marcar como pago"}</span>
+    </button>
+    <button type="button" class="acao-botao" onclick="fecharModal(); abrirModalAgenda(${id})">
+      <span class="acao-titulo">Editar</span>
+      <span class="acao-sub">dados do compromisso</span>
+    </button>
+  </div>`;
   abrirModal({
     titulo: a.item,
     tabela: "_acao_agenda",
-    rotuloSalvar: "Continuar",
-    campos: [
-      { nome:"_acao", rotulo:"O que deseja fazer?", tipo:"select", largo:true,
-        opcoes: [
-          jaPago ? "baixar|Estornar baixa (voltar para em aberto)" : "baixar|Dar baixa (marcar como pago)",
-          "editar|Editar dados do compromisso",
-        ],
-        valor: "baixar" },
-    ],
-    montar(f) { return { _acao: f._acao }; },
-    aoSalvar(reg) {
-      fecharModal();
-      if (reg._acao === "baixar") abrirModalBaixaAgenda(id); else abrirModalAgenda(id);
-    }
+    corpoCustom: html,
+    semSalvar: true,
   });
 }
 
@@ -1612,6 +1680,10 @@ function abrirModal(ctx) {
   $("modal-titulo").textContent = ctx.titulo;
   $("modal-erro").classList.add("oculto");
 
+  if (ctx.corpoCustom) {
+    // corpo em HTML livre (ex.: lista de itens clicáveis) em vez de formulário
+    $("modal-campos").innerHTML = ctx.corpoCustom;
+  } else {
   $("modal-campos").innerHTML = ctx.campos.map(c => {
     const largo = c.largo ? "form-larga" : "";
     if (c.tipo === "checkbox") {
@@ -1650,10 +1722,12 @@ function abrirModal(ctx) {
     const el = document.querySelector(`#modal-campos [data-campo="${c.nome}"]`);
     if (el) el.addEventListener("input", () => c.aoMudar(el.value));
   });
+  }
 
   const btnExcluir = $("modal-excluir");
   btnExcluir.classList.toggle("oculto", !ctx.id);
   btnExcluir.onclick = () => excluirRegistro();
+  $("modal-salvar").classList.toggle("oculto", !!ctx.semSalvar);
   $("modal-salvar").textContent = ctx.rotuloSalvar || (ctx.id ? "Editar" : "Salvar");
   $("modal-salvar").onclick = () => salvarRegistro();
   $("modal-fundo").classList.remove("oculto");
