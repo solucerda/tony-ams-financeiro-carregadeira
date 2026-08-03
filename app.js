@@ -435,7 +435,7 @@ async function carregarTudo() {
 // senão a comparação com o dataset do HTML, que é sempre string, falha).
 const CAMPOS_TEXTO = {
   lancamentos:  new Set(["data", "banco", "grupo", "subgrupo", "descricao"]),
-  recebimentos: new Set(["data", "cliente", "forma", "operador", "obra"]),
+  recebimentos: new Set(["data", "cliente", "operador", "obra"]),
   diesel:       new Set(["data"]),
   agenda:       new Set(["item", "dia"]),
   manutencoes:  new Set(["data", "descricao", "pecas", "fornecedor", "vencimento", "proxima_data"]),
@@ -840,7 +840,9 @@ function renderRecebimentos() {
     .slice().reverse();
 
   $("rec-corpo").innerHTML = filtrado.map(r => {
-    const aberto = Math.max(0, (r.valor_total||0) - (r.valor_pago||0));
+    const statusHtml = r.recebido
+      ? `<span class="chip chip-status chip-pago">Recebido</span>`
+      : `<span class="chip chip-status chip-pendente">A receber</span>`;
     return `<tr>
     <td class="td-data">${fData(r.data)}</td>
     <td>${escHtml(r.cliente)}${r.tipo_recebimento_id ? `<div class="td-natureza">${escHtml(nomeTipoRecebimento(r.tipo_recebimento_id))}</div>` : ""}</td>
@@ -848,8 +850,8 @@ function renderRecebimentos() {
     <td class="num">${r.horas ? num(r.horas) : "—"}</td>
     <td class="num td-mudo">${r.valor_hora ? brl0(r.valor_hora) : "—"}</td>
     <td class="num">${r.valor_total ? brl0(r.valor_total) : "—"}</td>
-    <td class="num ${r.valor_pago ? "pos" : ""}">${r.valor_pago ? brl0(r.valor_pago) : "—"}${aberto > 0.5 ? `<div class="td-vencimento">${brl0(aberto)} em aberto</div>` : ""}</td>
-    <td class="td-mudo">${escHtml(r.forma) || "—"}${r.centro_custo_id ? `<div class="td-natureza">${escHtml(nomeCentroCusto(r.centro_custo_id))}</div>` : ""}</td>
+    <td class="num ${r.valor_pago ? "pos" : ""}">${r.valor_pago ? brl0(r.valor_pago) : "—"}</td>
+    <td>${statusHtml}${r.centro_custo_id ? `<div class="td-natureza">${escHtml(nomeCentroCusto(r.centro_custo_id))}</div>` : ""}</td>
     <td><button class="btn-editar" onclick="abrirModalRecebimento(${r.id})" title="Editar">✎</button></td>
   </tr>`;
   }).join("") ||
@@ -883,8 +885,7 @@ function abrirModalRecebimento(id) {
       { nome:"hora_final", rotulo:"Horímetro final", tipo:"numero", valor: r?.hora_final ?? "" },
       { nome:"valor_hora", rotulo:"Valor da hora (R$)", tipo:"moeda", valor: r?.valor_hora ?? 350 },
       { nome:"valor_pago", rotulo:"Valor pago (R$)", tipo:"moeda", valor: r?.valor_pago ?? 0 },
-      { nome:"forma", rotulo:"Forma de pagamento", tipo:"select", largo:true,
-        opcoes:["|—","Bradesco- Empresa","Caixa - Dinheiro","Pix","Cheque"], valor: r?.forma || "" },
+      { nome:"recebido", rotulo:"Recebido?", tipo:"checkbox", valor: r?.recebido ?? true },
       { nome:"centro_custo_id", rotulo:"Centro de custo (onde o dinheiro entrou)", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(r?.centro_custo_id) },
       { nome:"tipo_recebimento_id", rotulo:"Tipo de recebimento", tipo:"select", opcoes: opcoesTipoRecebimento(true), valor: r?.tipo_recebimento_id != null ? String(r.tipo_recebimento_id) : "" },
     ],
@@ -895,42 +896,51 @@ function abrirModalRecebimento(id) {
       const hf = f.hora_final === "" ? null : Number(f.hora_final);
       const horas = (hi != null && hf != null) ? Math.max(0, hf - hi) : 0;
       const vh = numDeMoeda(f.valor_hora);
+      const valor_total = horas * vh;
+      // se marcou "Recebido?" e não preencheu o valor pago, assume o valor
+      // total (evita ter que digitar o mesmo número duas vezes)
+      let valor_pago = numDeMoeda(f.valor_pago);
+      if (f.recebido && !valor_pago) valor_pago = valor_total;
       return {
         data: f.data, equipamento_id: Number(f.equipamento_id), cliente: f.cliente.trim(),
         operador: f.operador.trim(), obra: f.obra.trim(),
         hora_inicial: hi, hora_final: hf, horas,
-        valor_hora: vh, valor_total: horas * vh,
-        valor_pago: numDeMoeda(f.valor_pago),
-        forma: f.forma, centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
+        valor_hora: vh, valor_total,
+        valor_pago, recebido: !!f.recebido,
+        centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
         tipo_recebimento_id: f.tipo_recebimento_id ? Number(f.tipo_recebimento_id) : null,
       };
     },
     async aposSalvar(salvo) {
-      // valor já recebido: movimentação realizada de verdade
-      await sincronizarLancamento({
-        origemId: salvo.id, tabelaOrigem: "recebimentos", lancamentoId: r?.lancamento_id ?? salvo.lancamento_id,
-        valor: salvo.valor_pago, tipo: "entrada", data: salvo.data, status: "pago",
-        grupo: "Recebimentos", descricao: "Recebimento - " + salvo.cliente,
-        centroCustoId: salvo.centro_custo_id, equipamentoId: salvo.equipamento_id,
-      });
-      // saldo ainda não recebido: vira pendente no Extrato e compromisso na
-      // Agenda — some sozinho quando você aumentar o "Valor pago" até
-      // alcançar o "Valor total" (isso É o "dar baixa" no recebimento).
-      const saldoReceber = Math.max(0, salvo.valor_total - salvo.valor_pago);
-      await sincronizarLancamento({
-        origemId: salvo.id, tabelaOrigem: "recebimentos", lancamentoId: r?.lancamento_pendente_id ?? salvo.lancamento_pendente_id,
-        campoVinculo: "lancamento_pendente_id",
-        valor: saldoReceber, tipo: "entrada", data: salvo.data, status: "pendente",
-        grupo: "Recebimentos", descricao: "A receber - " + salvo.cliente,
-        centroCustoId: salvo.centro_custo_id, equipamentoId: salvo.equipamento_id,
-      });
-      await sincronizarAgendaEspelho({
-        origemId: salvo.id, origemTabela: "recebimentos", agendaId: r?.agenda_id ?? salvo.agenda_id,
-        pendente: saldoReceber > 0, item: "A receber - " + salvo.cliente,
-        data: salvo.data, valor: -saldoReceber, // negativo: é entrada, não saída (mesma convenção do estorno)
-        natureza: "Receita", centroCustoId: salvo.centro_custo_id, equipamentoId: salvo.equipamento_id,
-        grupo: "Recebimentos",
-      });
+      if (salvo.recebido) {
+        // recebido: lança no Extrato como movimentação realizada, e
+        // garante que não sobra nenhum compromisso pendente na Agenda
+        await sincronizarLancamento({
+          origemId: salvo.id, tabelaOrigem: "recebimentos", lancamentoId: r?.lancamento_id ?? salvo.lancamento_id,
+          valor: salvo.valor_pago || salvo.valor_total, tipo: "entrada", data: salvo.data, status: "pago",
+          grupo: "Recebimentos", descricao: "Recebimento - " + salvo.cliente,
+          centroCustoId: salvo.centro_custo_id, equipamentoId: salvo.equipamento_id,
+        });
+        await sincronizarAgendaEspelho({
+          origemId: salvo.id, origemTabela: "recebimentos", agendaId: r?.agenda_id ?? salvo.agenda_id,
+          pendente: false, item: "", data: null, valor: 0,
+          natureza: "Receita", centroCustoId: null, equipamentoId: null, grupo: "Recebimentos",
+        });
+      } else {
+        // ainda não recebido: não entra no Extrato (não é dinheiro de
+        // verdade ainda) — fica só como compromisso a receber na Agenda
+        await sincronizarLancamento({
+          origemId: salvo.id, tabelaOrigem: "recebimentos", lancamentoId: r?.lancamento_id ?? salvo.lancamento_id,
+          valor: 0, tipo: "entrada", data: salvo.data, grupo: "Recebimentos", descricao: "",
+        });
+        await sincronizarAgendaEspelho({
+          origemId: salvo.id, origemTabela: "recebimentos", agendaId: r?.agenda_id ?? salvo.agenda_id,
+          pendente: salvo.valor_total > 0, item: "A receber - " + salvo.cliente,
+          data: salvo.data, valor: -salvo.valor_total, // negativo: é entrada, não saída (mesma convenção do estorno)
+          natureza: "Receita", centroCustoId: salvo.centro_custo_id, equipamentoId: salvo.equipamento_id,
+          grupo: "Recebimentos",
+        });
+      }
     },
     async aoExcluir() {
       await removerLancamentoVinculado(r?.lancamento_id);
@@ -956,12 +966,11 @@ function renderDiesel() {
     (filtroDiesel.combustivel === "todos" || d.combustivel === filtroDiesel.combustivel)
   );
 
-  let litros = 0, custo = 0, horas = 0, aPagar = 0, vencido = 0;
+  let litros = 0, custo = 0, aPagar = 0, vencido = 0;
   const pontos = [];
   const hj = hoje();
   for (const d of doFiltro) {
     litros += d.litros; custo += d.valor_total;
-    if (d.horas) horas += d.horas;
     if (d.valor_unit > 0 && d.litros > 0) pontos.push({ x: fData(d.data), y: d.valor_unit });
     if (d.status === "pendente") {
       aPagar += d.valor_total;
@@ -971,10 +980,8 @@ function renderDiesel() {
   const kpisBase = [
     kpi("Combustível consumido", num(litros,0) + " L", brl0(custo) + " no período"),
     kpi("Preço médio do litro", brl(litros > 0 ? custo/litros : 0)),
+    kpi("Combustível a pagar", brl0(aPagar), vencido > 0 ? brl0(vencido) + " vencido" : "em dia", aPagar > 0 ? "neg" : "pos"),
   ];
-  if (horas > 0) kpisBase.push(kpi("Consumo por hora", num(litros/horas, 1) + " L/h", num(horas,0) + " h no horímetro"));
-  kpisBase.push(kpi("Custo por hora", brl(horas > 0 ? custo/horas : 0), "", "amarelo"));
-  kpisBase.push(kpi("Combustível a pagar", brl0(aPagar), vencido > 0 ? brl0(vencido) + " vencido" : "em dia", aPagar > 0 ? "neg" : "pos"));
   $("kpis-diesel").innerHTML = kpisBase.join("");
 
   desenharGrafico("graf-diesel", {
@@ -1005,14 +1012,12 @@ function renderDiesel() {
       const statusHtml = d.status === "pendente"
         ? `<span class="chip chip-status ${venceu ? "chip-vencido" : "chip-pendente"}">${venceu ? "Vencido" : "A pagar"}</span>`
         : `<span class="chip chip-status chip-pago">Pago</span>`;
-      const medicao = d.hora_inicial != null ? num(d.hora_inicial) + " → " + num(d.hora_final) + " h" : "s/ inf.";
       return `<tr>
       <td class="td-data">${fData(d.data)}</td>
       <td>
         ${escHtml(nomeEquipamento(d.equipamento_id)) || "—"}
         <div class="td-natureza">${escHtml(d.combustivel || "Diesel")}${d.local ? " · " + escHtml(d.local) : ""}</div>
       </td>
-      <td class="num td-mudo">${medicao}</td>
       <td class="num">${d.litros ? num(d.litros,0) : "—"}</td>
       <td class="num td-mudo">${d.valor_unit ? brl(d.valor_unit) : "—"}</td>
       <td class="num neg">${d.valor_total ? brl(d.valor_total) : "—"}</td>
@@ -1036,7 +1041,6 @@ function renderDiesel() {
         ${equipamentos}
         <div class="td-natureza">Abastecimento conjunto · ${combustiveis}</div>
       </td>
-      <td class="num td-mudo">—</td>
       <td class="num">${num(litrosTotal,0)}</td>
       <td class="num td-mudo">—</td>
       <td class="num neg">${brl(total)}</td>
@@ -1044,7 +1048,7 @@ function renderDiesel() {
       <td class="td-mudo">▸ ${grupo.length} itens</td>
     </tr>`;
   }).join("") ||
-  '<tr><td colspan="8" class="vazio">Nenhum abastecimento para este filtro.</td></tr>';
+  '<tr><td colspan="7" class="vazio">Nenhum abastecimento para este filtro.</td></tr>';
 }
 
 function abrirDetalheAbastecimentoConjunto(ids) {
@@ -1111,8 +1115,6 @@ function abrirModalDiesel(id) {
     { nome:"local", rotulo:"Local / fornecedor", tipo:"texto", largo:true, valor: d?.local || "", lista: nomesAtivos(dados.fornecedores) },
     { nome:"litros", rotulo:"Litros", tipo:"numero", valor: d?.litros ?? "" },
     { nome:"valor_unit", rotulo:"Preço do litro (R$)", tipo:"moeda", valor: d?.valor_unit ?? "" },
-    { nome:"hora_inicial", rotulo:"Horímetro inicial", tipo:"numero", valor: d?.hora_inicial ?? "" },
-    { nome:"hora_final", rotulo:"Horímetro final", tipo:"numero", valor: d?.hora_final ?? "" },
     { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar (fiado)"], valor: d?.status || "pago" },
     { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: d?.vencimento || "" },
     { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel" },
@@ -1129,8 +1131,6 @@ function abrirModalDiesel(id) {
       if (!litros && !vu) throw "Informe pelo menos os litros e o preço.";
       if (!f.equipamento_id) throw "Selecione o equipamento.";
       if (f.status === "pendente" && !f.vencimento) throw "Informe o vencimento para abastecimentos a pagar.";
-      const hi = f.hora_inicial === "" ? null : Number(f.hora_inicial);
-      const hf = f.hora_final === "" ? null : Number(f.hora_final);
 
       carroApoioForm = null;
       if (f.tem_carro_apoio) {
@@ -1147,8 +1147,6 @@ function abrirModalDiesel(id) {
       return {
         data: f.data, equipamento_id: Number(f.equipamento_id), combustivel: f.combustivel,
         local: f.local.trim(), litros, valor_unit: vu, valor_total: litros * vu,
-        hora_inicial: hi, hora_final: hf,
-        horas: (hi != null && hf != null) ? Math.max(0, hf - hi) : null,
         status: f.status, vencimento: f.status === "pendente" ? f.vencimento : null,
         natureza: f.natureza, centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
       };
@@ -2134,10 +2132,10 @@ function exportarRecebimentosCSV() {
     (r.valor_hora || 0).toFixed(2).replace(".", ","),
     (r.valor_total || 0).toFixed(2).replace(".", ","),
     (r.valor_pago || 0).toFixed(2).replace(".", ","),
-    r.forma || "",
+    r.recebido ? "Recebido" : "A receber",
   ]);
   baixarCSV("recebimentos.csv",
-    ["Data","Cliente","Horímetro inicial","Horímetro final","Horas","R$/h","Faturado","Pago","Forma"], linhas);
+    ["Data","Cliente","Horímetro inicial","Horímetro final","Horas","R$/h","Faturado","Pago","Situação"], linhas);
 }
 
 /* ═══════════════ GRÁFICOS (Chart.js) ═══════════════ */
