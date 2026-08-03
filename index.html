@@ -166,7 +166,18 @@
       <!-- ─── EXTRATO ─── -->
       <section id="aba-extrato" class="secao oculto">
         <div class="filtros">
+          <div class="segmentado" id="ext-modo-periodo">
+            <button type="button" data-valor="mes" class="ativo">Mês</button>
+            <button type="button" data-valor="semana">Semana</button>
+            <button type="button" data-valor="dia">Dia</button>
+            <button type="button" data-valor="periodo">Período</button>
+          </div>
           <select id="ext-filtro-mes"></select>
+          <input type="week" id="ext-filtro-semana" class="oculto">
+          <input type="date" id="ext-filtro-dia" class="oculto">
+          <span id="ext-filtro-periodo-grupo" class="periodo-grupo oculto">
+            <input type="date" id="ext-filtro-de"> <span class="periodo-ate">até</span> <input type="date" id="ext-filtro-ate">
+          </span>
           <select id="ext-filtro-grupo"></select>
           <input class="busca" type="text" id="ext-busca" placeholder="Buscar descrição…">
           <button class="btn-fantasma" id="ext-exportar">Exportar CSV</button>
@@ -294,22 +305,15 @@
 
       <!-- ─── ADMINISTRAÇÃO ─── -->
       <section id="aba-administracao" class="secao oculto">
-        <div class="cartao">
-          <div class="cartao-cabeca">
-            <h2 class="titulo-risco"><span>Equipamentos</span></h2>
-            <button class="btn-primario" id="admin-novo-equip">+ Novo equipamento</button>
-          </div>
-          <p class="cartao-nota">aparecem no seletor de equipamento e nos formulários de lançamento. Desative em vez de excluir se já tiver lançamentos vinculados.</p>
-          <div id="admin-equipamentos"></div>
-        </div>
+        <div id="admin-cadastros"></div>
 
         <div class="cartao">
           <div class="cartao-cabeca">
-            <h2 class="titulo-risco"><span>Centros de custo</span></h2>
-            <button class="btn-primario" id="admin-novo-centro">+ Novo centro de custo</button>
+            <h2 class="titulo-risco"><span>Feriados</span></h2>
+            <button class="btn-primario" id="admin-novo-feriado">+ Novo feriado</button>
           </div>
-          <p class="cartao-nota">cartões de crédito, financiamentos, contas — o que financia cada gasto. Desative em vez de excluir se já tiver lançamentos.</p>
-          <div id="admin-centros"></div>
+          <p class="cartao-nota">usados no alerta de dia não útil da Agenda, além de sábado/domingo. Feriados móveis (Carnaval, Páscoa) precisam ser adicionados manualmente ano a ano.</p>
+          <div id="admin-feriados"></div>
         </div>
       </section>
     </main>

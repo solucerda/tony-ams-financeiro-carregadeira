@@ -227,6 +227,8 @@ select, input[type="text"], input[type="date"], input[type="number"], input[type
 select:focus, input:focus { outline: none; border-color: var(--amarelo); }
 .busca { flex: 1; min-width: 160px; }
 input[data-moeda="1"] { text-align: right; font-family: var(--fonte-mono); }
+.periodo-grupo { display: inline-flex; align-items: center; gap: 6px; }
+.periodo-ate { font-size: 12px; color: var(--texto-mudo); }
 
 .btn-primario {
   background: var(--amarelo); color: var(--fundo); border: none; border-radius: 8px;

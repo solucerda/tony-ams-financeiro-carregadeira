@@ -7,16 +7,18 @@
 
 /* ── Estado global ─────────────────────────────────────── */
 let sb = null;                 // cliente Supabase
-const dados = { saldoInicial: 0, lanc: [], rec: [], die: [], age: [], man: [], equipamentos: [], centrosCusto: [] };
-let filtroExt = { mes: "todos", grupo: "todos", busca: "" };
+const dados = {
+  saldoInicial: 0, lanc: [], rec: [], die: [], age: [], man: [],
+  equipamentos: [], centrosCusto: [], clientes: [], fornecedores: [],
+  gruposDespesa: [], contasBancarias: [], operadores: [], obras: [], feriados: [],
+};
+let filtroExt = { modo: "mes", mes: "todos", semana: "", dia: "", de: "", ate: "", grupo: "todos", busca: "" };
 let filtroCliente = "todos";
 let filtroPainel = { periodo: "tudo", natureza: "todos", tipoFluxo: "bar", agrupar: "grupo", visual: "lista" };
 let filtroManutencao = { tipo: "todos", status: "todos" };
 const graficos = {};           // instâncias Chart.js
 
 const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
-const GRUPOS_SAIDA = ["Combustível","Financiamento","Investimento","Manutenção",
-  "Pessoal","Seguro Frota","Tarifas","Taxas fixas","Outras despesas"];
 const CORES_GRUPO = {
   "Combustível":"#F5B301","Financiamento":"#F0564A","Investimento":"#7A8CF0",
   "Manutenção":"#FF8C42","Pessoal":"#4EC9D4","Seguro Frota":"#C77DFF",
@@ -137,6 +139,21 @@ function nomeCentroCusto(id) {
 function corCentroCusto(id) {
   const idx = dados.centrosCusto.findIndex(x => x.id === id);
   return idx >= 0 ? PALETA_CENTROS[idx % PALETA_CENTROS.length] : "#8B919C";
+}
+
+// Grupos de despesa e contas bancárias agora são cadastros (aba
+// Administração) em vez de listas fixas no código.
+function opcoesGrupoDespesa() {
+  return dados.gruposDespesa.filter(g => g.ativo).map(g => g.nome);
+}
+function opcoesContaBancaria() {
+  return dados.contasBancarias.filter(c => c.ativo).map(c => c.nome);
+}
+// Autocomplete (datalist) a partir de um cadastro — continua sendo texto
+// livre no campo, então um valor histórico que não está mais ativo no
+// cadastro não quebra nada.
+function nomesAtivos(lista) {
+  return lista.filter(x => x.ativo).map(x => x.nome);
 }
 
 /* ── Inicialização ─────────────────────────────────────── */
@@ -269,11 +286,22 @@ async function iniciarApp() {
   $("die-novo").addEventListener("click", () => abrirModalDiesel(null));
   $("age-novo").addEventListener("click", () => abrirModalAgenda(null));
   $("man-novo").addEventListener("click", () => abrirModalManutencao(null));
-  $("admin-novo-equip").addEventListener("click", () => abrirModalEquipamentoAdmin(null));
-  $("admin-novo-centro").addEventListener("click", () => abrirModalCentroCusto(null));
+  $("admin-novo-feriado").addEventListener("click", () => abrirModalFeriado(null));
 
   // filtros do extrato
+  ligarSegmentado("ext-modo-periodo", (v) => {
+    filtroExt.modo = v;
+    $("ext-filtro-mes").classList.toggle("oculto", v !== "mes");
+    $("ext-filtro-semana").classList.toggle("oculto", v !== "semana");
+    $("ext-filtro-dia").classList.toggle("oculto", v !== "dia");
+    $("ext-filtro-periodo-grupo").classList.toggle("oculto", v !== "periodo");
+    renderExtrato();
+  });
   $("ext-filtro-mes").addEventListener("change", e => { filtroExt.mes = e.target.value; renderExtrato(); });
+  $("ext-filtro-semana").addEventListener("change", e => { filtroExt.semana = e.target.value; renderExtrato(); });
+  $("ext-filtro-dia").addEventListener("change", e => { filtroExt.dia = e.target.value; renderExtrato(); });
+  $("ext-filtro-de").addEventListener("change", e => { filtroExt.de = e.target.value; renderExtrato(); });
+  $("ext-filtro-ate").addEventListener("change", e => { filtroExt.ate = e.target.value; renderExtrato(); });
   $("ext-filtro-grupo").addEventListener("change", e => { filtroExt.grupo = e.target.value; renderExtrato(); });
   $("ext-busca").addEventListener("input", e => { filtroExt.busca = e.target.value; renderExtrato(); });
   $("ext-exportar").addEventListener("click", exportarExtratoCSV);
@@ -321,7 +349,7 @@ async function carregarTudo() {
     // nada — traz tudo, inclusive despesas gerais sem equipamento definido.
     const comEquip = (q) => contexto.equipamentoId != null ? q.eq("equipamento_id", contexto.equipamentoId) : q;
 
-    const [cfg, lanc, rec, die, age, man, equipTodos, centros] = await Promise.all([
+    const [cfg, lanc, rec, die, age, man, equipTodos, centros, clientes, fornecedores, gruposDespesa, contasBancarias, operadores, obras, feriados] = await Promise.all([
       sb.from("config").select("*"),
       comEquip(sb.from("lancamentos").select("*")).order("data").order("id"),
       comEquip(sb.from("recebimentos").select("*")).order("data").order("id"),
@@ -330,8 +358,16 @@ async function carregarTudo() {
       comEquip(sb.from("manutencoes").select("*")).order("data", { ascending: false }),
       sb.from("equipamentos").select("*").order("nome"),
       sb.from("centros_custo").select("*").order("nome"),
+      sb.from("clientes").select("*").order("nome"),
+      sb.from("fornecedores").select("*").order("nome"),
+      sb.from("grupos_despesa").select("*").order("nome"),
+      sb.from("contas_bancarias").select("*").order("nome"),
+      sb.from("operadores").select("*").order("nome"),
+      sb.from("obras").select("*").order("nome"),
+      sb.from("feriados").select("*").order("data"),
     ]);
-    const erro = cfg.error || lanc.error || rec.error || die.error || age.error || man.error || equipTodos.error || centros.error;
+    const erro = cfg.error || lanc.error || rec.error || die.error || age.error || man.error || equipTodos.error || centros.error
+      || clientes.error || fornecedores.error || gruposDespesa.error || contasBancarias.error || operadores.error || obras.error || feriados.error;
     if (erro) throw erro;
 
     const si = (cfg.data || []).find(c => c.chave === "saldo_inicial");
@@ -343,6 +379,13 @@ async function carregarTudo() {
     dados.man  = (man.data  || []).map(o => normNum(o, "manutencoes"));
     dados.equipamentos = equipTodos.data || [];
     dados.centrosCusto = centros.data || [];
+    dados.clientes = clientes.data || [];
+    dados.fornecedores = fornecedores.data || [];
+    dados.gruposDespesa = gruposDespesa.data || [];
+    dados.contasBancarias = contasBancarias.data || [];
+    dados.operadores = operadores.data || [];
+    dados.obras = obras.data || [];
+    dados.feriados = feriados.data || [];
 
     $("carregando").classList.add("oculto");
     $("aba-painel").classList.remove("oculto");
@@ -360,7 +403,7 @@ async function carregarTudo() {
 // senão a comparação com o dataset do HTML, que é sempre string, falha).
 const CAMPOS_TEXTO = {
   lancamentos:  new Set(["data", "banco", "grupo", "subgrupo", "descricao"]),
-  recebimentos: new Set(["data", "cliente", "forma"]),
+  recebimentos: new Set(["data", "cliente", "forma", "operador", "obra"]),
   diesel:       new Set(["data"]),
   agenda:       new Set(["item", "dia"]),
   manutencoes:  new Set(["data", "descricao", "pecas", "fornecedor", "vencimento", "proxima_data"]),
@@ -569,6 +612,45 @@ function kpi(rotulo, valor, sub, cls) {
 }
 
 /* ═══════════════ EXTRATO ═══════════════ */
+// Converte uma semana no formato do <input type="week"> ("2026-W05") no
+// intervalo [segunda, domingo] em texto ISO — padrão ISO 8601 (a semana 1
+// é a que contém a primeira quinta-feira do ano).
+function semanaParaIntervalo(semanaISO) {
+  const [anoStr, wStr] = semanaISO.split("-W");
+  const ano = Number(anoStr), semana = Number(wStr);
+  const jan4 = new Date(ano, 0, 4);
+  const diaSemanaJan4 = (jan4.getDay() + 6) % 7; // 0 = segunda
+  const segundaSemana1 = new Date(jan4);
+  segundaSemana1.setDate(jan4.getDate() - diaSemanaJan4);
+  const segunda = new Date(segundaSemana1);
+  segunda.setDate(segundaSemana1.getDate() + (semana - 1) * 7);
+  const domingo = new Date(segunda);
+  domingo.setDate(segunda.getDate() + 6);
+  return [isoLocal(segunda), isoLocal(domingo)];
+}
+
+// Checagem de período única, usada pelo Extrato em tela e pela exportação
+// CSV — assim os dois nunca ficam dessincronizados.
+function dentroDoPeriodo(dataStr) {
+  switch (filtroExt.modo) {
+    case "mes":
+      return filtroExt.mes === "todos" || dataStr.slice(0,7) === filtroExt.mes;
+    case "dia":
+      return !filtroExt.dia || dataStr === filtroExt.dia;
+    case "semana": {
+      if (!filtroExt.semana) return true;
+      const [ini, fim] = semanaParaIntervalo(filtroExt.semana);
+      return dataStr >= ini && dataStr <= fim;
+    }
+    case "periodo":
+      if (filtroExt.de && dataStr < filtroExt.de) return false;
+      if (filtroExt.ate && dataStr > filtroExt.ate) return false;
+      return true;
+    default:
+      return true;
+  }
+}
+
 function prepararFiltrosExtrato() {
   const meses = [...new Set(dados.lanc.map(l => l.data.slice(0,7)))].sort();
   $("ext-filtro-mes").innerHTML =
@@ -587,7 +669,7 @@ function renderExtrato() {
 
   const q = filtroExt.busca.trim().toLowerCase();
   const filtrado = comSaldo.filter(l =>
-    (filtroExt.mes === "todos" || l.data.slice(0,7) === filtroExt.mes) &&
+    dentroDoPeriodo(l.data) &&
     (filtroExt.grupo === "todos" || l.grupo === filtroExt.grupo) &&
     (!q || (l.descricao + " " + l.subgrupo + " " + l.grupo).toLowerCase().includes(q))
   ).reverse();
@@ -630,12 +712,12 @@ function abrirModalLancamento(id) {
       { nome:"data", rotulo:"Data", tipo:"date", valor: l?.data || hoje() },
       { nome:"_tipo", rotulo:"Tipo", tipo:"select", opcoes:["saida|Saída","entrada|Entrada"], valor: tipo },
       { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(true), valor: equipamentoPadrao(l?.equipamento_id, true) },
-      { nome:"grupo", rotulo:"Grupo", tipo:"select", opcoes: GRUPOS_SAIDA.concat("Recebimentos"), valor: l?.grupo || "Combustível" },
+      { nome:"grupo", rotulo:"Grupo", tipo:"select", opcoes: opcoesGrupoDespesa().concat("Recebimentos"), valor: l?.grupo || "Combustível" },
       { nome:"natureza", rotulo:"Natureza (só p/ saída)", tipo:"select",
         opcoes:["Variavel|Custo variável","Fixo|Custo fixo","Investimento|Investimento"],
         valor: (l?.natureza && l.natureza !== "Receita") ? l.natureza : (l?.grupo === "Investimento" ? "Investimento" : "Variavel") },
       { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(l?.centro_custo_id) },
-      { nome:"banco", rotulo:"Conta", tipo:"select", opcoes:["Bradesco","Caixa"], valor: l?.banco || "Bradesco" },
+      { nome:"banco", rotulo:"Conta", tipo:"select", opcoes: opcoesContaBancaria(), valor: l?.banco || opcoesContaBancaria()[0] || "" },
       { nome:"_valor", rotulo:"Valor (R$)", tipo:"moeda", valor: l ? (l.entrada > 0 ? l.entrada : l.saida) : "" },
       { nome:"descricao", rotulo:"Descrição", tipo:"texto", largo:true, valor: l?.descricao || "" },
     ],
@@ -707,14 +789,22 @@ function filtrarCliente(c) {
 
 function abrirModalRecebimento(id) {
   const r = id ? dados.rec.find(x => x.id === id) : null;
-  const clientes = [...new Set(dados.rec.map(x => x.cliente))];
   abrirModal({
     titulo: r ? "Editar registro" : "Novo registro",
     tabela: "recebimentos", id,
     campos: [
       { nome:"data", rotulo:"Data", tipo:"date", valor: r?.data || hoje() },
       { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(r?.equipamento_id, false) },
-      { nome:"cliente", rotulo:"Cliente", tipo:"texto", valor: r?.cliente || "", lista: clientes },
+      { nome:"cliente", rotulo:"Cliente", tipo:"texto", valor: r?.cliente || "", lista: nomesAtivos(dados.clientes),
+        aoMudar(nome) {
+          const c = dados.clientes.find(x => x.nome === nome);
+          if (c && c.valor_hora_padrao) {
+            const campoVh = document.querySelector('#modal-campos [data-campo="valor_hora"]');
+            if (campoVh) campoVh.value = moedaMascara(c.valor_hora_padrao);
+          }
+        } },
+      { nome:"operador", rotulo:"Operador", tipo:"texto", valor: r?.operador || "", lista: nomesAtivos(dados.operadores) },
+      { nome:"obra", rotulo:"Obra / contrato", tipo:"texto", valor: r?.obra || "", lista: nomesAtivos(dados.obras) },
       { nome:"hora_inicial", rotulo:"Horímetro inicial", tipo:"numero", valor: r?.hora_inicial ?? "" },
       { nome:"hora_final", rotulo:"Horímetro final", tipo:"numero", valor: r?.hora_final ?? "" },
       { nome:"valor_hora", rotulo:"Valor da hora (R$)", tipo:"moeda", valor: r?.valor_hora ?? 350 },
@@ -731,6 +821,7 @@ function abrirModalRecebimento(id) {
       const vh = numDeMoeda(f.valor_hora);
       return {
         data: f.data, equipamento_id: Number(f.equipamento_id), cliente: f.cliente.trim(),
+        operador: f.operador.trim(), obra: f.obra.trim(),
         hora_inicial: hi, hora_final: hf, horas,
         valor_hora: vh, valor_total: horas * vh,
         valor_pago: numDeMoeda(f.valor_pago),
@@ -808,7 +899,7 @@ function abrirModalDiesel(id) {
     campos: [
       { nome:"data", rotulo:"Data", tipo:"date", valor: d?.data || hoje() },
       { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(d?.equipamento_id, false) },
-      { nome:"local", rotulo:"Local / fornecedor", tipo:"texto", largo:true, valor: d?.local || "" },
+      { nome:"local", rotulo:"Local / fornecedor", tipo:"texto", largo:true, valor: d?.local || "", lista: nomesAtivos(dados.fornecedores) },
       { nome:"litros", rotulo:"Litros", tipo:"numero", valor: d?.litros ?? "" },
       { nome:"valor_unit", rotulo:"Preço do litro (R$)", tipo:"moeda", valor: d?.valor_unit ?? "" },
       { nome:"hora_inicial", rotulo:"Horímetro inicial", tipo:"numero", valor: d?.hora_inicial ?? "" },
@@ -928,7 +1019,7 @@ function abrirModalManutencao(id) {
       { nome:"horimetro", rotulo:"Horímetro", tipo:"numero", valor: m?.horimetro ?? "" },
       { nome:"descricao", rotulo:"Serviço realizado", tipo:"texto", largo:true, valor: m?.descricao || "" },
       { nome:"pecas", rotulo:"Peças trocadas/compradas", tipo:"texto", largo:true, valor: m?.pecas || "" },
-      { nome:"fornecedor", rotulo:"Oficina / fornecedor", tipo:"texto", valor: m?.fornecedor || "" },
+      { nome:"fornecedor", rotulo:"Oficina / fornecedor", tipo:"texto", valor: m?.fornecedor || "", lista: nomesAtivos(dados.fornecedores) },
       { nome:"valor_pecas", rotulo:"Valor peças (R$)", tipo:"moeda", valor: m?.valor_pecas ?? "" },
       { nome:"valor_mao_obra", rotulo:"Valor mão de obra (R$)", tipo:"moeda", valor: m?.valor_mao_obra ?? "" },
       { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: m?.natureza || "Variavel" },
@@ -972,54 +1063,116 @@ function abrirModalManutencao(id) {
 }
 
 /* ═══════════════ ADMINISTRAÇÃO ═══════════════ */
+// Cada entrada aqui vira um cartão na aba Administração, com listagem e
+// "+ Novo" — evita repetir a mesma função 8 vezes.
+const CADASTROS_ADMIN = [
+  { chave:"equipamentos",   tabela:"equipamentos",     titulo:"Equipamentos",
+    nota:"aparecem no seletor de equipamento e nos formulários. Desative em vez de excluir se já tiver lançamentos vinculados.",
+    abrir:"abrirModalEquipamentoAdmin" },
+  { chave:"centrosCusto",   tabela:"centros_custo",    titulo:"Centros de custo",
+    nota:"cartões de crédito, financiamentos, contas — o que financia cada gasto. Desative em vez de excluir se já tiver lançamentos.",
+    abrir:"abrirModalCentroCusto" },
+  { chave:"clientes",       tabela:"clientes",         titulo:"Clientes",
+    nota:"telefone e valor de hora padrão preenchem sozinhos ao escolher o cliente em Recebimentos.",
+    abrir:"abrirModalCliente" },
+  { chave:"fornecedores",   tabela:"fornecedores",     titulo:"Fornecedores / Oficinas",
+    nota:"postos de combustível, oficinas — sugestão automática no Diesel e na Manutenção.",
+    abrir:"abrirModalFornecedor" },
+  { chave:"gruposDespesa",  tabela:"grupos_despesa",   titulo:"Grupos de despesa",
+    nota:"categorias usadas no Extrato e na Agenda.",
+    abrir:"abrirModalGrupoDespesa" },
+  { chave:"contasBancarias",tabela:"contas_bancarias", titulo:"Contas bancárias",
+    nota:"contas usadas no Extrato.",
+    abrir:"abrirModalContaBancaria" },
+  { chave:"operadores",     tabela:"operadores",       titulo:"Operadores",
+    nota:"quem opera a máquina — sugestão automática em Recebimentos.",
+    abrir:"abrirModalOperador" },
+  { chave:"obras",          tabela:"obras",            titulo:"Obras / Contratos",
+    nota:"pra separar rentabilidade por obra, além do cliente — sugestão automática em Recebimentos.",
+    abrir:"abrirModalObra" },
+];
+
 function renderAdministracao() {
-  $("admin-equipamentos").innerHTML = dados.equipamentos.length
-    ? dados.equipamentos.map(e => `
-      <div class="admin-linha">
-        <span class="admin-linha-nome">${escHtml(e.nome)}</span>
-        ${e.ativo ? "" : `<span class="chip chip-status chip-pendente">Inativo</span>`}
-        <button class="btn-editar" onclick="abrirModalEquipamentoAdmin(${e.id})" title="Editar">✎</button>
-      </div>`).join("")
-    : '<div class="vazio">Nenhum equipamento cadastrado.</div>';
+  $("admin-cadastros").innerHTML = CADASTROS_ADMIN.map(c => {
+    const lista = dados[c.chave] || [];
+    const linhas = lista.length
+      ? lista.map(item => `
+        <div class="admin-linha">
+          <span class="admin-linha-nome">${escHtml(item.nome)}</span>
+          ${item.ativo === false ? `<span class="chip chip-status chip-pendente">Inativo</span>` : ""}
+          <button class="btn-editar" onclick="${c.abrir}(${item.id})" title="Editar">✎</button>
+        </div>`).join("")
+      : '<div class="vazio">Nenhum registro cadastrado.</div>';
+    return `<div class="cartao">
+      <div class="cartao-cabeca">
+        <h2 class="titulo-risco"><span>${c.titulo}</span></h2>
+        <button class="btn-primario" onclick="${c.abrir}(null)">+ Novo</button>
+      </div>
+      <p class="cartao-nota">${c.nota}</p>
+      <div>${linhas}</div>
+    </div>`;
+  }).join("");
 
-  $("admin-centros").innerHTML = dados.centrosCusto.length
-    ? dados.centrosCusto.map(c => `
+  // feriados: campos diferentes (data + descrição), sem toggle de ativo
+  const fer = dados.feriados.slice().sort((a,b) => a.data.localeCompare(b.data));
+  $("admin-feriados").innerHTML = fer.length
+    ? fer.map(f => `
       <div class="admin-linha">
-        <span class="admin-linha-nome">${escHtml(c.nome)}</span>
-        ${c.ativo ? "" : `<span class="chip chip-status chip-pendente">Inativo</span>`}
-        <button class="btn-editar" onclick="abrirModalCentroCusto(${c.id})" title="Editar">✎</button>
+        <span class="admin-linha-nome">${fData(f.data)} — ${escHtml(f.descricao || "Feriado")}</span>
+        <button class="btn-editar" onclick="abrirModalFeriado(${f.id})" title="Editar">✎</button>
       </div>`).join("")
-    : '<div class="vazio">Nenhum centro de custo cadastrado.</div>';
+    : '<div class="vazio">Nenhum feriado cadastrado.</div>';
 }
 
-function abrirModalEquipamentoAdmin(id) {
-  const e = id ? dados.equipamentos.find(x => x.id === id) : null;
-  abrirModal({
-    titulo: e ? "Editar equipamento" : "Novo equipamento",
-    tabela: "equipamentos", id,
-    campos: [
-      { nome:"nome", rotulo:"Nome", tipo:"texto", largo:true, valor: e?.nome || "" },
-      { nome:"ativo", rotulo:"Ativo (aparece no seletor e nos formulários)", tipo:"checkbox", valor: e?.ativo ?? true },
-    ],
-    montar(f) {
-      if (!f.nome.trim()) throw "Informe o nome do equipamento.";
-      return { nome: f.nome.trim(), ativo: !!f.ativo };
-    }
-  });
+// Fábrica: cria a função abrirModalXxx(id) para um cadastro simples
+// (nome + campos extras opcionais + ativo). Evita repetir o boilerplate.
+function criarModalCadastro(tabela, chaveDados, tituloSingular, camposExtra = []) {
+  return function (id) {
+    const item = id ? dados[chaveDados].find(x => x.id === id) : null;
+    abrirModal({
+      titulo: item ? "Editar " + tituloSingular : "Novo " + tituloSingular,
+      tabela, id,
+      campos: [
+        { nome:"nome", rotulo:"Nome", tipo:"texto", largo:true, valor: item?.nome || "" },
+        ...camposExtra.map(c => ({ ...c, valor: item ? (item[c.nome] ?? "") : "" })),
+        { nome:"ativo", rotulo:"Ativo", tipo:"checkbox", valor: item?.ativo ?? true },
+      ],
+      montar(f) {
+        if (!f.nome.trim()) throw "Informe o nome.";
+        const extra = {};
+        camposExtra.forEach(c => {
+          extra[c.nome] = c.tipo === "moeda" ? (f[c.nome] ? numDeMoeda(f[c.nome]) : null) : String(f[c.nome] || "").trim();
+        });
+        return { nome: f.nome.trim(), ...extra, ativo: !!f.ativo };
+      }
+    });
+  };
 }
 
-function abrirModalCentroCusto(id) {
-  const c = id ? dados.centrosCusto.find(x => x.id === id) : null;
+const abrirModalEquipamentoAdmin = criarModalCadastro("equipamentos", "equipamentos", "equipamento");
+const abrirModalCentroCusto      = criarModalCadastro("centros_custo", "centrosCusto", "centro de custo");
+const abrirModalFornecedor       = criarModalCadastro("fornecedores", "fornecedores", "fornecedor");
+const abrirModalGrupoDespesa     = criarModalCadastro("grupos_despesa", "gruposDespesa", "grupo de despesa");
+const abrirModalContaBancaria    = criarModalCadastro("contas_bancarias", "contasBancarias", "conta bancária");
+const abrirModalOperador         = criarModalCadastro("operadores", "operadores", "operador");
+const abrirModalObra             = criarModalCadastro("obras", "obras", "obra/contrato");
+const abrirModalCliente          = criarModalCadastro("clientes", "clientes", "cliente", [
+  { nome:"telefone", rotulo:"Telefone", tipo:"texto" },
+  { nome:"valor_hora_padrao", rotulo:"Valor de hora padrão (R$)", tipo:"moeda" },
+]);
+
+function abrirModalFeriado(id) {
+  const f0 = id ? dados.feriados.find(x => x.id === id) : null;
   abrirModal({
-    titulo: c ? "Editar centro de custo" : "Novo centro de custo",
-    tabela: "centros_custo", id,
+    titulo: f0 ? "Editar feriado" : "Novo feriado",
+    tabela: "feriados", id,
     campos: [
-      { nome:"nome", rotulo:"Nome (ex.: Cartão Nubank, Financiamento Caixa)", tipo:"texto", largo:true, valor: c?.nome || "" },
-      { nome:"ativo", rotulo:"Ativo (aparece nos formulários)", tipo:"checkbox", valor: c?.ativo ?? true },
+      { nome:"data", rotulo:"Data", tipo:"date", valor: f0?.data || hoje() },
+      { nome:"descricao", rotulo:"Descrição", tipo:"texto", largo:true, valor: f0?.descricao || "" },
     ],
     montar(f) {
-      if (!f.nome.trim()) throw "Informe o nome do centro de custo.";
-      return { nome: f.nome.trim(), ativo: !!f.ativo };
+      if (!f.data) throw "Informe a data.";
+      return { data: f.data, descricao: f.descricao.trim() };
     }
   });
 }
@@ -1039,7 +1192,11 @@ function calcularDataAgenda(ano, mes, diaTxt) {
   const diaClamp = Math.min(diaNum, ultimoDiaMes(ano, mes));
   return new Date(ano, mes - 1, diaClamp);
 }
-function ehDiaUtil(data) { const d = data.getDay(); return d !== 0 && d !== 6; }
+function ehDiaUtil(data) {
+  const d = data.getDay();
+  if (d === 0 || d === 6) return false;
+  return !dados.feriados.some(f => f.data === isoLocal(data));
+}
 const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 
 // Gera as ocorrências de um compromisso replicado por N meses seguidos
@@ -1118,16 +1275,72 @@ function renderAgenda() {
 function abrirModalAgendaItem(item, dia) {
   const linhas = dados.age.filter(a => a.item === item && a.dia === dia && a.ano === anoAgenda);
   if (!linhas.length) return;
+  // só uma ocorrência: já vai direto pro seletor BAIXAR/EDITAR
+  if (linhas.length === 1) { abrirModalEscolhaAcaoAgenda(linhas[0].id); return; }
   const opcoes = linhas.map(a => `${a.id}|${MESES[a.mes-1]} — ${brl0(a.valor)}`);
   abrirModal({
     titulo: "Compromisso: " + item,
     tabela: "_escolha_agenda",
     rotuloSalvar: "Continuar",
     campos: [
-      { nome:"_id", rotulo:"Escolha o mês para editar", tipo:"select", largo:true, opcoes: opcoes, valor: String(linhas[0].id) },
+      { nome:"_id", rotulo:"Escolha o mês", tipo:"select", largo:true, opcoes: opcoes, valor: String(linhas[0].id) },
     ],
     montar(f) { return { _id: Number(f._id) }; },
-    aoSalvar(reg) { fecharModal(); abrirModalAgenda(reg._id); }
+    aoSalvar(reg) { fecharModal(); abrirModalEscolhaAcaoAgenda(reg._id); }
+  });
+}
+
+// Seletor BAIXAR / EDITAR — aparece antes de abrir o formulário completo,
+// já que na maioria das vezes o que se quer fazer é só dar baixa.
+function abrirModalEscolhaAcaoAgenda(id) {
+  const a = dados.age.find(x => x.id === id);
+  if (!a) return;
+  const jaPago = a.status_pagamento === "pago";
+  abrirModal({
+    titulo: a.item,
+    tabela: "_acao_agenda",
+    rotuloSalvar: "Continuar",
+    campos: [
+      { nome:"_acao", rotulo:"O que deseja fazer?", tipo:"select", largo:true,
+        opcoes: [
+          jaPago ? "baixar|Estornar baixa (voltar para em aberto)" : "baixar|Dar baixa (marcar como pago)",
+          "editar|Editar dados do compromisso",
+        ],
+        valor: "baixar" },
+    ],
+    montar(f) { return { _acao: f._acao }; },
+    aoSalvar(reg) {
+      fecharModal();
+      if (reg._acao === "baixar") abrirModalBaixaAgenda(id); else abrirModalAgenda(id);
+    }
+  });
+}
+
+// Mini formulário só pra dar baixa (ou estornar) — sem precisar abrir o
+// formulário completo de edição.
+function abrirModalBaixaAgenda(id) {
+  const a = dados.age.find(x => x.id === id);
+  if (!a) return;
+  const jaPago = a.status_pagamento === "pago";
+  abrirModal({
+    titulo: (jaPago ? "Estornar baixa: " : "Dar baixa: ") + a.item,
+    tabela: "_baixa_agenda",
+    rotuloSalvar: jaPago ? "Estornar baixa" : "Confirmar baixa",
+    campos: jaPago ? [] : [
+      { nome:"data_pagamento", rotulo:"Data do pagamento", tipo:"date", valor: hoje() },
+    ],
+    montar(f) {
+      const base = {
+        item: a.item, equipamento_id: a.equipamento_id, grupo: a.grupo, ano: a.ano, dia: a.dia, mes: a.mes,
+        valor: a.valor, natureza: a.natureza, centro_custo_id: a.centro_custo_id,
+      };
+      return jaPago
+        ? { ...base, status_pagamento: "pendente", data_pagamento: null }
+        : { ...base, status_pagamento: "pago", data_pagamento: f.data_pagamento || hoje() };
+    },
+    async aoSalvar(reg) {
+      await salvarAgendaFinal(id, [reg], a.lancamento_id);
+    }
   });
 }
 
@@ -1136,7 +1349,7 @@ function abrirModalAgenda(id) {
   const campos = [
     { nome:"item", rotulo:"Compromisso", tipo:"texto", largo:true, valor: a?.item || "" },
     { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(true), valor: equipamentoPadrao(a?.equipamento_id, true) },
-    { nome:"grupo", rotulo:"Grupo (no extrato, quando der baixa)", tipo:"select", opcoes: GRUPOS_SAIDA, valor: a?.grupo || "Outras despesas" },
+    { nome:"grupo", rotulo:"Grupo (no extrato, quando der baixa)", tipo:"select", opcoes: opcoesGrupoDespesa(), valor: a?.grupo || "Outras despesas" },
     { nome:"ano", rotulo:"Ano", tipo:"numero", valor: a?.ano || anoAgenda },
     { nome:"dia", rotulo:"Dia do vencimento", tipo:"texto", valor: a?.dia || "" },
     { nome:"mes", rotulo:"Mês", tipo:"select",
@@ -1340,6 +1553,13 @@ function abrirModal(ctx) {
   // absorve ponto/vírgula digitados — quem manda é o dígito, não o separador)
   document.querySelectorAll('#modal-campos [data-moeda]').forEach(ligarMascaraMoeda);
 
+  // hooks de campo (ex.: autopreencher valor de hora ao escolher o cliente)
+  ctx.campos.forEach(c => {
+    if (!c.aoMudar) return;
+    const el = document.querySelector(`#modal-campos [data-campo="${c.nome}"]`);
+    if (el) el.addEventListener("input", () => c.aoMudar(el.value));
+  });
+
   const btnExcluir = $("modal-excluir");
   btnExcluir.classList.toggle("oculto", !ctx.id);
   btnExcluir.onclick = () => excluirRegistro();
@@ -1471,7 +1691,7 @@ function exportarExtratoCSV() {
   const comSaldo = dados.lanc.map(l => ({ ...l, saldo: (acc += l.entrada - l.saida) }));
   const q = filtroExt.busca.trim().toLowerCase();
   const filtrado = comSaldo.filter(l =>
-    (filtroExt.mes === "todos" || l.data.slice(0,7) === filtroExt.mes) &&
+    dentroDoPeriodo(l.data) &&
     (filtroExt.grupo === "todos" || l.grupo === filtroExt.grupo) &&
     (!q || (l.descricao + " " + l.subgrupo + " " + l.grupo).toLowerCase().includes(q))
   );
