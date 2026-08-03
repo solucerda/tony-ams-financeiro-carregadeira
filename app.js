@@ -832,7 +832,7 @@ function renderRecebimentos() {
     <td class="num td-mudo">${r.valor_hora ? brl0(r.valor_hora) : "—"}</td>
     <td class="num">${r.valor_total ? brl0(r.valor_total) : "—"}</td>
     <td class="num ${r.valor_pago ? "pos" : ""}">${r.valor_pago ? brl0(r.valor_pago) : "—"}</td>
-    <td class="td-mudo">${escHtml(r.forma) || "—"}</td>
+    <td class="td-mudo">${escHtml(r.forma) || "—"}${r.centro_custo_id ? `<div class="td-natureza">${escHtml(nomeCentroCusto(r.centro_custo_id))}</div>` : ""}</td>
     <td><button class="btn-editar" onclick="abrirModalRecebimento(${r.id})" title="Editar">✎</button></td>
   </tr>`).join("") ||
   '<tr><td colspan="9" class="vazio">Nenhum registro. Use o botão acima para lançar horas trabalhadas ou pagamentos.</td></tr>';
@@ -867,6 +867,7 @@ function abrirModalRecebimento(id) {
       { nome:"valor_pago", rotulo:"Valor pago (R$)", tipo:"moeda", valor: r?.valor_pago ?? 0 },
       { nome:"forma", rotulo:"Forma de pagamento", tipo:"select", largo:true,
         opcoes:["|—","Bradesco- Empresa","Caixa - Dinheiro","Pix","Cheque"], valor: r?.forma || "" },
+      { nome:"centro_custo_id", rotulo:"Centro de custo (onde o dinheiro entrou)", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(r?.centro_custo_id) },
     ],
     montar(f) {
       if (!f.cliente.trim()) throw "Informe o cliente.";
@@ -881,7 +882,7 @@ function abrirModalRecebimento(id) {
         hora_inicial: hi, hora_final: hf, horas,
         valor_hora: vh, valor_total: horas * vh,
         valor_pago: numDeMoeda(f.valor_pago),
-        forma: f.forma,
+        forma: f.forma, centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
       };
     },
     async aposSalvar(salvo) {
@@ -889,6 +890,7 @@ function abrirModalRecebimento(id) {
         origemId: salvo.id, tabelaOrigem: "recebimentos", lancamentoId: r?.lancamento_id ?? salvo.lancamento_id,
         valor: salvo.valor_pago, tipo: "entrada", data: salvo.data,
         grupo: "Recebimentos", descricao: "Recebimento - " + salvo.cliente,
+        centroCustoId: salvo.centro_custo_id,
         equipamentoId: salvo.equipamento_id,
       });
     },
