@@ -16,6 +16,7 @@ let filtroExt = { modo: "mes", mes: "todos", semana: "", dia: "", de: "", ate: "
 let filtroCliente = "todos";
 let filtroPainel = { periodo: "tudo", natureza: "todos", tipoFluxo: "bar", agrupar: "grupo", visual: "lista" };
 let filtroManutencao = { tipo: "todos", status: "todos" };
+let filtroDiesel = { centro: "todos", combustivel: "todos" };
 const graficos = {};           // instâncias Chart.js
 
 const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
@@ -322,6 +323,10 @@ async function iniciarApp() {
   ligarSegmentado("pnl-visual", (v) => { filtroPainel.visual = v; renderPainel(); });
 
   // filtros de manutenção
+  // filtros do abastecimento
+  $("die-filtro-centro").addEventListener("change", e => { filtroDiesel.centro = e.target.value; renderDiesel(); });
+  $("die-filtro-combustivel").addEventListener("change", e => { filtroDiesel.combustivel = e.target.value; renderDiesel(); });
+
   $("man-filtro-tipo").addEventListener("change", e => { filtroManutencao.tipo = e.target.value; renderManutencao(); });
   ligarSegmentado("man-filtro-status", (v) => { filtroManutencao.status = v; renderManutencao(); });
 
@@ -900,10 +905,24 @@ function abrirModalRecebimento(id) {
 
 /* ═══════════════ DIESEL ═══════════════ */
 function renderDiesel() {
+  // filtro de centro de custo: só lista os que já têm abastecimento
+  const centrosUsados = [...new Set(dados.die.map(d => d.centro_custo_id).filter(x => x != null))];
+  const selCentro = $("die-filtro-centro");
+  const atual = selCentro.value || filtroDiesel.centro;
+  selCentro.innerHTML = '<option value="todos">Todos os centros de custo</option>' +
+    centrosUsados.map(id => `<option value="${id}">${escHtml(nomeCentroCusto(id))}</option>`).join("");
+  selCentro.value = (atual !== "todos" && centrosUsados.includes(Number(atual))) ? atual : "todos";
+  filtroDiesel.centro = selCentro.value;
+
+  const doFiltro = dados.die.filter(d =>
+    (filtroDiesel.centro === "todos" || String(d.centro_custo_id) === filtroDiesel.centro) &&
+    (filtroDiesel.combustivel === "todos" || d.combustivel === filtroDiesel.combustivel)
+  );
+
   let litros = 0, custo = 0, horas = 0, aPagar = 0, vencido = 0;
   const pontos = [];
   const hj = hoje();
-  for (const d of dados.die) {
+  for (const d of doFiltro) {
     litros += d.litros; custo += d.valor_total;
     if (d.horas) horas += d.horas;
     if (d.valor_unit > 0 && d.litros > 0) pontos.push({ x: fData(d.data), y: d.valor_unit });
@@ -931,7 +950,7 @@ function renderDiesel() {
     options: opcoesGrafico({ legenda:false, decimais:2 })
   });
 
-  $("die-corpo").innerHTML = dados.die.slice().reverse().map(d => {
+  $("die-corpo").innerHTML = doFiltro.slice().reverse().map(d => {
     const venceu = d.status === "pendente" && d.vencimento && d.vencimento < hj;
     const statusHtml = d.status === "pendente"
       ? `<span class="chip chip-status ${venceu ? "chip-vencido" : "chip-pendente"}">${venceu ? "Vencido" : "A pagar"}</span>`
@@ -951,7 +970,7 @@ function renderDiesel() {
     <td><button class="btn-editar" onclick="abrirModalDiesel(${d.id})" title="Editar">✎</button></td>
   </tr>`;
   }).join("") ||
-  '<tr><td colspan="8" class="vazio">Nenhum abastecimento registrado.</td></tr>';
+  '<tr><td colspan="8" class="vazio">Nenhum abastecimento para este filtro.</td></tr>';
 }
 
 function abrirModalDiesel(id) {
