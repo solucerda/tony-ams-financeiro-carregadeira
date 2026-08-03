@@ -523,7 +523,7 @@ function renderPainel() {
   let horas = 0, faturado = 0;
   for (const r of periodoRec) { horas += r.horas; faturado += r.valor_total; }
   let faturadoTotal = 0, recebidoTotal = 0;
-  for (const r of dados.rec) { faturadoTotal += r.valor_total; recebidoTotal += r.valor_pago; }
+  for (const r of dados.rec) { faturadoTotal += r.valor_total; recebidoTotal += r.recebido ? (r.valor_pago || r.valor_total) : 0; }
   const emAberto = faturadoTotal - recebidoTotal;
   const aPagar = dados.lanc.filter(l => l.status === "pendente").reduce((s,l) => s + l.saida, 0);
   let litros = 0, custoDie = 0, horasMaq = 0;
@@ -820,7 +820,10 @@ function renderRecebimentos() {
     if (!porCliente[c]) porCliente[c] = { horas:0, faturado:0, recebido:0 };
     porCliente[c].horas    += r.horas;
     porCliente[c].faturado += r.valor_total;
-    porCliente[c].recebido += r.valor_pago;
+    // só conta como recebido o que está marcado como "Recebido?" — é a
+    // mesma regra que decide o que entra no Extrato, então os cards batem
+    // com a contabilidade de verdade.
+    porCliente[c].recebido += r.recebido ? (r.valor_pago || r.valor_total) : 0;
   }
   $("rec-clientes").innerHTML = Object.entries(porCliente).map(([c, d]) => {
     const aberto = d.faturado - d.recebido;
