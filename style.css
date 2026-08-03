@@ -260,6 +260,7 @@ input[data-moeda="1"] { text-align: right; font-family: var(--fonte-mono); }
   font-size: 12.5px; color: var(--texto-mudo); margin-bottom: 10px;
   font-family: var(--fonte-mono);
 }
+.pendente-resumo { color: var(--amarelo); }
 
 /* ── Tabelas ───────────────────────────────────────────── */
 .tabela-rolagem { overflow-x: auto; border: 1px solid var(--borda); border-radius: 12px; background: var(--superficie); box-shadow: var(--sombra-1); }

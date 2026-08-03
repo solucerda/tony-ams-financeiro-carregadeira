@@ -454,8 +454,12 @@ function rodarSemTravar(fn, nome) {
 }
 
 /* ── Cálculos ──────────────────────────────────────────── */
+// pendente = compromisso previsto, dinheiro ainda não mudou de mão —
+// não pode contar no saldo em caixa nem nos totais de fluxo realizado.
+const ehRealizado = (l) => l.status !== "pendente";
+
 function saldoAtual() {
-  return dados.lanc.reduce((s, l) => s + l.entrada - l.saida, dados.saldoInicial);
+  return dados.lanc.filter(ehRealizado).reduce((s, l) => s + l.entrada - l.saida, dados.saldoInicial);
 }
 
 function renderSaldoTopo() {
@@ -479,13 +483,15 @@ function noPeriodo(lista) {
 }
 
 function renderPainel() {
-  const periodoLanc = noPeriodo(dados.lanc);
+  const periodoLanc = noPeriodo(dados.lanc).filter(ehRealizado);
   const periodoRec  = noPeriodo(dados.rec);
   const periodoDie  = noPeriodo(dados.die);
 
-  // KPIs — "Saldo em caixa" e "Em aberto a receber" são o estado atual do
-  // negócio (não mudam com o filtro de período); os demais refletem só a
-  // janela selecionada, pra comparar meses/trimestres entre si.
+  // KPIs — "Saldo em caixa", "Em aberto a receber" e "Contas a pagar" são o
+  // estado atual do negócio (não mudam com o filtro de período); os demais
+  // refletem só a janela selecionada, pra comparar meses/trimestres.
+  // Só entram aqui movimentações REALIZADAS — pendentes (a pagar/receber)
+  // não são fluxo de caixa de fato ainda, têm sua própria KPI abaixo.
   let ent = 0, sai = 0, saiOperacional = 0;
   for (const l of periodoLanc) {
     ent += l.entrada;
@@ -497,6 +503,7 @@ function renderPainel() {
   let faturadoTotal = 0, recebidoTotal = 0;
   for (const r of dados.rec) { faturadoTotal += r.valor_total; recebidoTotal += r.valor_pago; }
   const emAberto = faturadoTotal - recebidoTotal;
+  const aPagar = dados.lanc.filter(l => l.status === "pendente").reduce((s,l) => s + l.saida, 0);
   let litros = 0, custoDie = 0, horasMaq = 0;
   for (const d of periodoDie) {
     litros += d.litros; custoDie += d.valor_total;
@@ -512,11 +519,12 @@ function renderPainel() {
 
   $("kpis-painel").innerHTML = [
     kpi("Saldo em caixa", brl(s), "bancos + dinheiro · total", s >= 0 ? "pos" : "neg"),
-    kpi("Entradas", brl0(ent), "", "pos"),
-    kpi("Saídas", brl0(sai), "", "neg"),
+    kpi("Entradas", brl0(ent), "realizado", "pos"),
+    kpi("Saídas", brl0(sai), "realizado", "neg"),
     kpi("Resultado", brl0(res), "entradas − saídas", res >= 0 ? "pos" : "neg"),
     kpi("Resultado operacional", brl0(resOperacional), "sem Investimento", resOperacional >= 0 ? "pos" : "neg"),
     kpi("Em aberto a receber", brl0(emAberto), "faturado − recebido · total", emAberto > 0.5 ? "neg" : "pos"),
+    kpi("Contas a pagar", brl0(aPagar), "diesel, manutenção, agenda · total", aPagar > 0.5 ? "neg" : "pos"),
     kpi("Horas faturadas", num(horas) + " h", brl0(faturado) + " gerados"),
     kpi("Diesel por hora", brl(custoHora), num(litros,0) + " L · " + brl0(custoDie)),
   ].join("");
@@ -534,7 +542,7 @@ function renderPainel() {
   // mesmo quando o gráfico mostra só uma janela de meses
   let acc = dados.saldoInicial;
   const saldoPorMes = {};
-  for (const l of dados.lanc.slice().sort((a,b) => a.data.localeCompare(b.data))) {
+  for (const l of dados.lanc.filter(ehRealizado).slice().sort((a,b) => a.data.localeCompare(b.data))) {
     const ym = l.data.slice(0,7);
     acc += l.entrada - l.saida;
     saldoPorMes[ym] = acc;
@@ -673,9 +681,13 @@ function prepararFiltrosExtrato() {
 }
 
 function renderExtrato() {
-  // saldo corrido na ordem cronológica
+  // saldo corrido na ordem cronológica — pendentes não entram na conta
+  // (o dinheiro ainda não saiu/entrou), mas continuam aparecendo na lista.
   let acc = dados.saldoInicial;
-  const comSaldo = dados.lanc.map(l => ({ ...l, saldo: (acc += l.entrada - l.saida) }));
+  const comSaldo = dados.lanc.map(l => {
+    if (ehRealizado(l)) acc += l.entrada - l.saida;
+    return { ...l, saldo: acc };
+  });
 
   const q = filtroExt.busca.trim().toLowerCase();
   const filtrado = comSaldo.filter(l =>
@@ -684,29 +696,54 @@ function renderExtrato() {
     (!q || (l.descricao + " " + l.subgrupo + " " + l.grupo).toLowerCase().includes(q))
   ).reverse();
 
-  let ent = 0, sai = 0;
-  for (const l of filtrado) { ent += l.entrada; sai += l.saida; }
+  let ent = 0, sai = 0, pendEnt = 0, pendSai = 0;
+  for (const l of filtrado) {
+    if (ehRealizado(l)) { ent += l.entrada; sai += l.saida; }
+    else { pendEnt += l.entrada; pendSai += l.saida; }
+  }
   $("ext-resumo").innerHTML =
     `<span>${filtrado.length} lançamentos</span>
      <span class="pos">Entradas ${brl0(ent)}</span>
      <span class="neg">Saídas ${brl0(sai)}</span>
-     <span>Líquido ${brl0(ent - sai)}</span>`;
+     <span>Líquido ${brl0(ent - sai)}</span>
+     ${(pendEnt || pendSai) ? `<span class="pendente-resumo">Pendente: ${pendSai ? brl0(pendSai) + " a pagar" : ""}${pendEnt && pendSai ? " · " : ""}${pendEnt ? brl0(pendEnt) + " a receber" : ""}</span>` : ""}`;
+
+// Se este lançamento foi criado automaticamente pelo Diesel, Manutenção,
+// Agenda ou Recebimentos, devolve de onde veio — editar tem que ser feito
+// na origem, senão a próxima sincronização sobrescreve a mudança.
+function origemDoLancamento(id) {
+  const d = dados.die.find(x => x.lancamento_id === id);
+  if (d) return { tabela: "Diesel", fn: "abrirModalDiesel", id: d.id };
+  const m = dados.man.find(x => x.lancamento_id === id);
+  if (m) return { tabela: "Manutenção", fn: "abrirModalManutencao", id: m.id };
+  const a = dados.age.find(x => x.lancamento_id === id);
+  if (a) return { tabela: "Agenda", fn: "abrirModalAgenda", id: a.id };
+  const r = dados.rec.find(x => x.lancamento_id === id);
+  if (r) return { tabela: "Recebimentos", fn: "abrirModalRecebimento", id: r.id };
+  return null;
+}
 
   $("ext-corpo").innerHTML = filtrado.map(l => {
     const valor = l.entrada > 0 ? l.entrada : -l.saida;
     const natTxt = l.natureza && l.natureza !== "Receita" ? ROTULO_NATUREZA[l.natureza] || l.natureza : "";
     const subTxt = [natTxt, nomeCentroCusto(l.centro_custo_id)].filter(Boolean).join(" · ");
+    const pendente = l.status === "pendente";
+    const origem = origemDoLancamento(l.id);
+    const botaoEditar = origem
+      ? `<button class="btn-editar" onclick="${origem.fn}(${origem.id})" title="Editar pelo ${origem.tabela}">↗</button>`
+      : `<button class="btn-editar" onclick="abrirModalLancamento(${l.id})" title="Editar">✎</button>`;
     return `<tr>
       <td class="td-data">${fData(l.data)}</td>
       <td>
         <span class="chip" style="border-color:${CORES_GRUPO[l.grupo]||"#3A3F48"};color:${CORES_GRUPO[l.grupo]||"#A3A8B4"}">${escHtml(l.grupo)}</span>
-        ${subTxt ? `<div class="td-natureza">${escHtml(subTxt)}</div>` : ""}
+        ${pendente ? `<span class="chip chip-status chip-pendente">${l.saida > 0 ? "A pagar" : "A receber"}</span>` : ""}
+        ${subTxt ? `<div class="td-natureza">${escHtml(subTxt)}${origem ? " · via " + origem.tabela : ""}</div>` : (origem ? `<div class="td-natureza">via ${origem.tabela}</div>` : "")}
       </td>
       <td class="td-desc">${escHtml(l.descricao || l.subgrupo || "—")}</td>
       <td class="td-mudo">${escHtml(l.banco)}</td>
-      <td class="num ${valor >= 0 ? "pos" : "neg"}">${brl(valor)}</td>
+      <td class="num ${pendente ? "" : (valor >= 0 ? "pos" : "neg")} ${pendente ? "td-mudo" : ""}">${brl(valor)}</td>
       <td class="num td-saldo ${l.saldo < 0 ? "neg" : ""}">${brl0(l.saldo)}</td>
-      <td><button class="btn-editar" onclick="abrirModalLancamento(${l.id})" title="Editar">✎</button></td>
+      <td>${botaoEditar}</td>
     </tr>`;
   }).join("") ||
   '<tr><td colspan="7" class="vazio">Nenhum lançamento para este filtro. Ajuste o mês ou o grupo acima.</td></tr>';
@@ -728,6 +765,7 @@ function abrirModalLancamento(id) {
         valor: (l?.natureza && l.natureza !== "Receita") ? l.natureza : (l?.grupo === "Investimento" ? "Investimento" : "Variavel") },
       { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(l?.centro_custo_id) },
       { nome:"banco", rotulo:"Conta", tipo:"select", opcoes: opcoesContaBancaria(), valor: l?.banco || opcoesContaBancaria()[0] || "" },
+      { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Realizado (pago)","pendente|A pagar/receber (pendente)"], valor: l?.status || "pago" },
       { nome:"_valor", rotulo:"Valor (R$)", tipo:"moeda", valor: l ? (l.entrada > 0 ? l.entrada : l.saida) : "" },
       { nome:"descricao", rotulo:"Descrição", tipo:"texto", largo:true, valor: l?.descricao || "" },
     ],
@@ -737,6 +775,7 @@ function abrirModalLancamento(id) {
       return {
         data: f.data,
         banco: f.banco,
+        status: f.status,
         equipamento_id: f.equipamento_id ? Number(f.equipamento_id) : null,
         grupo: f._tipo === "entrada" ? "Recebimentos" : f.grupo,
         subgrupo: "",
@@ -843,6 +882,7 @@ function abrirModalRecebimento(id) {
         origemId: salvo.id, tabelaOrigem: "recebimentos", lancamentoId: r?.lancamento_id ?? salvo.lancamento_id,
         valor: salvo.valor_pago, tipo: "entrada", data: salvo.data,
         grupo: "Recebimentos", descricao: "Recebimento - " + salvo.cliente,
+        equipamentoId: salvo.equipamento_id,
       });
     },
     async aoExcluir() { await removerLancamentoVinculado(r?.lancamento_id); },
@@ -936,13 +976,13 @@ function abrirModalDiesel(id) {
       };
     },
     async aposSalvar(salvo) {
-      // só vira saída de caixa quando estiver PAGO — se está "a pagar",
-      // o dinheiro ainda não saiu, então não deve mexer no extrato/saldo.
+      // sempre sincroniza com o extrato — "pago" entra como realizado,
+      // "a pagar" entra como pendente (não conta no saldo até dar baixa).
       await sincronizarLancamento({
         origemId: salvo.id, tabelaOrigem: "diesel", lancamentoId: d?.lancamento_id ?? salvo.lancamento_id,
-        valor: salvo.status === "pago" ? salvo.valor_total : 0, tipo: "saida", data: salvo.data,
+        valor: salvo.valor_total, tipo: "saida", data: salvo.data, status: salvo.status,
         grupo: "Combustível", descricao: "Abastecimento" + (salvo.local ? " - " + salvo.local : ""),
-        natureza: salvo.natureza, centroCustoId: salvo.centro_custo_id,
+        natureza: salvo.natureza, centroCustoId: salvo.centro_custo_id, equipamentoId: salvo.equipamento_id,
       });
     },
     async aoExcluir() { await removerLancamentoVinculado(d?.lancamento_id); },
@@ -1058,14 +1098,15 @@ function abrirModalManutencao(id) {
       };
     },
     async aposSalvar(salvo) {
-      // só entra no extrato se já foi realizada E paga; senão fica só como
-      // registro (agendada) ou conta a pagar, sem mexer no caixa ainda.
+      // sempre sincroniza com o extrato: agendada ou a pagar entra como
+      // pendente (é um compromisso previsto, mas o dinheiro ainda não saiu);
+      // só realizada + paga conta como movimentação de fato.
       await sincronizarLancamento({
         origemId: salvo.id, tabelaOrigem: "manutencoes", lancamentoId: m?.lancamento_id ?? salvo.lancamento_id,
-        valor: (salvo.realizada && salvo.status_pagamento === "pago") ? salvo.valor_total : 0,
-        tipo: "saida", data: salvo.data, grupo: "Manutenção",
+        valor: salvo.valor_total, tipo: "saida", data: salvo.data, grupo: "Manutenção",
+        status: (salvo.realizada && salvo.status_pagamento === "pago") ? "pago" : "pendente",
         descricao: "Manutenção" + (salvo.fornecedor ? " - " + salvo.fornecedor : ""),
-        natureza: salvo.natureza, centroCustoId: salvo.centro_custo_id,
+        natureza: salvo.natureza, centroCustoId: salvo.centro_custo_id, equipamentoId: salvo.equipamento_id,
       });
     },
     async aoExcluir() { await removerLancamentoVinculado(m?.lancamento_id); },
@@ -1500,8 +1541,9 @@ async function salvarAgendaFinal(id, linhas, lancamentoIdExistente = null) {
     return;
   }
 
-  // dar baixa gera (ou atualiza) a movimentação no extrato; voltar pra
-  // "em aberto" remove a movimentação, exatamente como no Diesel/Manutenção.
+  // sempre gera (ou atualiza) a movimentação no extrato — em aberto entra
+  // como pendente (aparece desde a criação do compromisso, não só na
+  // baixa), dar baixa muda pra pago; exatamente como Diesel/Manutenção.
   for (const s of salvos || []) {
     const linkAtual = id ? lancamentoIdExistente : null;
     const tipo = s.valor >= 0 ? "saida" : "entrada";
@@ -1510,10 +1552,10 @@ async function salvarAgendaFinal(id, linhas, lancamentoIdExistente = null) {
     try {
       await sincronizarLancamento({
         origemId: s.id, tabelaOrigem: "agenda", lancamentoId: linkAtual,
-        valor: s.status_pagamento === "pago" ? Math.abs(s.valor) : 0, tipo,
+        valor: Math.abs(s.valor), tipo, status: s.status_pagamento,
         data: dataLancamento,
         grupo: s.grupo || "Outras despesas", descricao: s.item,
-        natureza: s.natureza, centroCustoId: s.centro_custo_id,
+        natureza: s.natureza, centroCustoId: s.centro_custo_id, equipamentoId: s.equipamento_id,
       });
     } catch (e) { console.error("Falha ao sincronizar baixa da agenda:", e); }
   }
@@ -1649,7 +1691,7 @@ async function excluirRegistro() {
    Recebimentos (valor pago) e Diesel (valor total) geram/atualizam
    um lançamento correspondente no extrato, evitando digitar duas
    vezes e os números divergirem entre as abas. */
-async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, valor, tipo, data, grupo, descricao, natureza = "Variavel", centroCustoId = null, banco = "Bradesco" }) {
+async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, valor, tipo, data, grupo, descricao, natureza = "Variavel", centroCustoId = null, equipamentoId = null, status = "pago", banco = "Bradesco" }) {
   // sem valor: se existia um lançamento vinculado, remove
   if (!valor || valor <= 0) {
     if (lancamentoId) {
@@ -1665,6 +1707,8 @@ async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, val
     descricao,
     natureza: tipo === "entrada" ? "Receita" : natureza,
     centro_custo_id: centroCustoId,
+    equipamento_id: equipamentoId,
+    status,
   };
   if (lancamentoId) {
     await sb.from("lancamentos").update(campos).eq("id", lancamentoId);
@@ -1698,7 +1742,10 @@ function baixarCSV(nomeArquivo, cabecalho, linhas) {
 
 function exportarExtratoCSV() {
   let acc = dados.saldoInicial;
-  const comSaldo = dados.lanc.map(l => ({ ...l, saldo: (acc += l.entrada - l.saida) }));
+  const comSaldo = dados.lanc.map(l => {
+    if (ehRealizado(l)) acc += l.entrada - l.saida;
+    return { ...l, saldo: acc };
+  });
   const q = filtroExt.busca.trim().toLowerCase();
   const filtrado = comSaldo.filter(l =>
     dentroDoPeriodo(l.data) &&
@@ -1710,8 +1757,9 @@ function exportarExtratoCSV() {
     (l.entrada || 0).toFixed(2).replace(".", ","),
     (l.saida || 0).toFixed(2).replace(".", ","),
     l.saldo.toFixed(2).replace(".", ","),
+    l.status === "pendente" ? "A pagar/receber" : "Realizado",
   ]);
-  baixarCSV("extrato.csv", ["Data","Grupo","Subgrupo","Descrição","Conta","Entrada","Saída","Saldo"], linhas);
+  baixarCSV("extrato.csv", ["Data","Grupo","Subgrupo","Descrição","Conta","Entrada","Saída","Saldo","Situação"], linhas);
 }
 
 function exportarRecebimentosCSV() {
