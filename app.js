@@ -349,7 +349,7 @@ async function carregarTudo() {
     // nada — traz tudo, inclusive despesas gerais sem equipamento definido.
     const comEquip = (q) => contexto.equipamentoId != null ? q.eq("equipamento_id", contexto.equipamentoId) : q;
 
-    const [cfg, lanc, rec, die, age, man, equipTodos, centros, clientes, fornecedores, gruposDespesa, contasBancarias, operadores, obras, feriados] = await Promise.all([
+    const [cfg, lanc, rec, die, age, man, equipTodos, centros] = await Promise.all([
       sb.from("config").select("*"),
       comEquip(sb.from("lancamentos").select("*")).order("data").order("id"),
       comEquip(sb.from("recebimentos").select("*")).order("data").order("id"),
@@ -358,16 +358,8 @@ async function carregarTudo() {
       comEquip(sb.from("manutencoes").select("*")).order("data", { ascending: false }),
       sb.from("equipamentos").select("*").order("nome"),
       sb.from("centros_custo").select("*").order("nome"),
-      sb.from("clientes").select("*").order("nome"),
-      sb.from("fornecedores").select("*").order("nome"),
-      sb.from("grupos_despesa").select("*").order("nome"),
-      sb.from("contas_bancarias").select("*").order("nome"),
-      sb.from("operadores").select("*").order("nome"),
-      sb.from("obras").select("*").order("nome"),
-      sb.from("feriados").select("*").order("data"),
     ]);
-    const erro = cfg.error || lanc.error || rec.error || die.error || age.error || man.error || equipTodos.error || centros.error
-      || clientes.error || fornecedores.error || gruposDespesa.error || contasBancarias.error || operadores.error || obras.error || feriados.error;
+    const erro = cfg.error || lanc.error || rec.error || die.error || age.error || man.error || equipTodos.error || centros.error;
     if (erro) throw erro;
 
     const si = (cfg.data || []).find(c => c.chave === "saldo_inicial");
@@ -379,13 +371,31 @@ async function carregarTudo() {
     dados.man  = (man.data  || []).map(o => normNum(o, "manutencoes"));
     dados.equipamentos = equipTodos.data || [];
     dados.centrosCusto = centros.data || [];
-    dados.clientes = clientes.data || [];
-    dados.fornecedores = fornecedores.data || [];
-    dados.gruposDespesa = gruposDespesa.data || [];
-    dados.contasBancarias = contasBancarias.data || [];
-    dados.operadores = operadores.data || [];
-    dados.obras = obras.data || [];
-    dados.feriados = feriados.data || [];
+
+    // Cadastros mais novos (clientes, fornecedores, grupos, contas,
+    // operadores, obras, feriados): se a migração correcoes_v10.sql ainda
+    // não foi rodada no Supabase, essas tabelas não existem — mas isso não
+    // pode derrubar o app inteiro, então cada uma é buscada separadamente
+    // e, se falhar, só fica vazia (com um aviso no console).
+    const cadastrosOpcionais = [
+      ["clientes", "clientes"],
+      ["fornecedores", "fornecedores"],
+      ["gruposDespesa", "grupos_despesa"],
+      ["contasBancarias", "contas_bancarias"],
+      ["operadores", "operadores"],
+      ["obras", "obras"],
+      ["feriados", "feriados"],
+    ];
+    await Promise.all(cadastrosOpcionais.map(async ([chave, tabela]) => {
+      try {
+        const { data, error } = await sb.from(tabela).select("*").order(tabela === "feriados" ? "data" : "nome");
+        if (error) throw error;
+        dados[chave] = data || [];
+      } catch (e) {
+        dados[chave] = [];
+        console.warn(`Tabela "${tabela}" indisponível (rode correcoes_v10.sql no Supabase):`, e.message || e);
+      }
+    }));
 
     $("carregando").classList.add("oculto");
     $("aba-painel").classList.remove("oculto");

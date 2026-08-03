@@ -220,9 +220,10 @@ body {
 
 /* ── Filtros / botões ──────────────────────────────────── */
 .filtros { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
-select, input[type="text"], input[type="date"], input[type="number"], input[type="email"], input[type="password"] {
+select, input[type="text"], input[type="date"], input[type="week"], input[type="number"], input[type="email"], input[type="password"] {
   background: var(--superficie); border: 1px solid var(--borda); color: var(--texto);
   border-radius: 8px; padding: 8px 10px; font-family: var(--fonte-texto); font-size: 13.5px;
+  color-scheme: dark;
 }
 select:focus, input:focus { outline: none; border-color: var(--amarelo); }
 .busca { flex: 1; min-width: 160px; }
