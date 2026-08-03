@@ -984,8 +984,20 @@ function abrirModalDiesel(id) {
         grupo: "Combustível", descricao: "Abastecimento" + (salvo.local ? " - " + salvo.local : ""),
         natureza: salvo.natureza, centroCustoId: salvo.centro_custo_id, equipamentoId: salvo.equipamento_id,
       });
+      // "a pagar" também aparece como compromisso na Agenda, na data do
+      // vencimento — some sozinho quando você dá baixa aqui no Diesel.
+      await sincronizarAgendaEspelho({
+        origemId: salvo.id, origemTabela: "diesel", agendaId: d?.agenda_id ?? salvo.agenda_id,
+        pendente: salvo.status === "pendente", item: "Abastecimento" + (salvo.local ? " - " + salvo.local : ""),
+        data: salvo.vencimento, valor: salvo.valor_total,
+        natureza: salvo.natureza, centroCustoId: salvo.centro_custo_id, equipamentoId: salvo.equipamento_id,
+        grupo: "Combustível",
+      });
     },
-    async aoExcluir() { await removerLancamentoVinculado(d?.lancamento_id); },
+    async aoExcluir() {
+      await removerLancamentoVinculado(d?.lancamento_id);
+      if (d?.agenda_id) await sb.from("agenda").delete().eq("id", d.agenda_id);
+    },
   });
 }
 
@@ -1101,15 +1113,28 @@ function abrirModalManutencao(id) {
       // sempre sincroniza com o extrato: agendada ou a pagar entra como
       // pendente (é um compromisso previsto, mas o dinheiro ainda não saiu);
       // só realizada + paga conta como movimentação de fato.
+      const pendente = !(salvo.realizada && salvo.status_pagamento === "pago");
       await sincronizarLancamento({
         origemId: salvo.id, tabelaOrigem: "manutencoes", lancamentoId: m?.lancamento_id ?? salvo.lancamento_id,
         valor: salvo.valor_total, tipo: "saida", data: salvo.data, grupo: "Manutenção",
-        status: (salvo.realizada && salvo.status_pagamento === "pago") ? "pago" : "pendente",
+        status: pendente ? "pendente" : "pago",
         descricao: "Manutenção" + (salvo.fornecedor ? " - " + salvo.fornecedor : ""),
         natureza: salvo.natureza, centroCustoId: salvo.centro_custo_id, equipamentoId: salvo.equipamento_id,
       });
+      // agendada ou a pagar também aparece como compromisso na Agenda —
+      // some sozinho quando a manutenção é realizada e paga.
+      await sincronizarAgendaEspelho({
+        origemId: salvo.id, origemTabela: "manutencoes", agendaId: m?.agenda_id ?? salvo.agenda_id,
+        pendente, item: "Manutenção" + (salvo.fornecedor ? " - " + salvo.fornecedor : ""),
+        data: salvo.vencimento || salvo.data, valor: salvo.valor_total,
+        natureza: salvo.natureza, centroCustoId: salvo.centro_custo_id, equipamentoId: salvo.equipamento_id,
+        grupo: "Manutenção",
+      });
     },
-    async aoExcluir() { await removerLancamentoVinculado(m?.lancamento_id); },
+    async aoExcluir() {
+      await removerLancamentoVinculado(m?.lancamento_id);
+      if (m?.agenda_id) await sb.from("agenda").delete().eq("id", m.agenda_id);
+    },
   });
 }
 
@@ -1281,7 +1306,7 @@ function renderAgenda() {
   const porItem = {};
   for (const a of doAno) {
     const chave = a.item + "§" + a.dia;
-    if (!porItem[chave]) porItem[chave] = { item: a.item, dia: a.dia, valores: {}, ids: {}, pagos: {} };
+    if (!porItem[chave]) porItem[chave] = { item: a.item, dia: a.dia, valores: {}, ids: {}, pagos: {}, origem: a.origem_tabela };
     porItem[chave].valores[a.mes] = (porItem[chave].valores[a.mes] || 0) + a.valor;
     porItem[chave].ids[a.mes] = a.id;
     porItem[chave].pagos[a.mes] = a.status_pagamento === "pago";
@@ -1308,13 +1333,15 @@ function renderAgenda() {
     ${meses.map(m => `<th class="num">${MESES[m-1]}</th>`).join("")}
     <th class="num">Total</th></tr>`;
 
-  $("age-corpo").innerHTML = itens.map(i => `
-    <tr class="linha-clicavel" data-item="${escHtml(i.item)}" data-dia="${escHtml(i.dia)}">
-      <td class="col-fixa td-desc">${escHtml(i.item)}</td>
+  $("age-corpo").innerHTML = itens.map(i => {
+    const rotuloOrigem = i.origem === "diesel" ? "via Diesel" : i.origem === "manutencoes" ? "via Manutenção" : "";
+    return `<tr class="linha-clicavel" data-item="${escHtml(i.item)}" data-dia="${escHtml(i.dia)}">
+      <td class="col-fixa td-desc">${escHtml(i.item)}${rotuloOrigem ? `<div class="td-natureza">${rotuloOrigem}</div>` : ""}</td>
       <td class="num td-mudo">${escHtml(i.dia) || "—"}</td>
       ${meses.map(m => `<td class="num ${i.valores[m] ? (i.pagos[m] ? "pago" : "") : "td-zero"}">${i.valores[m] ? num(i.valores[m],0) : "·"}</td>`).join("")}
       <td class="num td-total">${brl0(i.total)}</td>
-    </tr>`).join("") +
+    </tr>`;
+  }).join("") +
     (itens.length ? `<tr class="linha-total">
       <td class="col-fixa">Total do mês</td><td></td>
       ${totaisMes.map(t => `<td class="num">${num(t,0)}</td>`).join("")}
@@ -1326,8 +1353,8 @@ function renderAgenda() {
 function abrirModalAgendaItem(item, dia) {
   const linhas = dados.age.filter(a => a.item === item && a.dia === dia && a.ano === anoAgenda);
   if (!linhas.length) return;
-  // só uma ocorrência: já vai direto pro seletor BAIXAR/EDITAR
-  if (linhas.length === 1) { abrirModalEscolhaAcaoAgenda(linhas[0].id); return; }
+  // só uma ocorrência: já resolve direto
+  if (linhas.length === 1) { abrirLinhaDaAgenda(linhas[0].id); return; }
   const opcoes = linhas.map(a => `${a.id}|${MESES[a.mes-1]} — ${brl0(a.valor)}`);
   abrirModal({
     titulo: "Compromisso: " + item,
@@ -1337,8 +1364,20 @@ function abrirModalAgendaItem(item, dia) {
       { nome:"_id", rotulo:"Escolha o mês", tipo:"select", largo:true, opcoes: opcoes, valor: String(linhas[0].id) },
     ],
     montar(f) { return { _id: Number(f._id) }; },
-    aoSalvar(reg) { fecharModal(); abrirModalEscolhaAcaoAgenda(reg._id); }
+    aoSalvar(reg) { fecharModal(); abrirLinhaDaAgenda(reg._id); }
   });
+}
+
+// Se o compromisso foi criado automaticamente pelo Diesel/Manutenção (é um
+// "espelho" de um item a pagar), editar tem que ser feito lá — senão a
+// próxima sincronização sobrescreve. Compromissos criados manualmente
+// seguem pro seletor normal (Baixar / Editar).
+function abrirLinhaDaAgenda(id) {
+  const a = dados.age.find(x => x.id === id);
+  if (!a) return;
+  if (a.origem_tabela === "diesel") { abrirModalDiesel(a.origem_id); return; }
+  if (a.origem_tabela === "manutencoes") { abrirModalManutencao(a.origem_id); return; }
+  abrirModalEscolhaAcaoAgenda(id);
 }
 
 // Seletor BAIXAR / EDITAR — aparece antes de abrir o formulário completo,
@@ -1691,6 +1730,33 @@ async function excluirRegistro() {
    Recebimentos (valor pago) e Diesel (valor total) geram/atualizam
    um lançamento correspondente no extrato, evitando digitar duas
    vezes e os números divergirem entre as abas. */
+// Espelha um Diesel/Manutenção "a pagar" como um compromisso na Agenda —
+// diferente de sincronizarLancamento, este NÃO mexe no Extrato (quem já faz
+// isso é o próprio Diesel/Manutenção); é só pra aparecer no calendário.
+// Quando deixa de ser pendente (foi pago, ou o valor zerou), o compromisso
+// espelho é removido — nesse momento já virou movimentação realizada.
+async function sincronizarAgendaEspelho({ origemId, origemTabela, agendaId, pendente, item, data, valor, natureza, centroCustoId, equipamentoId, grupo }) {
+  if (!pendente || !valor || !data) {
+    if (agendaId) {
+      await sb.from("agenda").delete().eq("id", agendaId);
+      await sb.from(origemTabela).update({ agenda_id: null }).eq("id", origemId);
+    }
+    return;
+  }
+  const [ano, mes, dia] = data.split("-").map(Number);
+  const campos = {
+    item, dia: String(dia), mes, ano, valor,
+    natureza, centro_custo_id: centroCustoId, equipamento_id: equipamentoId,
+    grupo, status_pagamento: "pendente", origem_tabela: origemTabela, origem_id: origemId,
+  };
+  if (agendaId) {
+    await sb.from("agenda").update(campos).eq("id", agendaId);
+  } else {
+    const { data: novo, error } = await sb.from("agenda").insert(campos).select().single();
+    if (!error && novo) await sb.from(origemTabela).update({ agenda_id: novo.id }).eq("id", origemId);
+  }
+}
+
 async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, valor, tipo, data, grupo, descricao, natureza = "Variavel", centroCustoId = null, equipamentoId = null, status = "pago", banco = "Bradesco" }) {
   // sem valor: se existia um lançamento vinculado, remove
   if (!valor || valor <= 0) {
