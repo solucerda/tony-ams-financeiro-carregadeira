@@ -106,6 +106,9 @@ function opcoesEquipamento(incluirGeral) {
   if (incluirGeral) opts.push("|Geral (sem máquina específica)");
   return opts;
 }
+function opcoesEquipamentoPorTipo(tipo) {
+  return dados.equipamentos.filter(e => e.ativo && (e.tipo || "Maquina") === tipo).map(e => `${e.id}|${e.nome}`);
+}
 function equipamentoPadrao(valorAtual, incluirGeral) {
   if (valorAtual != null) return String(valorAtual);
   if (contexto.equipamentoId != null) return String(contexto.equipamentoId);
@@ -959,27 +962,46 @@ function renderDiesel() {
 function abrirModalDiesel(id) {
   const d = id ? dados.die.find(x => x.id === id) : null;
   const tipoEquip = tipoEquipamento(d?.equipamento_id ?? (contexto.equipamentoId != null ? contexto.equipamentoId : null));
+  const temVeiculoCadastrado = opcoesEquipamentoPorTipo("Veiculo").length > 0;
+  let carroApoioForm = null; // captura os dados do carro de apoio no montar(), lido no aposSalvar
+
+  const campos = [
+    { nome:"data", rotulo:"Data", tipo:"date", valor: d?.data || hoje() },
+    { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(d?.equipamento_id, false) },
+    { nome:"combustivel", rotulo:"Combustível", tipo:"select",
+      opcoes:["Diesel|Diesel","Gasolina|Gasolina","Etanol|Etanol","Flex|Flex"],
+      valor: d?.combustivel || (tipoEquip === "Veiculo" ? "Gasolina" : "Diesel") },
+    { nome:"local", rotulo:"Local / fornecedor", tipo:"texto", largo:true, valor: d?.local || "", lista: nomesAtivos(dados.fornecedores) },
+    { nome:"litros", rotulo:"Litros", tipo:"numero", valor: d?.litros ?? "" },
+    { nome:"valor_unit", rotulo:"Preço do litro (R$)", tipo:"moeda", valor: d?.valor_unit ?? "" },
+    { nome:"hora_inicial", rotulo:"Horímetro inicial (máquina)", tipo:"numero", valor: d?.hora_inicial ?? "" },
+    { nome:"hora_final", rotulo:"Horímetro final (máquina)", tipo:"numero", valor: d?.hora_final ?? "" },
+    { nome:"hodometro_inicial", rotulo:"Hodômetro inicial — km (veículo)", tipo:"numero", valor: d?.hodometro_inicial ?? "" },
+    { nome:"hodometro_final", rotulo:"Hodômetro final — km (veículo)", tipo:"numero", valor: d?.hodometro_final ?? "" },
+    { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar (fiado)"], valor: d?.status || "pago" },
+    { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: d?.vencimento || "" },
+    { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel" },
+    { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(d?.centro_custo_id) },
+  ];
+
+  // só faz sentido registrar o carro de apoio ao CRIAR (não editar) um
+  // abastecimento, e só se já existir algum equipamento cadastrado como
+  // Veículo — senão o checkbox não tem pra onde levar.
+  if (!id && temVeiculoCadastrado) {
+    campos.push(
+      { nome:"tem_carro_apoio", rotulo:"Houve carro de apoio nesse abastecimento?", tipo:"checkbox", controla:"carroApoio", valor:false },
+      { nome:"carro_equipamento_id", rotulo:"Qual carro de apoio", tipo:"select", opcoes: opcoesEquipamentoPorTipo("Veiculo"), valor:"", grupoCondicional:"carroApoio", oculto:true },
+      { nome:"carro_combustivel", rotulo:"Combustível do carro", tipo:"select",
+        opcoes:["Gasolina|Gasolina","Etanol|Etanol/Álcool","GNV|GNV"], valor:"Gasolina", grupoCondicional:"carroApoio", oculto:true },
+      { nome:"carro_litros", rotulo:"Litros (carro)", tipo:"numero", valor:"", grupoCondicional:"carroApoio", oculto:true },
+      { nome:"carro_valor_unit", rotulo:"Preço do litro do carro (R$)", tipo:"moeda", valor:"", grupoCondicional:"carroApoio", oculto:true },
+    );
+  }
+
   abrirModal({
     titulo: d ? "Editar abastecimento" : "Novo abastecimento",
     tabela: "diesel", id,
-    campos: [
-      { nome:"data", rotulo:"Data", tipo:"date", valor: d?.data || hoje() },
-      { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(d?.equipamento_id, false) },
-      { nome:"combustivel", rotulo:"Combustível", tipo:"select",
-        opcoes:["Diesel|Diesel","Gasolina|Gasolina","Etanol|Etanol","Flex|Flex"],
-        valor: d?.combustivel || (tipoEquip === "Veiculo" ? "Gasolina" : "Diesel") },
-      { nome:"local", rotulo:"Local / fornecedor", tipo:"texto", largo:true, valor: d?.local || "", lista: nomesAtivos(dados.fornecedores) },
-      { nome:"litros", rotulo:"Litros", tipo:"numero", valor: d?.litros ?? "" },
-      { nome:"valor_unit", rotulo:"Preço do litro (R$)", tipo:"moeda", valor: d?.valor_unit ?? "" },
-      { nome:"hora_inicial", rotulo:"Horímetro inicial (máquina)", tipo:"numero", valor: d?.hora_inicial ?? "" },
-      { nome:"hora_final", rotulo:"Horímetro final (máquina)", tipo:"numero", valor: d?.hora_final ?? "" },
-      { nome:"hodometro_inicial", rotulo:"Hodômetro inicial — km (veículo)", tipo:"numero", valor: d?.hodometro_inicial ?? "" },
-      { nome:"hodometro_final", rotulo:"Hodômetro final — km (veículo)", tipo:"numero", valor: d?.hodometro_final ?? "" },
-      { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar (fiado)"], valor: d?.status || "pago" },
-      { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: d?.vencimento || "" },
-      { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel" },
-      { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(d?.centro_custo_id) },
-    ],
+    campos,
     montar(f) {
       const litros = Number(f.litros) || 0;
       const vu = numDeMoeda(f.valor_unit);
@@ -990,6 +1012,19 @@ function abrirModalDiesel(id) {
       const hf = f.hora_final === "" ? null : Number(f.hora_final);
       const ki = f.hodometro_inicial === "" ? null : Number(f.hodometro_inicial);
       const kf = f.hodometro_final === "" ? null : Number(f.hodometro_final);
+
+      carroApoioForm = null;
+      if (f.tem_carro_apoio) {
+        const carroLitros = Number(f.carro_litros) || 0;
+        const carroVu = numDeMoeda(f.carro_valor_unit);
+        if (!f.carro_equipamento_id) throw "Selecione qual foi o carro de apoio.";
+        if (!carroLitros && !carroVu) throw "Informe os litros e o preço do carro de apoio.";
+        carroApoioForm = {
+          equipamento_id: Number(f.carro_equipamento_id), combustivel: f.carro_combustivel,
+          litros: carroLitros, valor_unit: carroVu, valor_total: carroLitros * carroVu,
+        };
+      }
+
       return {
         data: f.data, equipamento_id: Number(f.equipamento_id), combustivel: f.combustivel,
         local: f.local.trim(), litros, valor_unit: vu, valor_total: litros * vu,
@@ -1018,11 +1053,40 @@ function abrirModalDiesel(id) {
         natureza: salvo.natureza, centroCustoId: salvo.centro_custo_id, equipamentoId: salvo.equipamento_id,
         grupo: "Combustível",
       });
+      // carro de apoio: cria um SEGUNDO abastecimento, separado, com seu
+      // próprio equipamento e combustível — o valor da gasolina não se
+      // mistura com o do diesel, cada um com seu próprio total.
+      if (carroApoioForm) await criarAbastecimentoCarroApoio(salvo, carroApoioForm);
     },
     async aoExcluir() {
       await removerLancamentoVinculado(d?.lancamento_id);
       if (d?.agenda_id) await sb.from("agenda").delete().eq("id", d.agenda_id);
     },
+  });
+}
+
+async function criarAbastecimentoCarroApoio(salvoPrincipal, carro) {
+  const registro = {
+    data: salvoPrincipal.data, equipamento_id: carro.equipamento_id, combustivel: carro.combustivel,
+    local: salvoPrincipal.local, litros: carro.litros, valor_unit: carro.valor_unit, valor_total: carro.valor_total,
+    status: salvoPrincipal.status, vencimento: salvoPrincipal.vencimento,
+    natureza: salvoPrincipal.natureza, centro_custo_id: salvoPrincipal.centro_custo_id,
+  };
+  const { data: novo, error } = await sb.from("diesel").insert(registro).select().single();
+  if (error || !novo) { console.error("Falha ao criar abastecimento do carro de apoio:", error); return; }
+
+  await sincronizarLancamento({
+    origemId: novo.id, tabelaOrigem: "diesel", lancamentoId: null,
+    valor: novo.valor_total, tipo: "saida", data: novo.data, status: novo.status,
+    grupo: "Combustível", descricao: "Abastecimento" + (novo.local ? " - " + novo.local : "") + " (carro de apoio)",
+    natureza: novo.natureza, centroCustoId: novo.centro_custo_id, equipamentoId: novo.equipamento_id,
+  });
+  await sincronizarAgendaEspelho({
+    origemId: novo.id, origemTabela: "diesel", agendaId: null,
+    pendente: novo.status === "pendente", item: "Combustível a pagar",
+    data: novo.vencimento, valor: novo.valor_total,
+    natureza: novo.natureza, centroCustoId: novo.centro_custo_id, equipamentoId: novo.equipamento_id,
+    grupo: "Combustível",
   });
 }
 
@@ -1685,9 +1749,10 @@ function abrirModal(ctx) {
     $("modal-campos").innerHTML = ctx.corpoCustom;
   } else {
   $("modal-campos").innerHTML = ctx.campos.map(c => {
-    const largo = c.largo ? "form-larga" : "";
+    const largo = (c.largo ? "form-larga " : "") + (c.oculto ? "oculto " : "");
+    const dataGrupo = c.grupoCondicional ? `data-grupo-cond="${c.grupoCondicional}"` : "";
     if (c.tipo === "checkbox") {
-      return `<label class="campo-checkbox ${largo}">
+      return `<label class="campo-checkbox ${largo}" ${dataGrupo}>
         <input type="checkbox" data-campo="${c.nome}" ${c.valor ? "checked" : ""}> ${c.rotulo}</label>`;
     }
     if (c.tipo === "select") {
@@ -1695,10 +1760,10 @@ function abrirModal(ctx) {
         const [val, rot] = String(o).includes("|") ? o.split("|") : [o, o];
         return `<option value="${escHtml(val)}" ${String(c.valor) === String(val) ? "selected" : ""}>${escHtml(rot)}</option>`;
       }).join("");
-      return `<label class="${largo}">${c.rotulo}<select data-campo="${c.nome}">${ops}</select></label>`;
+      return `<label class="${largo}" ${dataGrupo}>${c.rotulo}<select data-campo="${c.nome}">${ops}</select></label>`;
     }
     if (c.tipo === "moeda") {
-      return `<label class="${largo}">${c.rotulo}
+      return `<label class="${largo}" ${dataGrupo}>${c.rotulo}
         <input type="text" inputmode="decimal" data-campo="${c.nome}" data-moeda="1" data-negativo="${c.negativo ? 1 : 0}" value="${escHtml(moedaMascara(c.valor))}">
       </label>`;
     }
@@ -1707,7 +1772,7 @@ function abrirModal(ctx) {
     const listaId = c.lista ? `lista-${c.nome}` : "";
     const listaHtml = c.lista
       ? `<datalist id="${listaId}">${c.lista.map(v => `<option value="${escHtml(v)}">`).join("")}</datalist>` : "";
-    return `<label class="${largo}">${c.rotulo}
+    return `<label class="${largo}" ${dataGrupo}>${c.rotulo}
       <input type="${tipo}" ${extra} data-campo="${c.nome}" value="${escHtml(c.valor)}" ${c.lista ? `list="${listaId}"` : ""}>
       ${listaHtml}</label>`;
   }).join("");
@@ -1721,6 +1786,20 @@ function abrirModal(ctx) {
     if (!c.aoMudar) return;
     const el = document.querySelector(`#modal-campos [data-campo="${c.nome}"]`);
     if (el) el.addEventListener("input", () => c.aoMudar(el.value));
+  });
+
+  // checkbox que mostra/esconde um grupo de campos (ex.: "houve carro de
+  // apoio?" revela os campos do carro)
+  ctx.campos.forEach(c => {
+    if (c.tipo !== "checkbox" || !c.controla) return;
+    const chk = document.querySelector(`#modal-campos [data-campo="${c.nome}"]`);
+    if (!chk) return;
+    const aplicar = () => {
+      document.querySelectorAll(`#modal-campos [data-grupo-cond="${c.controla}"]`)
+        .forEach(el => el.classList.toggle("oculto", !chk.checked));
+    };
+    chk.addEventListener("change", aplicar);
+    aplicar();
   });
   }
 
