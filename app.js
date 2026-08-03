@@ -961,13 +961,28 @@ function renderDiesel() {
 
 function abrirModalDiesel(id) {
   const d = id ? dados.die.find(x => x.id === id) : null;
-  const tipoEquip = tipoEquipamento(d?.equipamento_id ?? (contexto.equipamentoId != null ? contexto.equipamentoId : null));
   const temVeiculoCadastrado = opcoesEquipamentoPorTipo("Veiculo").length > 0;
+  const equipInicial = Number(equipamentoPadrao(d?.equipamento_id, false)) || null;
+  const tipoEquip = tipoEquipamento(equipInicial);
   let carroApoioForm = null; // captura os dados do carro de apoio no montar(), lido no aposSalvar
 
   const campos = [
     { nome:"data", rotulo:"Data", tipo:"date", valor: d?.data || hoje() },
-    { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(d?.equipamento_id, false) },
+    { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(d?.equipamento_id, false),
+      // o carro de apoio só faz sentido quando quem está abastecendo é uma
+      // máquina (Pá Carregadeira, Retroescavadeira) — troca o equipamento
+      // no formulário e o checkbox aparece/some na hora, sem reabrir o modal.
+      aoMudar(novoId) {
+        const ehMaquina = tipoEquipamento(Number(novoId)) === "Maquina";
+        const chk = document.querySelector('#modal-campos [data-campo="tem_carro_apoio"]');
+        if (!chk) return;
+        const linha = chk.closest("label");
+        if (linha) linha.classList.toggle("oculto", !ehMaquina || !temVeiculoCadastrado);
+        if (!ehMaquina && chk.checked) {
+          chk.checked = false;
+          document.querySelectorAll('#modal-campos [data-grupo-cond="carroApoio"]').forEach(el => el.classList.add("oculto"));
+        }
+      } },
     { nome:"combustivel", rotulo:"Combustível", tipo:"select",
       opcoes:["Diesel|Diesel","Gasolina|Gasolina","Etanol|Etanol","Flex|Flex"],
       valor: d?.combustivel || (tipoEquip === "Veiculo" ? "Gasolina" : "Diesel") },
@@ -984,12 +999,12 @@ function abrirModalDiesel(id) {
     { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(d?.centro_custo_id) },
   ];
 
-  // só faz sentido registrar o carro de apoio ao CRIAR (não editar) um
-  // abastecimento, e só se já existir algum equipamento cadastrado como
-  // Veículo — senão o checkbox não tem pra onde levar.
-  if (!id && temVeiculoCadastrado) {
+  // disponível pra qualquer abastecimento (novo ou edição) de uma máquina,
+  // desde que já exista algum equipamento cadastrado como Veículo.
+  if (temVeiculoCadastrado) {
     campos.push(
-      { nome:"tem_carro_apoio", rotulo:"Houve carro de apoio nesse abastecimento?", tipo:"checkbox", controla:"carroApoio", valor:false },
+      { nome:"tem_carro_apoio", rotulo:"Houve carro de apoio nesse abastecimento?", tipo:"checkbox", controla:"carroApoio",
+        valor:false, oculto: tipoEquip !== "Maquina" },
       { nome:"carro_equipamento_id", rotulo:"Qual carro de apoio", tipo:"select", opcoes: opcoesEquipamentoPorTipo("Veiculo"), valor:"", grupoCondicional:"carroApoio", oculto:true },
       { nome:"carro_combustivel", rotulo:"Combustível do carro", tipo:"select",
         opcoes:["Gasolina|Gasolina","Etanol|Etanol/Álcool","GNV|GNV"], valor:"Gasolina", grupoCondicional:"carroApoio", oculto:true },
@@ -1781,11 +1796,13 @@ function abrirModal(ctx) {
   // absorve ponto/vírgula digitados — quem manda é o dígito, não o separador)
   document.querySelectorAll('#modal-campos [data-moeda]').forEach(ligarMascaraMoeda);
 
-  // hooks de campo (ex.: autopreencher valor de hora ao escolher o cliente)
+  // hooks de campo (ex.: autopreencher valor de hora ao escolher o cliente,
+  // mostrar/esconder o carro de apoio conforme o equipamento escolhido)
   ctx.campos.forEach(c => {
     if (!c.aoMudar) return;
     const el = document.querySelector(`#modal-campos [data-campo="${c.nome}"]`);
-    if (el) el.addEventListener("input", () => c.aoMudar(el.value));
+    if (!el) return;
+    el.addEventListener(el.tagName === "SELECT" ? "change" : "input", () => c.aoMudar(el.value));
   });
 
   // checkbox que mostra/esconde um grupo de campos (ex.: "houve carro de
