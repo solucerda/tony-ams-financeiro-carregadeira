@@ -179,6 +179,7 @@ let contexto = { equipamentoId: null, nome: null }; // null = "Total do negócio
 let appIniciado = false;
 let meuUserId = null;
 let meuPapel = "leitura"; // padrão seguro até carregar de verdade
+let primeiraCarga = true;
 
 document.addEventListener("DOMContentLoaded", async () => {
   if (!SUPABASE_URL || SUPABASE_URL.includes("COLE_AQUI")) {
@@ -381,7 +382,6 @@ async function iniciarApp() {
 async function carregarTudo() {
   $("carregando").textContent = "Carregando dados do banco…";
   $("carregando").classList.remove("oculto");
-  $("aba-painel").classList.add("oculto");
   try {
     // no modo "Total do negócio" (contexto.equipamentoId === null) não filtra
     // nada — traz tudo, inclusive despesas gerais sem equipamento definido.
@@ -474,18 +474,31 @@ async function carregarTudo() {
     Object.entries(meusModulos).forEach(([mod, liberado]) => {
       const btn = document.querySelector(`#abas [data-aba="${mod}"]`);
       if (btn) btn.classList.toggle("oculto", !liberado);
-      // se a aba escondida for a que está ativa no momento, joga pro Painel
-      if (!liberado && btn && btn.classList.contains("ativa")) {
-        btn.classList.remove("ativa");
-        document.querySelectorAll(".secao").forEach(s => s.classList.add("oculto"));
-        $("aba-painel").classList.remove("oculto");
-        $("abas").querySelector('[data-aba="painel"]')?.classList.add("ativa");
-      }
     });
     document.body.classList.toggle("sem-financeiro", !vejoFinanceiro);
 
+    // só troca de aba visível quando é a primeira carga (mostra a aba
+    // inicial certa) ou quando a aba que estava aberta deixou de ser
+    // permitida — fora isso, NUNCA mexe em qual seção está visível. Era
+    // aqui que morava o bug do Painel "colar" em cima de outra aba toda
+    // vez que os dados recarregavam (ex.: depois de salvar um registro).
+    const abaPermitida = (aba) => {
+      if (aba === "painel") return vejoFinanceiro;
+      if (aba === "administracao") return meuPapel === "admin";
+      return meusModulos[aba] ?? true;
+    };
+    const abaAtual = document.querySelector(".aba.ativa")?.dataset.aba || "painel";
+    if (primeiraCarga || !abaPermitida(abaAtual)) {
+      primeiraCarga = false;
+      const proxima = abaPermitida(abaAtual)
+        ? abaAtual
+        : (vejoFinanceiro ? "painel" : (Object.keys(meusModulos).find(m => meusModulos[m]) || "painel"));
+      document.querySelectorAll(".secao").forEach(s => s.classList.add("oculto"));
+      $("aba-" + proxima).classList.remove("oculto");
+      document.querySelectorAll(".aba").forEach(b => b.classList.toggle("ativa", b.dataset.aba === proxima));
+    }
+
     $("carregando").classList.add("oculto");
-    $("aba-painel").classList.remove("oculto");
     renderTudo();
   } catch (e) {
     $("carregando").classList.remove("oculto");
