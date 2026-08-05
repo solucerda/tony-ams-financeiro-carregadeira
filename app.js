@@ -1215,25 +1215,29 @@ function abrirModalDiesel(id) {
   // edição) de uma máquina, desde que já exista um Veículo cadastrado.
   if (temVeiculoCadastrado) {
     campos.push(
-      { nome:"tem_carro_apoio", rotulo:"Houve carro de apoio nesse abastecimento?", tipo:"checkbox", controla:"carroApoio",
+      { nome:"tem_carro_apoio", rotulo:"🚗 Houve carro de apoio nesse abastecimento?", tipo:"checkbox", largo:true, controla:"carroApoio",
         valor:false, oculto: tipoEquip !== "Maquina" },
-      { nome:"carro_equipamento_id", rotulo:"Qual carro de apoio", tipo:"select", opcoes: opcoesEquipamentoPorTipo("Veiculo"), valor:"", grupoCondicional:"carroApoio", oculto:true },
+      { tipo:"separador", rotulo:"Dados do carro de apoio", grupoCondicional:"carroApoio", oculto:true },
+      { nome:"carro_equipamento_id", rotulo:"Qual carro de apoio", tipo:"select", largo:true, opcoes: opcoesEquipamentoPorTipo("Veiculo"), valor:"", grupoCondicional:"carroApoio", oculto:true },
       { nome:"carro_combustivel", rotulo:"Combustível do carro", tipo:"select",
         opcoes:["Gasolina|Gasolina","Etanol|Etanol/Álcool","GNV|GNV"], valor:"Gasolina", grupoCondicional:"carroApoio", oculto:true },
       { nome:"carro_litros", rotulo:"Litros (carro)", tipo:"numero", valor:"", grupoCondicional:"carroApoio", oculto:true },
-      { nome:"carro_valor_unit", rotulo:"Preço do litro do carro (R$)", tipo:"moeda", valor:"", grupoCondicional:"carroApoio", oculto:true },
+      { nome:"carro_valor_unit", rotulo:"Preço do litro do carro (R$)", tipo:"moeda", largo:true, valor:"", grupoCondicional:"carroApoio", oculto:true },
     );
   }
 
   campos.push(
+    { tipo:"separador", rotulo:"Abastecimento" },
     { nome:"combustivel", rotulo:"Combustível", tipo:"select",
       opcoes:["Diesel|Diesel","Gasolina|Gasolina","Etanol|Etanol","Flex|Flex"],
       valor: d?.combustivel || (tipoEquip === "Veiculo" ? "Gasolina" : "Diesel") },
     { nome:"local", rotulo:"Local / fornecedor", tipo:"texto", largo:true, valor: d?.local || "", lista: nomesAtivos(dados.fornecedores) },
     { nome:"litros", rotulo:"Litros", tipo:"numero", valor: d?.litros ?? "" },
     { nome:"valor_unit", rotulo:"Preço do litro (R$)", tipo:"moeda", valor: d?.valor_unit ?? "" },
+    { tipo:"separador", rotulo:"Pagamento" },
     { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar (fiado)"], valor: d?.status || "pago" },
     { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: d?.vencimento || "" },
+    { tipo:"separador", rotulo:"Classificação" },
     { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel" },
     { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(d?.centro_custo_id) },
   );
@@ -2197,6 +2201,9 @@ function abrirModal(ctx) {
   $("modal-campos").innerHTML = ctx.campos.map(c => {
     const largo = (c.largo ? "form-larga " : "") + (c.oculto ? "oculto " : "");
     const dataGrupo = c.grupoCondicional ? `data-grupo-cond="${c.grupoCondicional}"` : "";
+    if (c.tipo === "separador") {
+      return `<div class="form-separador form-larga ${c.oculto ? "oculto" : ""}" ${dataGrupo}>${c.rotulo}</div>`;
+    }
     if (c.tipo === "checkbox") {
       return `<label class="campo-checkbox ${largo}" ${dataGrupo}>
         <input type="checkbox" data-campo="${c.nome}" ${c.valor ? "checked" : ""}> ${c.rotulo}</label>`;

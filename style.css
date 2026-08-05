@@ -411,6 +411,22 @@ input[data-moeda="1"] { text-align: right; font-family: var(--fonte-mono); }
 .form-grade { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .form-grade label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--texto-mudo); }
 .form-larga { grid-column: 1 / -1; }
+
+.form-separador {
+  font-family: var(--fonte-titulo); font-size: 11px; text-transform: uppercase;
+  letter-spacing: 1px; color: var(--texto-mudo); border-top: 1px solid var(--borda);
+  padding-top: 12px; margin-top: 4px;
+}
+.form-grade > .form-separador:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+/* bloco do carro de apoio: fundo e borda amarela sutil pra separar
+   visualmente do resto do abastecimento (a máquina) */
+#modal-campos [data-grupo-cond="carroApoio"] {
+  background: rgba(245,179,1,.06); border: 1px solid rgba(245,179,1,.22);
+  border-radius: 8px; padding: 8px 10px; margin: 0;
+}
+.form-separador[data-grupo-cond="carroApoio"] {
+  border-top: none; color: var(--amarelo); font-weight: 700; padding-top: 8px;
+}
 .campo-checkbox {
   flex-direction: row !important; align-items: center; gap: 8px !important;
   font-size: 13px; color: var(--texto); cursor: pointer;
