@@ -211,6 +211,42 @@ body {
 .admin-linha:last-child { border-bottom: none; }
 .admin-linha-nome { flex: 1; font-size: 13.5px; }
 
+.detalhe-lista { display: flex; flex-direction: column; gap: 6px; padding: 4px 0 12px; }
+.detalhe-linha {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--superficie-2); border: 1px solid var(--borda); border-radius: 8px;
+  padding: 10px 12px; cursor: pointer; font-family: var(--fonte-texto); color: var(--texto);
+  font-size: 13px; text-align: left; width: 100%;
+}
+.detalhe-linha:hover { border-color: var(--amarelo); }
+.detalhe-linha b { font-family: var(--fonte-mono); }
+
+.papel-badge {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--texto-mudo);
+  border: 1px solid var(--borda-clara); border-radius: 999px; padding: 3px 9px;
+}
+
+/* leitura: some com tudo que cria ou edita */
+body.somente-leitura .btn-primario,
+body.somente-leitura .btn-editar { display: none !important; }
+/* operacional e leitura: sem excluir e sem administração/cadastros */
+body.nao-admin .btn-perigo,
+body.nao-admin #equip-add-abrir,
+body.nao-admin #equip-add-salvar { display: none !important; }
+body.nao-admin #abas [data-aba="administracao"] { display: none !important; }
+
+.acao-botoes { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 12px; }
+.acao-botao {
+  display: flex; flex-direction: column; gap: 2px; text-align: left; width: 100%;
+  background: var(--superficie-2); border: 1px solid var(--borda-clara); border-radius: 10px;
+  padding: 14px 16px; cursor: pointer; font-family: var(--fonte-texto); color: var(--texto);
+  transition: border-color .15s, transform .15s;
+}
+.acao-botao:hover { border-color: var(--amarelo); transform: translateY(-1px); }
+.acao-botao.acao-destaque { border-color: var(--amarelo); background: rgba(245,179,1,.08); }
+.acao-titulo { font-size: 14.5px; font-weight: 700; }
+.acao-sub { font-size: 12px; color: var(--texto-mudo); }
+
 .grupos { display: flex; flex-direction: column; gap: 8px; }
 .grupo-linha { display: grid; grid-template-columns: 130px 1fr 92px; align-items: center; gap: 10px; }
 .grupo-nome { font-size: 13px; color: var(--texto-suave); }

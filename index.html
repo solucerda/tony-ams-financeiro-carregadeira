@@ -92,6 +92,7 @@
             <span class="topo-saldo-rotulo">Saldo em caixa</span>
             <span class="topo-saldo-valor" id="saldo-topo">—</span>
           </div>
+          <span id="meu-papel-badge" class="papel-badge"></span>
           <button class="btn-fantasma" id="btn-trocar-equip" title="Trocar equipamento">Trocar</button>
           <button class="btn-fantasma btn-sair" id="btn-sair" title="Sair">Sair</button>
         </div>
@@ -323,6 +324,14 @@
           </div>
           <p class="cartao-nota">usados no alerta de dia não útil da Agenda, além de sábado/domingo. Feriados móveis (Carnaval, Páscoa) precisam ser adicionados manualmente ano a ano.</p>
           <div id="admin-feriados"></div>
+        </div>
+
+        <div class="cartao">
+          <div class="cartao-cabeca">
+            <h2 class="titulo-risco"><span>Usuários</span></h2>
+          </div>
+          <p class="cartao-nota">Pra adicionar alguém: Supabase → Authentication → Users → Add user (e-mail + senha). O perfil aparece aqui sozinho como "Leitura" — edite o nível de acesso depois.</p>
+          <div id="admin-usuarios"></div>
         </div>
       </section>
     </main>

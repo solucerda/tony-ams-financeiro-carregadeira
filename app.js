@@ -10,7 +10,7 @@ let sb = null;                 // cliente Supabase
 const dados = {
   saldoInicial: 0, lanc: [], rec: [], die: [], age: [], man: [],
   equipamentos: [], centrosCusto: [], clientes: [], fornecedores: [],
-  gruposDespesa: [], contasBancarias: [], operadores: [], obras: [], feriados: [], tiposRecebimento: [],
+  gruposDespesa: [], contasBancarias: [], operadores: [], obras: [], feriados: [], tiposRecebimento: [], perfis: [],
 };
 let filtroExt = { modo: "mes", mes: "todos", semana: "", dia: "", de: "", ate: "", grupo: "todos", busca: "" };
 let filtroCliente = "todos";
@@ -176,6 +176,8 @@ function nomesAtivos(lista) {
 /* ── Inicialização ─────────────────────────────────────── */
 let contexto = { equipamentoId: null, nome: null }; // null = "Total do negócio"
 let appIniciado = false;
+let meuUserId = null;
+let meuPapel = "leitura"; // padrão seguro até carregar de verdade
 
 document.addEventListener("DOMContentLoaded", async () => {
   if (!SUPABASE_URL || SUPABASE_URL.includes("COLE_AQUI")) {
@@ -185,7 +187,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const { data: { session } } = await sb.auth.getSession();
-  if (session) mostrarSeletorEquipamento(); else mostrarLogin();
+  if (session) { meuUserId = session.user.id; mostrarSeletorEquipamento(); } else mostrarLogin();
 
   $("form-login").addEventListener("submit", fazerLogin);
   $("btn-sair").addEventListener("click", async () => {
@@ -211,7 +213,7 @@ async function fazerLogin(ev) {
   const btn = $("login-btn"), erro = $("login-erro");
   btn.disabled = true; btn.textContent = "Entrando…";
   erro.classList.add("oculto");
-  const { error } = await sb.auth.signInWithPassword({
+  const { data, error } = await sb.auth.signInWithPassword({
     email: $("login-email").value.trim(),
     password: $("login-senha").value
   });
@@ -221,6 +223,7 @@ async function fazerLogin(ev) {
     erro.classList.remove("oculto");
     return;
   }
+  meuUserId = data.user.id;
   $("tela-login").classList.add("oculto");
   mostrarSeletorEquipamento();
 }
@@ -407,6 +410,7 @@ async function carregarTudo() {
       ["obras", "obras"],
       ["feriados", "feriados"],
       ["tiposRecebimento", "tipos_recebimento"],
+      ["perfis", "perfis"],
     ];
     await Promise.all(cadastrosOpcionais.map(async ([chave, tabela]) => {
       try {
@@ -418,6 +422,21 @@ async function carregarTudo() {
         console.warn(`Tabela "${tabela}" indisponível (rode correcoes_v10.sql no Supabase):`, e.message || e);
       }
     }));
+
+    // meu nível de acesso — se a migração v19 ainda não rodou, dados.perfis
+    // fica vazio e todo mundo continua com acesso total (comportamento de
+    // antes), sem travar ninguém.
+    if (dados.perfis.length) {
+      const meu = dados.perfis.find(p => p.id === meuUserId);
+      meuPapel = meu && meu.ativo !== false ? meu.papel : "leitura";
+    } else {
+      meuPapel = "admin";
+    }
+    const podeEscrever = meuPapel === "admin" || meuPapel === "operacional";
+    document.body.classList.toggle("somente-leitura", !podeEscrever);
+    document.body.classList.toggle("nao-admin", meuPapel !== "admin");
+    const badge = $("meu-papel-badge");
+    if (badge) badge.textContent = { admin:"Administrador", operacional:"Operacional", leitura:"Leitura" }[meuPapel] || "";
 
     $("carregando").classList.add("oculto");
     $("aba-painel").classList.remove("oculto");
@@ -1422,6 +1441,19 @@ function renderAdministracao() {
         <button class="btn-editar" onclick="abrirModalFeriado(${f.id})" title="Editar">✎</button>
       </div>`).join("")
     : '<div class="vazio">Nenhum feriado cadastrado.</div>';
+
+  // usuários e níveis de acesso
+  const ROTULO_PAPEL = { admin:"Administrador", operacional:"Operacional", leitura:"Leitura" };
+  const CLASSE_PAPEL = { admin:"chip-pago", operacional:"chip-pendente", leitura:"" };
+  $("admin-usuarios").innerHTML = dados.perfis.length
+    ? dados.perfis.map(p => `
+      <div class="admin-linha">
+        <span class="admin-linha-nome">${escHtml(p.nome || "(sem nome)")}</span>
+        <span class="chip chip-status ${CLASSE_PAPEL[p.papel] || ""}">${ROTULO_PAPEL[p.papel] || p.papel}</span>
+        ${p.ativo === false ? `<span class="chip chip-status chip-vencido">Inativo</span>` : ""}
+        <button class="btn-editar" onclick="abrirModalPerfil('${p.id}')" title="Editar">✎</button>
+      </div>`).join("")
+    : '<div class="vazio">Nenhum usuário. Rode a migração correcoes_v19.sql no Supabase.</div>';
 }
 
 // Fábrica: cria a função abrirModalXxx(id) para um cadastro simples
@@ -1476,6 +1508,31 @@ function abrirModalFeriado(id) {
     montar(f) {
       if (!f.data) throw "Informe a data.";
       return { data: f.data, descricao: f.descricao.trim() };
+    }
+  });
+}
+
+function abrirModalPerfil(id) {
+  const p = dados.perfis.find(x => x.id === id);
+  if (!p) return;
+  const souEu = id === meuUserId;
+  abrirModal({
+    titulo: "Editar usuário",
+    tabela: "perfis", id,
+    semExcluir: true,
+    campos: [
+      { nome:"nome", rotulo:"Nome", tipo:"texto", largo:true, valor: p.nome || "" },
+      { nome:"papel", rotulo:"Nível de acesso", tipo:"select",
+        opcoes:["leitura|Leitura (só visualizar)","operacional|Operacional (lança e edita)","admin|Administrador (acesso total)"],
+        valor: p.papel || "leitura" },
+      { nome:"ativo", rotulo:"Ativo (acesso liberado)", tipo:"checkbox", valor: p.ativo ?? true },
+    ],
+    montar(f) {
+      if (!f.nome.trim()) throw "Informe o nome.";
+      if (souEu && (f.papel !== "admin" || !f.ativo)) {
+        throw "Você não pode tirar seu próprio acesso de administrador ou se desativar — peça pra outro admin fazer isso.";
+      }
+      return { nome: f.nome.trim(), papel: f.papel, ativo: !!f.ativo };
     }
   });
 }
@@ -1587,6 +1644,7 @@ function renderAgenda() {
 
 // clicar num compromisso: escolhe o mês a editar via modal
 function abrirModalAgendaItem(item, dia, agregado) {
+  if (meuPapel === "leitura") { toast("Seu acesso é somente leitura."); return; }
   const linhas = agregado
     ? dados.age.filter(a => a.item === item && a.origem_tabela && a.ano === anoAgenda)
     : dados.age.filter(a => a.item === item && a.dia === dia && a.ano === anoAgenda);
@@ -1947,7 +2005,7 @@ function abrirModal(ctx) {
   }
 
   const btnExcluir = $("modal-excluir");
-  btnExcluir.classList.toggle("oculto", !ctx.id);
+  btnExcluir.classList.toggle("oculto", !ctx.id || !!ctx.semExcluir);
   btnExcluir.onclick = () => excluirRegistro();
   $("modal-salvar").classList.toggle("oculto", !!ctx.semSalvar);
   $("modal-salvar").textContent = ctx.rotuloSalvar || (ctx.id ? "Editar" : "Salvar");
