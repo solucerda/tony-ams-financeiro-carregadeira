@@ -234,6 +234,8 @@ body.nao-admin .btn-perigo,
 body.nao-admin #equip-add-abrir,
 body.nao-admin #equip-add-salvar { display: none !important; }
 body.nao-admin #abas [data-aba="administracao"] { display: none !important; }
+body.sem-financeiro #abas [data-aba="painel"] { display: none !important; }
+body.sem-financeiro .topo-saldo { display: none !important; }
 
 .acao-botoes { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 12px; }
 .acao-botao {

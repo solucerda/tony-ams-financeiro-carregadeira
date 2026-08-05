@@ -11,6 +11,7 @@ const dados = {
   saldoInicial: 0, lanc: [], rec: [], die: [], age: [], man: [],
   equipamentos: [], centrosCusto: [], clientes: [], fornecedores: [],
   gruposDespesa: [], contasBancarias: [], operadores: [], obras: [], feriados: [], tiposRecebimento: [], perfis: [],
+  perfisEquipamentos: [], logAtividade: [],
 };
 let filtroExt = { modo: "mes", mes: "todos", semana: "", dia: "", de: "", ate: "", grupo: "todos", busca: "" };
 let filtroCliente = "todos";
@@ -239,7 +240,20 @@ async function mostrarSeletorEquipamento() {
     $("equip-cartoes").innerHTML = '<div class="vazio">Não foi possível carregar os equipamentos. (' + escHtml(error.message) + ')</div>';
     return;
   }
-  dados.equipamentos = data || [];
+
+  // se o usuário tiver equipamentos liberados específicos (Administração →
+  // editar usuário), só mostra esses aqui — admin sempre vê todos.
+  let equipamentosPermitidos = null;
+  try {
+    const { data: perfilData } = await sb.from("perfis").select("*").eq("id", meuUserId).single();
+    if (perfilData) meuPapel = perfilData.ativo === false ? "leitura" : perfilData.papel;
+    if (meuPapel !== "admin") {
+      const { data: restr } = await sb.from("perfis_equipamentos").select("equipamento_id").eq("perfil_id", meuUserId);
+      if (restr && restr.length) equipamentosPermitidos = new Set(restr.map(r => r.equipamento_id));
+    }
+  } catch (e) { /* migração v19/v20 ainda não rodada — libera tudo, sem travar ninguém */ }
+
+  dados.equipamentos = (data || []).filter(e => !equipamentosPermitidos || equipamentosPermitidos.has(e.id));
 
   const cartoes = dados.equipamentos.map(e => `
     <button type="button" class="equip-cartao" data-id="${e.id}" data-nome="${escHtml(e.nome)}">
@@ -411,10 +425,12 @@ async function carregarTudo() {
       ["feriados", "feriados"],
       ["tiposRecebimento", "tipos_recebimento"],
       ["perfis", "perfis"],
+      ["perfisEquipamentos", "perfis_equipamentos"],
     ];
+    const ORDEM_TABELA = { feriados: "data", perfis_equipamentos: "perfil_id" };
     await Promise.all(cadastrosOpcionais.map(async ([chave, tabela]) => {
       try {
-        const { data, error } = await sb.from(tabela).select("*").order(tabela === "feriados" ? "data" : "nome");
+        const { data, error } = await sb.from(tabela).select("*").order(ORDEM_TABELA[tabela] || "nome");
         if (error) throw error;
         dados[chave] = data || [];
       } catch (e) {
@@ -423,12 +439,24 @@ async function carregarTudo() {
       }
     }));
 
+    // auditoria: log das últimas 100 alterações (só admin enxerga, por RLS
+    // — pra qualquer outro papel isso simplesmente volta vazio, sem erro)
+    try {
+      const { data, error } = await sb.from("log_atividade").select("*").order("criado_em", { ascending: false }).limit(100);
+      if (error) throw error;
+      dados.logAtividade = data || [];
+    } catch (e) {
+      dados.logAtividade = [];
+      console.warn("Log de atividade indisponível (rode correcoes_v20.sql):", e.message || e);
+    }
+
     // meu nível de acesso — se a migração v19 ainda não rodou, dados.perfis
     // fica vazio e todo mundo continua com acesso total (comportamento de
     // antes), sem travar ninguém.
+    let meuPerfil = null;
     if (dados.perfis.length) {
-      const meu = dados.perfis.find(p => p.id === meuUserId);
-      meuPapel = meu && meu.ativo !== false ? meu.papel : "leitura";
+      meuPerfil = dados.perfis.find(p => p.id === meuUserId);
+      meuPapel = meuPerfil && meuPerfil.ativo !== false ? meuPerfil.papel : "leitura";
     } else {
       meuPapel = "admin";
     }
@@ -437,6 +465,24 @@ async function carregarTudo() {
     document.body.classList.toggle("nao-admin", meuPapel !== "admin");
     const badge = $("meu-papel-badge");
     if (badge) badge.textContent = { admin:"Administrador", operacional:"Operacional", leitura:"Leitura" }[meuPapel] || "";
+
+    // módulos liberados e visibilidade financeira — admin sempre vê tudo,
+    // independente do que estiver configurado (evita se trancar sozinho)
+    const modulosPadrao = { extrato:true, recebimentos:true, diesel:true, manutencao:true, agenda:true };
+    const meusModulos = meuPapel === "admin" ? modulosPadrao : { ...modulosPadrao, ...(meuPerfil?.modulos || {}) };
+    const vejoFinanceiro = meuPapel === "admin" || (meuPerfil?.ve_financeiro ?? true);
+    Object.entries(meusModulos).forEach(([mod, liberado]) => {
+      const btn = document.querySelector(`#abas [data-aba="${mod}"]`);
+      if (btn) btn.classList.toggle("oculto", !liberado);
+      // se a aba escondida for a que está ativa no momento, joga pro Painel
+      if (!liberado && btn && btn.classList.contains("ativa")) {
+        btn.classList.remove("ativa");
+        document.querySelectorAll(".secao").forEach(s => s.classList.add("oculto"));
+        $("aba-painel").classList.remove("oculto");
+        $("abas").querySelector('[data-aba="painel"]')?.classList.add("ativa");
+      }
+    });
+    document.body.classList.toggle("sem-financeiro", !vejoFinanceiro);
 
     $("carregando").classList.add("oculto");
     $("aba-painel").classList.remove("oculto");
@@ -1454,6 +1500,21 @@ function renderAdministracao() {
         <button class="btn-editar" onclick="abrirModalPerfil('${p.id}')" title="Editar">✎</button>
       </div>`).join("")
     : '<div class="vazio">Nenhum usuário. Rode a migração correcoes_v19.sql no Supabase.</div>';
+
+  // auditoria — vazio pra quem não é admin, por causa da RLS (não é bug)
+  const NOME_TABELA_LOG = { lancamentos:"Extrato", recebimentos:"Recebimentos", diesel:"Abastecimento", manutencoes:"Manutenção", agenda:"Agenda" };
+  const NOME_ACAO = { criar:"criou", editar:"editou", excluir:"excluiu" };
+  $("admin-auditoria").innerHTML = dados.logAtividade.length
+    ? dados.logAtividade.map(l => {
+        const autor = dados.perfis.find(p => p.id === l.usuario_id);
+        const quando = new Date(l.criado_em);
+        const dataHora = fData(isoLocal(quando)) + " " + String(quando.getHours()).padStart(2,"0") + ":" + String(quando.getMinutes()).padStart(2,"0");
+        return `<div class="admin-linha">
+          <span class="admin-linha-nome">${escHtml(autor?.nome || "Alguém")} ${NOME_ACAO[l.acao] || l.acao} um registro em ${escHtml(NOME_TABELA_LOG[l.tabela] || l.tabela)}</span>
+          <span class="td-mudo">${dataHora}</span>
+        </div>`;
+      }).join("")
+    : '<div class="vazio">Sem atividade registrada ainda (ou você não é administrador — o log só aparece pra admins).</div>';
 }
 
 // Fábrica: cria a função abrirModalXxx(id) para um cadastro simples
@@ -1512,10 +1573,15 @@ function abrirModalFeriado(id) {
   });
 }
 
+const NOME_MODULO = { extrato:"Extrato", recebimentos:"Recebimentos", diesel:"Abastecimento", manutencao:"Manutenção", agenda:"Agenda" };
+
 function abrirModalPerfil(id) {
   const p = dados.perfis.find(x => x.id === id);
   if (!p) return;
   const souEu = id === meuUserId;
+  const modulos = p.modulos || {};
+  const equipLiberados = new Set(dados.perfisEquipamentos.filter(pe => pe.perfil_id === id).map(pe => pe.equipamento_id));
+
   abrirModal({
     titulo: "Editar usuário",
     tabela: "perfis", id,
@@ -1526,13 +1592,51 @@ function abrirModalPerfil(id) {
         opcoes:["leitura|Leitura (só visualizar)","operacional|Operacional (lança e edita)","admin|Administrador (acesso total)"],
         valor: p.papel || "leitura" },
       { nome:"ativo", rotulo:"Ativo (acesso liberado)", tipo:"checkbox", valor: p.ativo ?? true },
+      { nome:"ve_financeiro", rotulo:"Vê o Painel e o saldo em caixa", tipo:"checkbox", largo:true, valor: p.ve_financeiro ?? true },
+      // módulos — só valem pra quem é "operacional" (admin sempre vê tudo)
+      ...Object.entries(NOME_MODULO).map(([chave, rotulo]) => ({
+        nome: "mod_" + chave, rotulo: "Módulo: " + rotulo, tipo:"checkbox", valor: modulos[chave] ?? true,
+      })),
+      // equipamentos liberados — em branco (nenhum marcado) = sem restrição, vê todos
+      ...dados.equipamentos.map(e => ({
+        nome: "equip_" + e.id, rotulo: "Equipamento: " + e.nome, tipo:"checkbox", valor: equipLiberados.has(e.id),
+      })),
     ],
     montar(f) {
       if (!f.nome.trim()) throw "Informe o nome.";
       if (souEu && (f.papel !== "admin" || !f.ativo)) {
         throw "Você não pode tirar seu próprio acesso de administrador ou se desativar — peça pra outro admin fazer isso.";
       }
-      return { nome: f.nome.trim(), papel: f.papel, ativo: !!f.ativo };
+      const mods = {};
+      Object.keys(NOME_MODULO).forEach(chave => { mods[chave] = !!f["mod_" + chave]; });
+      const equipSelecionados = dados.equipamentos.filter(e => f["equip_" + e.id]).map(e => e.id);
+      return {
+        nome: f.nome.trim(), papel: f.papel, ativo: !!f.ativo, ve_financeiro: !!f.ve_financeiro,
+        modulos: mods, _equipamentosSelecionados: equipSelecionados,
+      };
+    },
+    async aoSalvar(reg) {
+      const equipSel = reg._equipamentosSelecionados;
+      delete reg._equipamentosSelecionados;
+
+      const btn = $("modal-salvar");
+      btn.disabled = true; btn.textContent = "Salvando…";
+      const { error } = await sb.from("perfis").update(reg).eq("id", id);
+      if (error) {
+        btn.disabled = false; btn.textContent = "Editar";
+        $("modal-erro").textContent = "Não foi possível salvar: " + error.message;
+        $("modal-erro").classList.remove("oculto");
+        return;
+      }
+      // regrava do zero as liberações de equipamento (mais simples que diff)
+      await sb.from("perfis_equipamentos").delete().eq("perfil_id", id);
+      if (equipSel.length) {
+        await sb.from("perfis_equipamentos").insert(equipSel.map(eid => ({ perfil_id: id, equipamento_id: eid })));
+      }
+      btn.disabled = false; btn.textContent = "Editar";
+      fecharModal();
+      toast("Usuário atualizado.");
+      await carregarTudo();
     }
   });
 }
