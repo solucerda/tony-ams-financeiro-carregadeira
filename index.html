@@ -81,7 +81,7 @@
       <div class="topo-faixa"></div>
       <div class="topo-conteudo">
         <div class="marca">
-          <div class="marca-icone">PC</div>
+          <div class="marca-icone" id="equip-icone">PC</div>
           <div>
             <div class="marca-nome">TA Transporte</div>
             <div class="marca-sub">Financeiro · <span id="contexto-nome">—</span></div>
@@ -92,9 +92,20 @@
             <span class="topo-saldo-rotulo">Saldo em caixa</span>
             <span class="topo-saldo-valor" id="saldo-topo">—</span>
           </div>
-          <span id="meu-papel-badge" class="papel-badge"></span>
-          <button class="btn-fantasma" id="btn-trocar-equip" title="Trocar equipamento">Trocar</button>
-          <button class="btn-fantasma btn-sair" id="btn-sair" title="Sair">Sair</button>
+          <div class="usuario-menu">
+            <button class="usuario-botao" id="usuario-botao" type="button">
+              <span class="usuario-avatar" id="usuario-avatar">?</span>
+              <span class="usuario-info">
+                <span class="usuario-nome" id="usuario-nome-topo">—</span>
+                <span id="meu-papel-badge" class="papel-badge"></span>
+              </span>
+            </button>
+            <div class="usuario-dropdown oculto" id="usuario-dropdown">
+              <button type="button" id="btn-meu-perfil">Meu perfil</button>
+              <button type="button" id="btn-trocar-equip">Trocar equipamento</button>
+              <button type="button" id="btn-sair" class="usuario-sair">Sair</button>
+            </div>
+          </div>
         </div>
       </div>
       <nav class="abas" id="abas">
@@ -315,31 +326,9 @@
 
       <!-- ─── ADMINISTRAÇÃO ─── -->
       <section id="aba-administracao" class="secao oculto">
-        <div id="admin-cadastros"></div>
-
-        <div class="cartao">
-          <div class="cartao-cabeca">
-            <h2 class="titulo-risco"><span>Feriados</span></h2>
-            <button class="btn-primario" id="admin-novo-feriado">+ Novo feriado</button>
-          </div>
-          <p class="cartao-nota">usados no alerta de dia não útil da Agenda, além de sábado/domingo. Feriados móveis (Carnaval, Páscoa) precisam ser adicionados manualmente ano a ano.</p>
-          <div id="admin-feriados"></div>
-        </div>
-
-        <div class="cartao">
-          <div class="cartao-cabeca">
-            <h2 class="titulo-risco"><span>Usuários</span></h2>
-          </div>
-          <p class="cartao-nota">Pra adicionar alguém: Supabase → Authentication → Users → Add user (e-mail + senha). O perfil aparece aqui sozinho como "Leitura" — edite o nível de acesso depois.</p>
-          <div id="admin-usuarios"></div>
-        </div>
-
-        <div class="cartao">
-          <div class="cartao-cabeca">
-            <h2 class="titulo-risco"><span>Atividade recente</span></h2>
-          </div>
-          <p class="cartao-nota">últimas 100 alterações em Extrato, Recebimentos, Abastecimento, Manutenção e Agenda.</p>
-          <div id="admin-auditoria"></div>
+        <div class="admin-layout">
+          <nav class="admin-sidebar" id="admin-sidebar"></nav>
+          <div class="admin-conteudo" id="admin-conteudo"></div>
         </div>
       </section>
     </main>

@@ -118,6 +118,27 @@ function equipamentoPadrao(valorAtual, incluirGeral) {
   const primeiro = dados.equipamentos.find(e => e.ativo);
   return primeiro ? String(primeiro.id) : "";
 }
+// Avatar: usa a foto cadastrada, ou gera um círculo colorido com as
+// iniciais do nome (cor consistente pro mesmo nome, sempre).
+const PALETA_AVATAR = ["#F5B301","#3ECF8E","#7A8CF0","#FF8C42","#4EC9D4","#C77DFF","#F0564A"];
+function corAvatar(texto) {
+  let h = 0;
+  for (const c of String(texto || "")) h = (h * 31 + c.charCodeAt(0)) % PALETA_AVATAR.length;
+  return PALETA_AVATAR[Math.abs(h)];
+}
+function iniciais(nome) {
+  const partes = String(nome || "").trim().split(/\s+/).filter(Boolean);
+  if (!partes.length) return "?";
+  return (partes[0][0] + (partes[1]?.[0] || "")).toUpperCase();
+}
+function avatarHtml(nome, url) {
+  const cor = corAvatar(nome);
+  if (url) {
+    return `<span class="avatar-fallback" style="background:${cor}"><img src="${escHtml(url)}" alt="" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.textContent='${iniciais(nome)}'"></span>`;
+  }
+  return `<span class="avatar-fallback" style="background:${cor}">${iniciais(nome)}</span>`;
+}
+
 function nomeEquipamento(id) {
   const e = dados.equipamentos.find(x => x.id === id);
   return e ? e.nome : "";
@@ -203,6 +224,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("btn-trocar-equip").addEventListener("click", () => {
     $("app").classList.add("oculto");
     mostrarSeletorEquipamento();
+  });
+  $("usuario-botao").addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    $("usuario-dropdown").classList.toggle("oculto");
+  });
+  document.addEventListener("click", () => $("usuario-dropdown").classList.add("oculto"));
+  $("btn-meu-perfil").addEventListener("click", () => {
+    $("usuario-dropdown").classList.add("oculto");
+    abrirModalMeuPerfil();
   });
 });
 
@@ -299,6 +329,10 @@ function escolherContexto(equipamentoId, nome) {
   contexto = { equipamentoId, nome };
   $("tela-equipamento").classList.add("oculto");
   $("contexto-nome").textContent = nome;
+  const equip = equipamentoId != null ? dados.equipamentos.find(e => e.id === equipamentoId) : null;
+  $("equip-icone").outerHTML = equip?.imagem_url
+    ? `<div class="marca-icone" id="equip-icone"><img src="${escHtml(equip.imagem_url)}" alt="" onerror="this.remove()"></div>`
+    : `<div class="marca-icone" id="equip-icone">${escHtml((nome||"TN").slice(0,2).toUpperCase())}</div>`;
   if (!appIniciado) { iniciarApp(); appIniciado = true; }
   else { $("app").classList.remove("oculto"); carregarTudo(); }
 }
@@ -321,7 +355,6 @@ async function iniciarApp() {
   $("die-novo").addEventListener("click", () => abrirModalDiesel(null));
   $("age-novo").addEventListener("click", () => abrirModalAgenda(null));
   $("man-novo").addEventListener("click", () => abrirModalManutencao(null));
-  $("admin-novo-feriado").addEventListener("click", () => abrirModalFeriado(null));
 
   // filtros do extrato
   ligarSegmentado("ext-modo-periodo", (v) => {
@@ -465,6 +498,9 @@ async function carregarTudo() {
     document.body.classList.toggle("nao-admin", meuPapel !== "admin");
     const badge = $("meu-papel-badge");
     if (badge) badge.textContent = { admin:"Administrador", operacional:"Operacional", leitura:"Leitura" }[meuPapel] || "";
+    const nomeExibicao = meuPerfil?.nome || "Usuário";
+    $("usuario-nome-topo").textContent = nomeExibicao;
+    $("usuario-avatar").outerHTML = avatarHtml(nomeExibicao, meuPerfil?.avatar_url).replace('class="avatar-fallback"', 'class="avatar-fallback" id="usuario-avatar"');
 
     // módulos liberados e visibilidade financeira — admin sempre vê tudo,
     // independente do que estiver configurado (evita se trancar sozinho)
@@ -1437,6 +1473,48 @@ function abrirModalManutencao(id) {
   });
 }
 
+async function abrirModalMeuPerfil() {
+  const { data: { user } } = await sb.auth.getUser();
+  const meu = dados.perfis.find(p => p.id === meuUserId);
+  abrirModal({
+    titulo: "Meu perfil",
+    tabela: "_meu_perfil",
+    campos: [
+      { nome:"nome", rotulo:"Nome", tipo:"texto", largo:true, valor: meu?.nome || "" },
+      { nome:"_email", rotulo:"E-mail", tipo:"texto", largo:true, valor: user?.email || "" },
+      { nome:"avatar_url", rotulo:"Link da foto (opcional)", tipo:"texto", largo:true, valor: meu?.avatar_url || "" },
+      { nome:"nova_senha", rotulo:"Nova senha (deixe em branco pra não trocar)", tipo:"senha", valor:"" },
+    ],
+    semExcluir: true,
+    montar(f) {
+      if (!f.nome.trim()) throw "Informe o nome.";
+      if (f.nova_senha && f.nova_senha.length < 6) throw "A nova senha precisa ter pelo menos 6 caracteres.";
+      return { nome: f.nome.trim(), avatar_url: f.avatar_url.trim() || null, nova_senha: f.nova_senha };
+    },
+    async aoSalvar(reg) {
+      const btn = $("modal-salvar");
+      btn.disabled = true; btn.textContent = "Salvando…";
+      const { error } = await sb.from("perfis").update({ nome: reg.nome, avatar_url: reg.avatar_url }).eq("id", meuUserId);
+      if (error) {
+        btn.disabled = false; btn.textContent = "Salvar";
+        $("modal-erro").textContent = "Não foi possível salvar: " + error.message;
+        $("modal-erro").classList.remove("oculto");
+        return;
+      }
+      if (reg.nova_senha) {
+        const { error: errSenha } = await sb.auth.updateUser({ password: reg.nova_senha });
+        if (errSenha) {
+          toast("Nome/foto salvos, mas a senha não pôde ser trocada: " + errSenha.message);
+        }
+      }
+      btn.disabled = false; btn.textContent = "Salvar";
+      fecharModal();
+      toast("Perfil atualizado.");
+      await carregarTudo();
+    }
+  });
+}
+
 /* ═══════════════ ADMINISTRAÇÃO ═══════════════ */
 // Cada entrada aqui vira um cartão na aba Administração, com listagem e
 // "+ Novo" — evita repetir a mesma função 8 vezes.
@@ -1470,8 +1548,33 @@ const CADASTROS_ADMIN = [
     abrir:"abrirModalTipoRecebimento" },
 ];
 
+const SECOES_ADMIN = [
+  ...CADASTROS_ADMIN.map(c => ({ chave: c.chave, titulo: c.titulo, tipo: "cadastro", config: c })),
+  { chave: "feriados", titulo: "Feriados", tipo: "feriados" },
+  { chave: "usuarios", titulo: "Usuários", tipo: "usuarios" },
+  { chave: "auditoria", titulo: "Atividade recente", tipo: "auditoria" },
+];
+let adminSecaoAtiva = null;
+
+function mudarSecaoAdmin(chave) {
+  adminSecaoAtiva = chave;
+  renderAdministracao();
+}
+
 function renderAdministracao() {
-  $("admin-cadastros").innerHTML = CADASTROS_ADMIN.map(c => {
+  if (!adminSecaoAtiva || !SECOES_ADMIN.some(s => s.chave === adminSecaoAtiva)) {
+    adminSecaoAtiva = SECOES_ADMIN[0].chave;
+  }
+
+  $("admin-sidebar").innerHTML = SECOES_ADMIN.map(s => `
+    <button type="button" class="admin-sidebar-item ${s.chave === adminSecaoAtiva ? "ativo" : ""}" onclick="mudarSecaoAdmin('${s.chave}')">${s.titulo}</button>
+  `).join("");
+
+  const secao = SECOES_ADMIN.find(s => s.chave === adminSecaoAtiva);
+  const conteudo = $("admin-conteudo");
+
+  if (secao.tipo === "cadastro") {
+    const c = secao.config;
     const lista = dados[c.chave] || [];
     const linhas = lista.length
       ? lista.map(item => `
@@ -1481,7 +1584,7 @@ function renderAdministracao() {
           <button class="btn-editar" onclick="${c.abrir}(${item.id})" title="Editar">✎</button>
         </div>`).join("")
       : '<div class="vazio">Nenhum registro cadastrado.</div>';
-    return `<div class="cartao">
+    conteudo.innerHTML = `<div class="cartao">
       <div class="cartao-cabeca">
         <h2 class="titulo-risco"><span>${c.titulo}</span></h2>
         <button class="btn-primario" onclick="${c.abrir}(null)">+ Novo</button>
@@ -1489,45 +1592,71 @@ function renderAdministracao() {
       <p class="cartao-nota">${c.nota}</p>
       <div>${linhas}</div>
     </div>`;
-  }).join("");
+    return;
+  }
 
-  // feriados: campos diferentes (data + descrição), sem toggle de ativo
-  const fer = dados.feriados.slice().sort((a,b) => a.data.localeCompare(b.data));
-  $("admin-feriados").innerHTML = fer.length
-    ? fer.map(f => `
-      <div class="admin-linha">
-        <span class="admin-linha-nome">${fData(f.data)} — ${escHtml(f.descricao || "Feriado")}</span>
-        <button class="btn-editar" onclick="abrirModalFeriado(${f.id})" title="Editar">✎</button>
-      </div>`).join("")
-    : '<div class="vazio">Nenhum feriado cadastrado.</div>';
+  if (secao.tipo === "feriados") {
+    const fer = dados.feriados.slice().sort((a,b) => a.data.localeCompare(b.data));
+    conteudo.innerHTML = `<div class="cartao">
+      <div class="cartao-cabeca">
+        <h2 class="titulo-risco"><span>Feriados</span></h2>
+        <button class="btn-primario" onclick="abrirModalFeriado(null)">+ Novo feriado</button>
+      </div>
+      <p class="cartao-nota">usados no alerta de dia não útil da Agenda, além de sábado/domingo. Feriados móveis (Carnaval, Páscoa) precisam ser adicionados manualmente ano a ano.</p>
+      <div>${fer.length
+        ? fer.map(f => `
+          <div class="admin-linha">
+            <span class="admin-linha-nome">${fData(f.data)} — ${escHtml(f.descricao || "Feriado")}</span>
+            <button class="btn-editar" onclick="abrirModalFeriado(${f.id})" title="Editar">✎</button>
+          </div>`).join("")
+        : '<div class="vazio">Nenhum feriado cadastrado.</div>'}</div>
+    </div>`;
+    return;
+  }
 
-  // usuários e níveis de acesso
-  const ROTULO_PAPEL = { admin:"Administrador", operacional:"Operacional", leitura:"Leitura" };
-  const CLASSE_PAPEL = { admin:"chip-pago", operacional:"chip-pendente", leitura:"" };
-  $("admin-usuarios").innerHTML = dados.perfis.length
-    ? dados.perfis.map(p => `
-      <div class="admin-linha">
-        <span class="admin-linha-nome">${escHtml(p.nome || "(sem nome)")}</span>
-        <span class="chip chip-status ${CLASSE_PAPEL[p.papel] || ""}">${ROTULO_PAPEL[p.papel] || p.papel}</span>
-        ${p.ativo === false ? `<span class="chip chip-status chip-vencido">Inativo</span>` : ""}
-        <button class="btn-editar" onclick="abrirModalPerfil('${p.id}')" title="Editar">✎</button>
-      </div>`).join("")
-    : '<div class="vazio">Nenhum usuário. Rode a migração correcoes_v19.sql no Supabase.</div>';
+  if (secao.tipo === "usuarios") {
+    const ROTULO_PAPEL = { admin:"Administrador", operacional:"Operacional", leitura:"Leitura" };
+    const CLASSE_PAPEL = { admin:"chip-pago", operacional:"chip-pendente", leitura:"" };
+    conteudo.innerHTML = `<div class="cartao">
+      <div class="cartao-cabeca">
+        <h2 class="titulo-risco"><span>Usuários</span></h2>
+      </div>
+      <p class="cartao-nota">Pra adicionar alguém: Supabase → Authentication → Users → Add user (e-mail + senha). O perfil aparece aqui sozinho como "Leitura" — edite o nível de acesso depois.</p>
+      <div>${dados.perfis.length
+        ? dados.perfis.map(p => `
+          <div class="admin-linha">
+            ${avatarHtml(p.nome, p.avatar_url)}
+            <span class="admin-linha-nome">${escHtml(p.nome || "(sem nome)")}</span>
+            <span class="chip chip-status ${CLASSE_PAPEL[p.papel] || ""}">${ROTULO_PAPEL[p.papel] || p.papel}</span>
+            ${p.ativo === false ? `<span class="chip chip-status chip-vencido">Inativo</span>` : ""}
+            <button class="btn-editar" onclick="abrirModalPerfil('${p.id}')" title="Editar">✎</button>
+          </div>`).join("")
+        : '<div class="vazio">Nenhum usuário. Rode a migração correcoes_v19.sql no Supabase.</div>'}</div>
+    </div>`;
+    return;
+  }
 
-  // auditoria — vazio pra quem não é admin, por causa da RLS (não é bug)
-  const NOME_TABELA_LOG = { lancamentos:"Extrato", recebimentos:"Recebimentos", diesel:"Abastecimento", manutencoes:"Manutenção", agenda:"Agenda" };
-  const NOME_ACAO = { criar:"criou", editar:"editou", excluir:"excluiu" };
-  $("admin-auditoria").innerHTML = dados.logAtividade.length
-    ? dados.logAtividade.map(l => {
-        const autor = dados.perfis.find(p => p.id === l.usuario_id);
-        const quando = new Date(l.criado_em);
-        const dataHora = fData(isoLocal(quando)) + " " + String(quando.getHours()).padStart(2,"0") + ":" + String(quando.getMinutes()).padStart(2,"0");
-        return `<div class="admin-linha">
-          <span class="admin-linha-nome">${escHtml(autor?.nome || "Alguém")} ${NOME_ACAO[l.acao] || l.acao} um registro em ${escHtml(NOME_TABELA_LOG[l.tabela] || l.tabela)}</span>
-          <span class="td-mudo">${dataHora}</span>
-        </div>`;
-      }).join("")
-    : '<div class="vazio">Sem atividade registrada ainda (ou você não é administrador — o log só aparece pra admins).</div>';
+  if (secao.tipo === "auditoria") {
+    const NOME_TABELA_LOG = { lancamentos:"Extrato", recebimentos:"Recebimentos", diesel:"Abastecimento", manutencoes:"Manutenção", agenda:"Agenda" };
+    const NOME_ACAO = { criar:"criou", editar:"editou", excluir:"excluiu" };
+    conteudo.innerHTML = `<div class="cartao">
+      <div class="cartao-cabeca">
+        <h2 class="titulo-risco"><span>Atividade recente</span></h2>
+      </div>
+      <p class="cartao-nota">últimas 100 alterações em Extrato, Recebimentos, Abastecimento, Manutenção e Agenda.</p>
+      <div>${dados.logAtividade.length
+        ? dados.logAtividade.map(l => {
+            const autor = dados.perfis.find(p => p.id === l.usuario_id);
+            const quando = new Date(l.criado_em);
+            const dataHora = fData(isoLocal(quando)) + " " + String(quando.getHours()).padStart(2,"0") + ":" + String(quando.getMinutes()).padStart(2,"0");
+            return `<div class="admin-linha">
+              <span class="admin-linha-nome">${escHtml(autor?.nome || "Alguém")} ${NOME_ACAO[l.acao] || l.acao} um registro em ${escHtml(NOME_TABELA_LOG[l.tabela] || l.tabela)}</span>
+              <span class="td-mudo">${dataHora}</span>
+            </div>`;
+          }).join("")
+        : '<div class="vazio">Sem atividade registrada ainda (ou você não é administrador — o log só aparece pra admins).</div>'}</div>
+    </div>`;
+  }
 }
 
 // Fábrica: cria a função abrirModalXxx(id) para um cadastro simples
@@ -1557,6 +1686,7 @@ function criarModalCadastro(tabela, chaveDados, tituloSingular, camposExtra = []
 
 const abrirModalEquipamentoAdmin = criarModalCadastro("equipamentos", "equipamentos", "equipamento", [
   { nome:"tipo", rotulo:"Tipo", tipo:"select", opcoes:["Maquina|Máquina (controla por horímetro)","Veiculo|Veículo (carro de apoio)"] },
+  { nome:"imagem_url", rotulo:"Foto (link da imagem, opcional)", tipo:"texto", largo:true },
 ]);
 const abrirModalCentroCusto      = criarModalCadastro("centros_custo", "centrosCusto", "centro de custo");
 const abrirModalFornecedor       = criarModalCadastro("fornecedores", "fornecedores", "fornecedor");
@@ -2083,7 +2213,7 @@ function abrirModal(ctx) {
         <input type="text" inputmode="decimal" data-campo="${c.nome}" data-moeda="1" data-negativo="${c.negativo ? 1 : 0}" value="${escHtml(moedaMascara(c.valor))}">
       </label>`;
     }
-    const tipo = c.tipo === "date" ? "date" : c.tipo === "numero" ? "number" : "text";
+    const tipo = c.tipo === "date" ? "date" : c.tipo === "numero" ? "number" : c.tipo === "senha" ? "password" : "text";
     const extra = c.tipo === "numero" ? 'step="any" inputmode="decimal"' : "";
     const listaId = c.lista ? `lista-${c.nome}` : "";
     const listaHtml = c.lista
