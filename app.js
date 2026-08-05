@@ -262,7 +262,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await sb.auth.signOut();
     location.reload();
   });
-  $("btn-trocar-equip").addEventListener("click", () => {
+  $("chip-contexto").addEventListener("click", () => {
     $("app").classList.add("oculto");
     mostrarSeletorEquipamento();
   });
