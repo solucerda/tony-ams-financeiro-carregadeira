@@ -335,6 +335,22 @@ input[data-moeda="1"] { text-align: right; font-family: var(--fonte-mono); }
 }
 .btn-editar:hover { color: var(--amarelo); background: rgba(245,179,1,.08); }
 
+/* ── Linha/cartão inteiro clicável (Extrato, Recebimentos, Abastecimento,
+   Manutenção): o antigo botão ✎ deu lugar ao clique na linha toda; sobra
+   só um indicador visual — seta (editar aqui) ou link externo (editar na
+   origem, quando o lançamento foi sincronizado de outro módulo). ───────── */
+.td-acao { width: 30px; text-align: center; padding-left: 4px !important; }
+.indicador-acao {
+  display: inline-block; color: var(--texto-mudo); font-size: 15px; line-height: 1;
+  transition: color .15s;
+}
+.indicador-link { font-size: 12.5px; }
+.tabela tbody tr.linha-clicavel:hover .indicador-acao,
+.tabela tbody tr.linha-clicavel:focus-visible .indicador-acao { color: var(--amarelo); }
+.tabela tbody tr.linha-clicavel:focus-visible {
+  outline: 2px solid var(--amarelo); outline-offset: -2px;
+}
+
 .faixa-resumo {
   display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
   font-size: 12.5px; color: var(--texto-mudo); margin-bottom: 10px;
@@ -449,6 +465,97 @@ input[data-moeda="1"] { text-align: right; font-family: var(--fonte-mono); }
   background: var(--superficie-2); border: 1px solid var(--amarelo); color: var(--texto);
   border-radius: 10px; padding: 10px 18px; font-size: 13.5px; z-index: 60;
   animation: aparecer .2s ease;
+}
+
+/* ── Tabelas em cartões no mobile (Extrato, Recebimentos, Abastecimento,
+   Manutenção) ─────────────────────────────────────────────────────────
+   Abaixo de 640px essas 4 tabelas deixam de rolar na horizontal e viram
+   listas de cartões: 1ª linha com data + descrição e o valor em destaque
+   à direita, chips de status logo abaixo, e o resto como informação
+   secundária. A Agenda (matriz mês × item) NÃO entra aqui — continua como
+   tabela com coluna fixa, é o formato certo pra ela. */
+@media (max-width: 640px) {
+  #aba-extrato .tabela-rolagem,
+  #aba-recebimentos .tabela-rolagem,
+  #aba-diesel .tabela-rolagem,
+  #aba-manutencao .tabela-rolagem {
+    border: none; background: none; box-shadow: none; overflow: visible; border-radius: 0;
+  }
+  #aba-extrato table, #aba-recebimentos table, #aba-diesel table, #aba-manutencao table {
+    display: block; width: 100%;
+  }
+  #aba-extrato thead, #aba-recebimentos thead, #aba-diesel thead, #aba-manutencao thead {
+    display: none;
+  }
+  #aba-extrato tbody, #aba-recebimentos tbody, #aba-diesel tbody, #aba-manutencao tbody {
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  #aba-extrato tbody tr, #aba-recebimentos tbody tr, #aba-diesel tbody tr, #aba-manutencao tbody tr {
+    background: var(--superficie); border: 1px solid var(--borda); border-radius: 12px;
+    padding: 12px 14px; box-shadow: var(--sombra-1); min-height: 44px;
+    transition: border-color .15s;
+  }
+  #aba-extrato tbody tr.linha-clicavel:active, #aba-recebimentos tbody tr.linha-clicavel:active,
+  #aba-diesel tbody tr.linha-clicavel:active, #aba-manutencao tbody tr.linha-clicavel:active,
+  #aba-extrato tbody tr.linha-clicavel:focus-visible, #aba-recebimentos tbody tr.linha-clicavel:focus-visible,
+  #aba-diesel tbody tr.linha-clicavel:focus-visible, #aba-manutencao tbody tr.linha-clicavel:focus-visible {
+    border-color: var(--amarelo);
+  }
+  /* estado vazio: volta a ser um bloco simples centralizado, sem virar cartão */
+  #aba-extrato tbody tr:has(.vazio), #aba-recebimentos tbody tr:has(.vazio),
+  #aba-diesel tbody tr:has(.vazio), #aba-manutencao tbody tr:has(.vazio) {
+    display: block; background: none; border: none; box-shadow: none; padding: 0;
+  }
+
+  /* célula genérica: sem borda/fundo próprio — quem desenha o cartão é o <tr> */
+  #ext-corpo td, #rec-corpo td, #die-corpo td, #man-corpo td {
+    padding: 0; border: none; background: none !important;
+  }
+
+  /* ─ Extrato: data+valor em cima, descrição embaixo, chips, conta/saldo ─ */
+  #ext-corpo tr { display: grid; grid-template-columns: 1fr auto; column-gap: 10px; row-gap: 3px; align-items: start; }
+  #ext-corpo td:nth-child(1) { grid-row: 1; grid-column: 1; font-size: 11px; color: var(--texto-mudo); }
+  #ext-corpo td:nth-child(2) { grid-row: 3; grid-column: 1 / -1; margin-top: 2px; }
+  #ext-corpo td:nth-child(3) { grid-row: 2; grid-column: 1; font-size: 14px; font-weight: 600; color: var(--texto); }
+  #ext-corpo td:nth-child(4) { grid-row: 4; grid-column: 1; font-size: 11.5px; color: var(--texto-mudo); margin-top: 4px; }
+  #ext-corpo td:nth-child(5) { grid-row: 1 / 3; grid-column: 2; align-self: center; font-size: 17px; }
+  #ext-corpo td:nth-child(6) { grid-row: 4; grid-column: 2; text-align: right; font-size: 11.5px; margin-top: 4px; }
+  #ext-corpo td:nth-child(7) { display: none; } /* indicador vira redundante — a origem já aparece no texto acima */
+
+  /* ─ Recebimentos: data+cliente / faturado em destaque / status / horas·hora·pago ─ */
+  #rec-corpo tr { display: grid; grid-template-columns: 1fr auto; column-gap: 10px; row-gap: 3px; align-items: start; }
+  #rec-corpo td:nth-child(1) { grid-row: 1; grid-column: 1; font-size: 11px; color: var(--texto-mudo); }
+  #rec-corpo td:nth-child(2) { grid-row: 2; grid-column: 1; font-size: 14px; font-weight: 600; color: var(--texto); }
+  #rec-corpo td:nth-child(3) { display: none; } /* horímetro: fica só no desktop */
+  #rec-corpo td:nth-child(4) { grid-row: 4; grid-column: 1; font-size: 12px; color: var(--texto-suave); margin-top: 4px; }
+  #rec-corpo td:nth-child(5) { grid-row: 4; grid-column: 2; font-size: 12px; color: var(--texto-mudo); text-align: right; margin-top: 4px; }
+  #rec-corpo td:nth-child(6) { grid-row: 1 / 3; grid-column: 2; align-self: center; text-align: right; font-size: 17px; }
+  #rec-corpo td:nth-child(7) { grid-row: 5; grid-column: 1; font-size: 12px; margin-top: 2px; }
+  #rec-corpo td:nth-child(8) { grid-row: 3; grid-column: 1 / -1; margin-top: 2px; }
+  #rec-corpo td:nth-child(9) { display: none; }
+
+  /* ─ Abastecimento: data+equipamento / total em destaque / status / litros·R$L ─ */
+  #die-corpo tr { display: grid; grid-template-columns: 1fr auto; column-gap: 10px; row-gap: 3px; align-items: start; }
+  #die-corpo td:nth-child(1) { grid-row: 1; grid-column: 1; font-size: 11px; color: var(--texto-mudo); }
+  #die-corpo td:nth-child(2) { grid-row: 2; grid-column: 1; font-size: 14px; font-weight: 600; color: var(--texto); }
+  #die-corpo td:nth-child(3) { grid-row: 4; grid-column: 1; font-size: 12px; color: var(--texto-suave); margin-top: 4px; }
+  #die-corpo td:nth-child(4) { grid-row: 4; grid-column: 2; font-size: 12px; color: var(--texto-mudo); text-align: right; margin-top: 4px; }
+  #die-corpo td:nth-child(5) { grid-row: 1 / 3; grid-column: 2; align-self: center; text-align: right; font-size: 17px; }
+  #die-corpo td:nth-child(6) { grid-row: 3; grid-column: 1 / -1; margin-top: 2px; }
+  #die-corpo td:nth-child(7) { grid-row: 5; grid-column: 1 / -1; text-align: right; font-size: 11px; margin-top: 2px; }
+
+  /* ─ Manutenção: data+valor / descrição / tipo+status / equip·fornecedor / próxima ─ */
+  #man-corpo tr { display: grid; grid-template-columns: 1fr auto; column-gap: 10px; row-gap: 3px; align-items: start; }
+  #man-corpo td:nth-child(1) { grid-row: 1; grid-column: 1; font-size: 11px; color: var(--texto-mudo); }
+  #man-corpo td:nth-child(2) { grid-row: 4; grid-column: 1; font-size: 12px; color: var(--texto-suave); margin-top: 4px; }
+  #man-corpo td:nth-child(3) { grid-row: 3; grid-column: 1; margin-top: 2px; }
+  #man-corpo td:nth-child(4) { display: none; } /* horímetro: fica só no desktop */
+  #man-corpo td:nth-child(5) { grid-row: 2; grid-column: 1 / -1; font-size: 14px; font-weight: 600; color: var(--texto); }
+  #man-corpo td:nth-child(6) { grid-row: 4; grid-column: 2; font-size: 12px; color: var(--texto-mudo); text-align: right; margin-top: 4px; }
+  #man-corpo td:nth-child(7) { grid-row: 1; grid-column: 2; text-align: right; font-size: 17px; }
+  #man-corpo td:nth-child(8) { grid-row: 3; grid-column: 2; justify-self: end; margin-top: 2px; }
+  #man-corpo td:nth-child(9) { grid-row: 5; grid-column: 1 / -1; font-size: 11px; color: var(--texto-mudo); margin-top: 4px; }
+  #man-corpo td:nth-child(10) { display: none; }
 }
 
 /* ── Responsivo / acessibilidade ───────────────────────── */

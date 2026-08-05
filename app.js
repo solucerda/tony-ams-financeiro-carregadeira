@@ -88,6 +88,20 @@ function toast(msg) {
   t._timer = setTimeout(() => t.classList.add("oculto"), 3200);
 }
 
+// Guarda de permissão para cliques em linha/cartão inteiro (Extrato,
+// Recebimentos, Abastecimento, Manutenção): no papel "leitura" mostra o
+// mesmo aviso já usado na Agenda em vez de abrir o formulário de edição.
+function aoClicarLinha(fn) {
+  if (meuPapel === "leitura") { toast("Seu acesso é somente leitura."); return; }
+  fn();
+}
+
+// Handler de teclado para linhas/cartões clicáveis (role="button"): Enter e
+// Espaço disparam o mesmo clique, mantendo a navegação por teclado.
+function teclaLinha(ev) {
+  if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.currentTarget.click(); }
+}
+
 // Liga um grupo de botões "segmentado" (ex.: Barras / Linhas): ao clicar,
 // marca o botão como ativo e chama aoMudar(valor).
 function ligarSegmentado(idContainer, aoMudar) {
@@ -865,10 +879,18 @@ function origemDoLancamento(id) {
     const subTxt = [natTxt, nomeCentroCusto(l.centro_custo_id)].filter(Boolean).join(" · ");
     const pendente = l.status === "pendente";
     const origem = origemDoLancamento(l.id);
-    const botaoEditar = origem
-      ? `<button class="btn-editar" onclick="${origem.fn}(${origem.id})" title="Editar pelo ${origem.tabela}">↗</button>`
-      : `<button class="btn-editar" onclick="abrirModalLancamento(${l.id})" title="Editar">✎</button>`;
-    return `<tr>
+    // linha/cartão inteiro é clicável — edição de sincronizados redireciona
+    // para a origem, como o botão ↗ fazia antes; o resto abre o próprio
+    // lançamento. O ícone que sobra é só indicativo, sem ação própria.
+    const acao = origem
+      ? `aoClicarLinha(() => ${origem.fn}(${origem.id}))`
+      : `aoClicarLinha(() => abrirModalLancamento(${l.id}))`;
+    const tituloAcao = origem ? `Editar pelo ${origem.tabela}` : "Editar lançamento";
+    const indicador = origem
+      ? `<span class="indicador-acao indicador-link" title="${tituloAcao}">↗</span>`
+      : `<span class="indicador-acao" title="${tituloAcao}">›</span>`;
+    return `<tr class="linha-clicavel" role="button" tabindex="0" title="${tituloAcao}"
+      onclick="${acao}" onkeydown="teclaLinha(event)">
       <td class="td-data">${fData(l.data)}</td>
       <td>
         <span class="chip" style="border-color:${CORES_GRUPO[l.grupo]||"#3A3F48"};color:${CORES_GRUPO[l.grupo]||"#A3A8B4"}">${escHtml(l.grupo)}</span>
@@ -879,7 +901,7 @@ function origemDoLancamento(id) {
       <td class="td-mudo">${escHtml(l.banco)}</td>
       <td class="num ${pendente ? "" : (valor >= 0 ? "pos" : "neg")} ${pendente ? "td-mudo" : ""}">${brl(valor)}</td>
       <td class="num td-saldo ${l.saldo < 0 ? "neg" : ""}">${brl0(l.saldo)}</td>
-      <td>${botaoEditar}</td>
+      <td class="td-acao">${indicador}</td>
     </tr>`;
   }).join("") ||
   '<tr><td colspan="7" class="vazio">Nenhum lançamento para este filtro. Ajuste o mês ou o grupo acima.</td></tr>';
@@ -960,7 +982,8 @@ function renderRecebimentos() {
     const statusHtml = r.recebido
       ? `<span class="chip chip-status chip-pago">Recebido</span>`
       : `<span class="chip chip-status chip-pendente">A receber</span>`;
-    return `<tr>
+    return `<tr class="linha-clicavel" role="button" tabindex="0" title="Editar registro"
+      onclick="aoClicarLinha(() => abrirModalRecebimento(${r.id}))" onkeydown="teclaLinha(event)">
     <td class="td-data">${fData(r.data)}</td>
     <td>${escHtml(r.cliente)}${r.tipo_recebimento_id ? `<div class="td-natureza">${escHtml(nomeTipoRecebimento(r.tipo_recebimento_id))}</div>` : ""}</td>
     <td class="num td-mudo">${r.hora_inicial != null ? num(r.hora_inicial) + " → " + num(r.hora_final) : "—"}</td>
@@ -969,7 +992,7 @@ function renderRecebimentos() {
     <td class="num">${r.valor_total ? brl0(r.valor_total) : "—"}</td>
     <td class="num ${r.valor_pago ? "pos" : ""}">${r.valor_pago ? brl0(r.valor_pago) : "—"}</td>
     <td>${statusHtml}${r.centro_custo_id ? `<div class="td-natureza">${escHtml(nomeCentroCusto(r.centro_custo_id))}</div>` : ""}</td>
-    <td><button class="btn-editar" onclick="abrirModalRecebimento(${r.id})" title="Editar">✎</button></td>
+    <td class="td-acao"><span class="indicador-acao" title="Editar registro">›</span></td>
   </tr>`;
   }).join("") ||
   '<tr><td colspan="9" class="vazio">Nenhum registro. Use o botão acima para lançar horas trabalhadas ou pagamentos.</td></tr>';
@@ -1129,7 +1152,8 @@ function renderDiesel() {
       const statusHtml = d.status === "pendente"
         ? `<span class="chip chip-status ${venceu ? "chip-vencido" : "chip-pendente"}">${venceu ? "Vencido" : "A pagar"}</span>`
         : `<span class="chip chip-status chip-pago">Pago</span>`;
-      return `<tr>
+      return `<tr class="linha-clicavel" role="button" tabindex="0" title="Editar abastecimento"
+        onclick="aoClicarLinha(() => abrirModalDiesel(${d.id}))" onkeydown="teclaLinha(event)">
       <td class="td-data">${fData(d.data)}</td>
       <td>
         ${escHtml(nomeEquipamento(d.equipamento_id)) || "—"}
@@ -1139,7 +1163,7 @@ function renderDiesel() {
       <td class="num td-mudo">${d.valor_unit ? brl(d.valor_unit) : "—"}</td>
       <td class="num neg">${d.valor_total ? brl(d.valor_total) : "—"}</td>
       <td>${statusHtml}${d.status === "pendente" && d.vencimento ? `<div class="td-vencimento">vence ${fData(d.vencimento)}</div>` : ""}</td>
-      <td><button class="btn-editar" onclick="abrirModalDiesel(${d.id})" title="Editar">✎</button></td>
+      <td class="td-acao"><span class="indicador-acao" title="Editar abastecimento">›</span></td>
     </tr>`;
     }
     // par agrupado — soma o total, mostra os equipamentos/combustíveis, e
@@ -1152,7 +1176,8 @@ function renderDiesel() {
     const statusHtml = mesmoStatus
       ? (grupo[0].status === "pendente" ? `<span class="chip chip-status chip-pendente">A pagar</span>` : `<span class="chip chip-status chip-pago">Pago</span>`)
       : `<span class="chip chip-status chip-pendente">Misto</span>`;
-    return `<tr class="linha-clicavel" onclick="abrirDetalheAbastecimentoConjunto([${grupo.map(d=>d.id).join(",")}])">
+    return `<tr class="linha-clicavel" role="button" tabindex="0" title="Ver abastecimento conjunto"
+      onclick="aoClicarLinha(() => abrirDetalheAbastecimentoConjunto([${grupo.map(d=>d.id).join(",")}]))" onkeydown="teclaLinha(event)">
       <td class="td-data">${fData(grupo[0].data)}</td>
       <td>
         ${equipamentos}
@@ -1162,7 +1187,7 @@ function renderDiesel() {
       <td class="num td-mudo">—</td>
       <td class="num neg">${brl(total)}</td>
       <td>${statusHtml}</td>
-      <td class="td-mudo">▸ ${grupo.length} itens</td>
+      <td class="td-acao td-mudo">▸ ${grupo.length} itens</td>
     </tr>`;
   }).join("") ||
   '<tr><td colspan="7" class="vazio">Nenhum abastecimento para este filtro.</td></tr>';
@@ -1391,7 +1416,8 @@ function renderManutencao() {
         ? `<span class="chip chip-status ${venceu ? "chip-vencido" : "chip-pendente"}">${venceu ? "Vencido" : "A pagar"}</span>`
         : `<span class="chip chip-status chip-pago">Pago</span>`);
     const proxTxt = m.proxima_data ? fData(m.proxima_data) : (m.proxima_horimetro ? num(m.proxima_horimetro,0) + " h" : "—");
-    return `<tr>
+    return `<tr class="linha-clicavel" role="button" tabindex="0" title="Editar manutenção"
+      onclick="aoClicarLinha(() => abrirModalManutencao(${m.id}))" onkeydown="teclaLinha(event)">
       <td class="td-data">${fData(m.data)}</td>
       <td class="td-mudo">${contexto.equipamentoId == null ? escHtml(nomeEquipamento(m.equipamento_id)) : "—"}</td>
       <td><span class="chip" style="border-color:${COR_TIPO_MAN[m.tipo]};color:${COR_TIPO_MAN[m.tipo]}">${ROTULO_TIPO_MAN[m.tipo]}</span></td>
@@ -1401,7 +1427,7 @@ function renderManutencao() {
       <td class="num neg">${m.valor_total ? brl(m.valor_total) : "—"}</td>
       <td>${statusHtml}</td>
       <td class="td-mudo">${proxTxt}</td>
-      <td><button class="btn-editar" onclick="abrirModalManutencao(${m.id})" title="Editar">✎</button></td>
+      <td class="td-acao"><span class="indicador-acao" title="Editar manutenção">›</span></td>
     </tr>`;
   }).join("") ||
   '<tr><td colspan="10" class="vazio">Nenhuma manutenção registrada para este filtro.</td></tr>';
