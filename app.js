@@ -442,6 +442,15 @@ async function iniciarApp() {
   });
   $("age-corpo").addEventListener("click", (ev) => {
     if (ev.target.closest(".linha-total")) return;
+    // célula de um mês específico: pula direto pra ela (ver abrirCelulaAgendaMes).
+    // qualquer outro clique na linha (nome do compromisso, coluna "Dia", Total)
+    // mantém o comportamento de sempre — abre a visão com todos os meses.
+    const celMes = ev.target.closest("[data-mes]");
+    if (celMes) {
+      const tr = celMes.closest("[data-item]");
+      if (tr) abrirCelulaAgendaMes(tr.dataset.item, tr.dataset.dia, tr.dataset.agregado === "1", Number(celMes.dataset.mes));
+      return;
+    }
     const tr = ev.target.closest("[data-item]");
     if (tr) abrirModalAgendaItem(tr.dataset.item, tr.dataset.dia, tr.dataset.agregado === "1");
   });
@@ -1945,7 +1954,9 @@ function renderAgenda() {
       ${meses.map(m => {
         const v = i.valores[m];
         const classe = !v ? "td-zero" : i.pagos[m] ? "pago" : v < 0 ? "pos" : "";
-        return `<td class="num ${classe}">${v ? num(v,0) : "·"}</td>`;
+        return v
+          ? `<td class="num cel-mes ${classe}" data-mes="${m}" title="Ver ${MESES[m-1]}">${num(v,0)}</td>`
+          : `<td class="num ${classe}">·</td>`;
       }).join("")}
       <td class="num td-total">${brl0(i.total)}</td>
     </tr>`;
@@ -1987,6 +1998,21 @@ function abrirModalAgendaItem(item, dia, agregado) {
     corpoCustom: `<div class="detalhe-lista">${html}</div>`,
     semSalvar: true,
   });
+}
+
+// Clique direto numa célula da matriz (item × mês específico): mesma
+// filtragem de linhas do abrirModalAgendaItem acima, só que já restrita
+// ao mês clicado — pula o modal "escolha o mês" e cai direto no que
+// abrirModalAgendaItem cairia DEPOIS de escolher esse mês (1 item resolve
+// na hora, vários abrem a lista do mês). Não duplica regra nenhuma de
+// baixa/estorno/sincronização — só entra mais cedo na mesma cadeia.
+function abrirCelulaAgendaMes(item, dia, agregado, mes) {
+  if (meuPapel === "leitura") { toast("Seu acesso é somente leitura."); return; }
+  const linhas = agregado
+    ? dados.age.filter(a => a.item === item && a.origem_tabela && a.ano === anoAgenda && a.mes === mes)
+    : dados.age.filter(a => a.item === item && a.dia === dia && a.ano === anoAgenda && a.mes === mes);
+  if (!linhas.length) return;
+  abrirGrupoAgendaDoMes(linhas);
 }
 
 let _agendaPorMesAtual = null;

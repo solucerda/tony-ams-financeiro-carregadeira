@@ -424,6 +424,13 @@ input[data-moeda="1"] { text-align: right; font-family: var(--fonte-mono); }
 .td-total { font-weight: 600; color: var(--amarelo); }
 .linha-total td { border-top: 2px solid var(--borda); font-weight: 600; background: var(--superficie-2); }
 .linha-clicavel { cursor: pointer; }
+
+/* célula de um mês específico na Agenda — clique pula direto pro grupo
+   daquele mês (ver abrirCelulaAgendaMes em app.js), sem passar pelo modal
+   de escolha de mês. Só as células com valor recebem isso; "·" e a linha
+   de total continuam sem cursor/hover próprios. */
+.cel-mes { cursor: pointer; border-radius: 4px; transition: background .12s; }
+.cel-mes:hover, .cel-mes:focus-visible { background: rgba(245,179,1,.12); outline: none; }
 .chip {
   display: inline-block; border: 1px solid var(--borda-clara); border-radius: 999px;
   padding: 2px 9px; font-size: 11.5px; white-space: nowrap;
