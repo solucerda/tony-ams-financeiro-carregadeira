@@ -102,6 +102,23 @@ function teclaLinha(ev) {
   if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.currentTarget.click(); }
 }
 
+// FAB (mobile): qual ação "criar" cada aba dispara. Painel e Administração
+// não têm ação de criar — ficam de fora do mapa, então o FAB some nelas.
+const ACAO_FAB = {
+  extrato:       () => abrirModalLancamento(null),
+  recebimentos:  () => abrirModalRecebimento(null),
+  diesel:        () => abrirModalDiesel(null),
+  manutencao:    () => abrirModalManutencao(null),
+  agenda:        () => abrirModalAgenda(null),
+};
+function atualizarFab(aba) {
+  const fab = $("fab-acao");
+  if (!fab) return;
+  const acao = ACAO_FAB[aba];
+  fab.classList.toggle("fab-visivel", !!acao);
+  fab.onclick = acao || null;
+}
+
 // Liga um grupo de botões "segmentado" (ex.: Barras / Linhas): ao clicar,
 // marca o botão como ativo e chama aoMudar(valor).
 function ligarSegmentado(idContainer, aoMudar) {
@@ -361,6 +378,7 @@ async function iniciarApp() {
     document.querySelectorAll(".aba").forEach(x => x.classList.toggle("ativa", x === b));
     document.querySelectorAll(".secao").forEach(s => s.classList.add("oculto"));
     $("aba-" + b.dataset.aba).classList.remove("oculto");
+    atualizarFab(b.dataset.aba);
   });
 
   // botões "novo"
@@ -547,6 +565,9 @@ async function carregarTudo() {
       $("aba-" + proxima).classList.remove("oculto");
       document.querySelectorAll(".aba").forEach(b => b.classList.toggle("ativa", b.dataset.aba === proxima));
     }
+    // o FAB acompanha a aba que ficou visível — seja a que já estava
+    // aberta, seja a trocada pela lógica de permissão logo acima.
+    atualizarFab(document.querySelector(".aba.ativa")?.dataset.aba || "painel");
 
     $("carregando").classList.add("oculto");
     renderTudo();

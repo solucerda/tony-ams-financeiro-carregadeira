@@ -270,7 +270,8 @@ body {
 
 /* leitura: some com tudo que cria ou edita */
 body.somente-leitura .btn-primario,
-body.somente-leitura .btn-editar { display: none !important; }
+body.somente-leitura .btn-editar,
+body.somente-leitura .fab { display: none !important; }
 /* operacional e leitura: sem excluir e sem administração/cadastros */
 body.nao-admin .btn-perigo,
 body.nao-admin #equip-add-abrir,
@@ -557,6 +558,33 @@ input[data-moeda="1"] { text-align: right; font-family: var(--fonte-mono); }
   #man-corpo td:nth-child(9) { grid-row: 5; grid-column: 1 / -1; font-size: 11px; color: var(--texto-mudo); margin-top: 4px; }
   #man-corpo td:nth-child(10) { display: none; }
 }
+
+/* ── FAB (ação principal sempre visível no mobile) ─────────
+   Um botão só por vez — dispara a criação da aba ativa (Extrato,
+   Recebimentos, Abastecimento, Manutenção, Agenda). No Painel e na
+   Administração não há ação de criar, então fica escondido. Some também
+   no papel "leitura", junto com os demais .btn-primario. */
+.fab {
+  display: none; position: fixed; right: 18px; bottom: 22px; z-index: 40;
+  width: 56px; height: 56px; border-radius: 999px; border: none;
+  background: var(--amarelo); color: var(--fundo);
+  align-items: center; justify-content: center;
+  font-family: var(--fonte-texto); font-size: 28px; font-weight: 700; line-height: 1;
+  cursor: pointer; box-shadow: var(--sombra-2); transition: background .15s, transform .15s;
+}
+.fab:hover { background: var(--amarelo-claro); }
+.fab:active { transform: scale(.93); }
+.fab:focus-visible { outline: 2px solid var(--texto); outline-offset: 2px; }
+
+@media (max-width: 640px) {
+  .fab.fab-visivel { display: flex; }
+  /* os botões "+ ..." das barras de filtro cedem lugar ao FAB no mobile —
+     no desktop continuam onde estavam */
+  .filtros .btn-primario { display: none; }
+  /* sobe o toast pra não ficar atrás do FAB */
+  .toast { bottom: 92px; }
+}
+
 
 /* ── Responsivo / acessibilidade ───────────────────────── */
 @media (max-width: 560px) {
