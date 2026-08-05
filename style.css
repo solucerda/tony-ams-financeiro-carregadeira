@@ -176,6 +176,19 @@ body {
 .pos { color: var(--verde); }
 .neg { color: var(--vermelho); }
 
+/* ── Painel: "Posição atual" (topo, sempre total — não reage ao filtro de
+   período abaixo) ─────────────────────────────────────────────────────
+   Grade um pouco mais espaçosa que a padrão, e o Saldo em caixa ganha
+   destaque (cartão maior, valor maior) por ser o número mais olhado. */
+.painel-posicao { margin-bottom: 2px; }
+.painel-posicao .titulo-risco { margin-bottom: 4px; }
+.kpi-grade-posicao { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-top: 12px; margin-bottom: 24px; }
+.kpi-grande { padding: 20px 22px; }
+.kpi-grande::before { width: 4px; }
+.kpi-grande .kpi-rotulo { font-size: 11.5px; }
+.kpi-grande .kpi-valor { font-size: 30px; }
+.titulo-periodo { margin-top: 6px; }
+
 /* ── Cartões e gráficos ────────────────────────────────── */
 .cartao { background: var(--superficie); border: 1px solid var(--borda); border-radius: 12px; padding: 18px 18px 16px; margin-bottom: 18px; box-shadow: var(--sombra-1); }
 .cartao-nota { font-size: 12px; color: var(--texto-mudo); margin-bottom: 14px; }
@@ -594,6 +607,7 @@ input[data-moeda="1"] { text-align: right; font-family: var(--fonte-mono); }
   .conteudo { padding: 14px 10px 50px; }
   .form-grade { grid-template-columns: 1fr; }
   .kpi-grade { grid-template-columns: 1fr 1fr; }
+  .kpi-grande { grid-column: 1 / -1; }
   .filtros { flex-direction: column; align-items: stretch; }
   .filtros select, .filtros input, .filtros button { width: 100%; }
   .abas { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; }

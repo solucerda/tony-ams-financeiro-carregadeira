@@ -124,6 +124,12 @@
 
       <!-- ─── PAINEL ─── -->
       <section id="aba-painel" class="secao oculto">
+        <div class="painel-posicao">
+          <h2 class="titulo-risco"><span>Posição atual</span></h2>
+          <p class="cartao-nota">saldo, a receber e a pagar do negócio inteiro — não muda com o período abaixo</p>
+          <div class="kpi-grade kpi-grade-posicao" id="kpis-posicao"></div>
+        </div>
+
         <div class="filtros">
           <select id="pnl-periodo">
             <option value="tudo">Todo o período</option>
@@ -140,6 +146,7 @@
           </select>
         </div>
 
+        <h2 class="titulo-risco titulo-periodo"><span>No período selecionado</span></h2>
         <div class="kpi-grade" id="kpis-painel"></div>
 
         <div class="cartao">

@@ -688,14 +688,21 @@ function renderPainel() {
   // do dia a dia é lucrativa, separado de aportes de capital.
   const resOperacional = ent - saiOperacional;
 
+  // Posição atual do negócio — sempre totais, não reagem ao filtro de
+  // período. Ficam numa grade separada, acima dos filtros, pra não dar a
+  // entender que também são do período selecionado.
+  $("kpis-posicao").innerHTML = [
+    kpi("Saldo em caixa", brl(s), "bancos + dinheiro · total do negócio", s >= 0 ? "pos" : "neg", true),
+    kpi("Em aberto a receber", brl0(emAberto), "faturado − recebido · total", emAberto > 0.5 ? "neg" : "pos"),
+    kpi("Contas a pagar", brl0(aPagar), "abastecimento, manutenção, agenda · total", aPagar > 0.5 ? "neg" : "pos"),
+  ].join("");
+
+  // No período selecionado — reagem aos filtros de período/natureza acima.
   $("kpis-painel").innerHTML = [
-    kpi("Saldo em caixa", brl(s), "bancos + dinheiro · total", s >= 0 ? "pos" : "neg"),
     kpi("Entradas", brl0(ent), "realizado", "pos"),
     kpi("Saídas", brl0(sai), "realizado", "neg"),
     kpi("Resultado", brl0(res), "entradas − saídas", res >= 0 ? "pos" : "neg"),
     kpi("Resultado operacional", brl0(resOperacional), "sem Investimento", resOperacional >= 0 ? "pos" : "neg"),
-    kpi("Em aberto a receber", brl0(emAberto), "faturado − recebido · total", emAberto > 0.5 ? "neg" : "pos"),
-    kpi("Contas a pagar", brl0(aPagar), "abastecimento, manutenção, agenda · total", aPagar > 0.5 ? "neg" : "pos"),
     kpi("Horas faturadas", num(horas) + " h", brl0(faturado) + " gerados"),
     kpi("Combustível por hora", brl(custoHora), num(litros,0) + " L · " + brl0(custoDie)),
   ].join("");
@@ -792,8 +799,8 @@ function renderComposicao(periodoLanc) {
   });
 }
 
-function kpi(rotulo, valor, sub, cls) {
-  return `<div class="kpi">
+function kpi(rotulo, valor, sub, cls, grande) {
+  return `<div class="kpi ${grande ? "kpi-grande" : ""}">
     <div class="kpi-rotulo">${rotulo}</div>
     <div class="kpi-valor ${cls||""}">${valor}</div>
     ${sub ? `<div class="kpi-sub">${sub}</div>` : ""}
