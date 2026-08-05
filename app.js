@@ -88,6 +88,13 @@ function toast(msg) {
   t._timer = setTimeout(() => t.classList.add("oculto"), 3200);
 }
 
+// Ícone SVG a partir do sprite definido no <body> do index.html (estilo
+// Lucide: traço 2px, sem preenchimento, cor herdada via currentColor).
+// Helper central pra não repetir o markup do <use> em cada render().
+function icone(nome, classeExtra) {
+  return `<svg class="icone ${classeExtra || ""}" aria-hidden="true" focusable="false"><use href="#icone-${nome}"></use></svg>`;
+}
+
 // Guarda de permissão para cliques em linha/cartão inteiro (Extrato,
 // Recebimentos, Abastecimento, Manutenção): no papel "leitura" mostra o
 // mesmo aviso já usado na Agenda em vez de abrir o formulário de edição.
@@ -363,7 +370,7 @@ function escolherContexto(equipamentoId, nome) {
   const equip = equipamentoId != null ? dados.equipamentos.find(e => e.id === equipamentoId) : null;
   $("equip-icone").outerHTML = equip?.imagem_url
     ? `<div class="marca-icone" id="equip-icone"><img src="${escHtml(equip.imagem_url)}" alt="" onerror="this.remove()"></div>`
-    : `<div class="marca-icone" id="equip-icone">${escHtml((nome||"TN").slice(0,2).toUpperCase())}</div>`;
+    : `<div class="marca-icone" id="equip-icone">${icone("tractor", "icone-marca")}</div>`;
   if (!appIniciado) { iniciarApp(); appIniciado = true; }
   else { $("app").classList.remove("oculto"); carregarTudo(); }
 }
@@ -908,15 +915,15 @@ function origemDoLancamento(id) {
     const pendente = l.status === "pendente";
     const origem = origemDoLancamento(l.id);
     // linha/cartão inteiro é clicável — edição de sincronizados redireciona
-    // para a origem, como o botão ↗ fazia antes; o resto abre o próprio
+    // para a origem, como o ícone de link externo já indicava antes; o resto abre o próprio
     // lançamento. O ícone que sobra é só indicativo, sem ação própria.
     const acao = origem
       ? `aoClicarLinha(() => ${origem.fn}(${origem.id}))`
       : `aoClicarLinha(() => abrirModalLancamento(${l.id}))`;
     const tituloAcao = origem ? `Editar pelo ${origem.tabela}` : "Editar lançamento";
     const indicador = origem
-      ? `<span class="indicador-acao indicador-link" title="${tituloAcao}">↗</span>`
-      : `<span class="indicador-acao" title="${tituloAcao}">›</span>`;
+      ? `<span class="indicador-acao indicador-link" title="${tituloAcao}">${icone("external-link", "icone-sm")}</span>`
+      : `<span class="indicador-acao" title="${tituloAcao}">${icone("chevron-right", "icone-sm")}</span>`;
     return `<tr class="linha-clicavel" role="button" tabindex="0" title="${tituloAcao}"
       onclick="${acao}" onkeydown="teclaLinha(event)">
       <td class="td-data">${fData(l.data)}</td>
@@ -1020,7 +1027,7 @@ function renderRecebimentos() {
     <td class="num">${r.valor_total ? brl0(r.valor_total) : "—"}</td>
     <td class="num ${r.valor_pago ? "pos" : ""}">${r.valor_pago ? brl0(r.valor_pago) : "—"}</td>
     <td>${statusHtml}${r.centro_custo_id ? `<div class="td-natureza">${escHtml(nomeCentroCusto(r.centro_custo_id))}</div>` : ""}</td>
-    <td class="td-acao"><span class="indicador-acao" title="Editar registro">›</span></td>
+    <td class="td-acao"><span class="indicador-acao" title="Editar registro">${icone("chevron-right", "icone-sm")}</span></td>
   </tr>`;
   }).join("") ||
   '<tr><td colspan="9" class="vazio">Nenhum registro. Use o botão acima para lançar horas trabalhadas ou pagamentos.</td></tr>';
@@ -1191,7 +1198,7 @@ function renderDiesel() {
       <td class="num td-mudo">${d.valor_unit ? brl(d.valor_unit) : "—"}</td>
       <td class="num neg">${d.valor_total ? brl(d.valor_total) : "—"}</td>
       <td>${statusHtml}${d.status === "pendente" && d.vencimento ? `<div class="td-vencimento">vence ${fData(d.vencimento)}</div>` : ""}</td>
-      <td class="td-acao"><span class="indicador-acao" title="Editar abastecimento">›</span></td>
+      <td class="td-acao"><span class="indicador-acao" title="Editar abastecimento">${icone("chevron-right", "icone-sm")}</span></td>
     </tr>`;
     }
     // par agrupado — soma o total, mostra os equipamentos/combustíveis, e
@@ -1215,7 +1222,7 @@ function renderDiesel() {
       <td class="num td-mudo">—</td>
       <td class="num neg">${brl(total)}</td>
       <td>${statusHtml}</td>
-      <td class="td-acao td-mudo">▸ ${grupo.length} itens</td>
+      <td class="td-acao td-mudo">${icone("chevron-right", "icone-sm")} ${grupo.length} itens</td>
     </tr>`;
   }).join("") ||
   '<tr><td colspan="7" class="vazio">Nenhum abastecimento para este filtro.</td></tr>';
@@ -1427,7 +1434,7 @@ function renderManutencao() {
         <span class="chip" style="border-color:${COR_TIPO_MAN[m.tipo]};color:${COR_TIPO_MAN[m.tipo]}">${ROTULO_TIPO_MAN[m.tipo]}</span>
         <span class="man-proxima-desc">${escHtml(m.descricao || "—")}${contexto.equipamentoId == null ? " · " + escHtml(nomeEquipamento(m.equipamento_id)) : ""}</span>
         <span class="man-proxima-data">${fData(m.proxima_data || m.data)}${m.proxima_horimetro ? " · " + num(m.proxima_horimetro,0) + "h" : ""}</span>
-        <button class="btn-editar" onclick="abrirModalManutencao(${m.id})" title="Editar">✎</button>
+        <button class="btn-editar" onclick="abrirModalManutencao(${m.id})" title="Editar">${icone("pencil", "icone-sm")}</button>
       </div>`).join("")
     : '<div class="vazio">Nenhuma manutenção agendada.</div>';
 
@@ -1455,7 +1462,7 @@ function renderManutencao() {
       <td class="num neg">${m.valor_total ? brl(m.valor_total) : "—"}</td>
       <td>${statusHtml}</td>
       <td class="td-mudo">${proxTxt}</td>
-      <td class="td-acao"><span class="indicador-acao" title="Editar manutenção">›</span></td>
+      <td class="td-acao"><span class="indicador-acao" title="Editar manutenção">${icone("chevron-right", "icone-sm")}</span></td>
     </tr>`;
   }).join("") ||
   '<tr><td colspan="10" class="vazio">Nenhuma manutenção registrada para este filtro.</td></tr>';
@@ -1639,7 +1646,7 @@ function renderAdministracao() {
         <div class="admin-linha">
           <span class="admin-linha-nome">${escHtml(item.nome)}</span>
           ${item.ativo === false ? `<span class="chip chip-status chip-pendente">Inativo</span>` : ""}
-          <button class="btn-editar" onclick="${c.abrir}(${item.id})" title="Editar">✎</button>
+          <button class="btn-editar" onclick="${c.abrir}(${item.id})" title="Editar">${icone("pencil", "icone-sm")}</button>
         </div>`).join("")
       : '<div class="vazio">Nenhum registro cadastrado.</div>';
     conteudo.innerHTML = `<div class="cartao">
@@ -1665,7 +1672,7 @@ function renderAdministracao() {
         ? fer.map(f => `
           <div class="admin-linha">
             <span class="admin-linha-nome">${fData(f.data)} — ${escHtml(f.descricao || "Feriado")}</span>
-            <button class="btn-editar" onclick="abrirModalFeriado(${f.id})" title="Editar">✎</button>
+            <button class="btn-editar" onclick="abrirModalFeriado(${f.id})" title="Editar">${icone("pencil", "icone-sm")}</button>
           </div>`).join("")
         : '<div class="vazio">Nenhum feriado cadastrado.</div>'}</div>
     </div>`;
@@ -1687,7 +1694,7 @@ function renderAdministracao() {
             <span class="admin-linha-nome">${escHtml(p.nome || "(sem nome)")}</span>
             <span class="chip chip-status ${CLASSE_PAPEL[p.papel] || ""}">${ROTULO_PAPEL[p.papel] || p.papel}</span>
             ${p.ativo === false ? `<span class="chip chip-status chip-vencido">Inativo</span>` : ""}
-            <button class="btn-editar" onclick="abrirModalPerfil('${p.id}')" title="Editar">✎</button>
+            <button class="btn-editar" onclick="abrirModalPerfil('${p.id}')" title="Editar">${icone("pencil", "icone-sm")}</button>
           </div>`).join("")
         : '<div class="vazio">Nenhum usuário. Rode a migração correcoes_v19.sql no Supabase.</div>'}</div>
     </div>`;

@@ -135,12 +135,16 @@ body {
 .usuario-dropdown button:hover { background: var(--superficie-2); }
 .usuario-dropdown .usuario-sair { color: var(--vermelho); }
 
+/* .abas-wrap: só existe pra hospedar o fade de rolagem nas bordas — a
+   rolagem em si continua sendo do .abas (nav), que não muda. */
+.abas-wrap { position: relative; }
 .abas { display: flex; gap: 2px; padding: 0 14px; overflow-x: auto; }
 .aba {
   background: none; border: none; color: var(--texto-mudo); cursor: pointer;
   font-family: var(--fonte-titulo); font-weight: 500; font-size: 13.5px;
   letter-spacing: 1px; text-transform: uppercase;
   padding: 10px 14px; border-bottom: 2.5px solid transparent; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 7px;
   transition: color .15s;
 }
 .aba:hover { color: var(--texto); }
@@ -343,9 +347,17 @@ input[data-moeda="1"] { text-align: right; font-family: var(--fonte-mono); }
   border-radius: 8px; padding: 9px 14px; font-family: var(--fonte-texto); font-size: 13.5px; cursor: pointer;
 }
 .btn-perigo:hover { background: rgba(240,86,74,.1); }
+/* ── Ícones SVG (sprite definido no index.html) ────────────────────────
+   estilo Lucide: traço 2px, sem preenchimento, cor herdada via
+   currentColor — acompanham automaticamente hover/estado do elemento
+   pai (aba ativa, linha em foco etc.), sem CSS extra por caso de uso. */
+.icone { width: 17px; height: 17px; flex-shrink: 0; display: inline-block; vertical-align: -3px; }
+.icone-sm { width: 14px; height: 14px; vertical-align: -2px; }
+.icone-marca { width: 22px; height: 22px; }
+
 .btn-editar {
   background: none; border: none; color: var(--texto-mudo); cursor: pointer;
-  font-size: 13px; padding: 2px 6px; border-radius: 4px;
+  padding: 4px 6px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center;
 }
 .btn-editar:hover { color: var(--amarelo); background: rgba(245,179,1,.08); }
 
@@ -355,10 +367,9 @@ input[data-moeda="1"] { text-align: right; font-family: var(--fonte-mono); }
    origem, quando o lançamento foi sincronizado de outro módulo). ───────── */
 .td-acao { width: 30px; text-align: center; padding-left: 4px !important; }
 .indicador-acao {
-  display: inline-block; color: var(--texto-mudo); font-size: 15px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center; color: var(--texto-mudo);
   transition: color .15s;
 }
-.indicador-link { font-size: 12.5px; }
 .tabela tbody tr.linha-clicavel:hover .indicador-acao,
 .tabela tbody tr.linha-clicavel:focus-visible .indicador-acao { color: var(--amarelo); }
 .tabela tbody tr.linha-clicavel:focus-visible {
@@ -596,6 +607,17 @@ input[data-moeda="1"] { text-align: right; font-family: var(--fonte-mono); }
   .filtros .btn-primario { display: none; }
   /* sobe o toast pra não ficar atrás do FAB */
   .toast { bottom: 92px; }
+
+  /* fade nas bordas da barra de abas — indica que dá pra rolar pros lados
+     pra ver as abas que não cabem na tela (ex.: Administração) */
+  .abas-wrap::before, .abas-wrap::after {
+    content: ''; position: absolute; top: 0; bottom: 0; width: 22px;
+    pointer-events: none; z-index: 1;
+  }
+  .abas-wrap::before { left: 0; background: linear-gradient(90deg, var(--superficie-2), transparent); }
+  .abas-wrap::after { right: 0; background: linear-gradient(270deg, var(--superficie-2), transparent); }
+  .aba { font-size: 12.5px; padding: 10px 11px; gap: 6px; }
+  .aba .icone { width: 15px; height: 15px; }
 }
 
 
