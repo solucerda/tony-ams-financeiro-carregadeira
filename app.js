@@ -91,8 +91,11 @@ function toast(msg) {
 // Ícone SVG a partir do sprite definido no <body> do index.html (estilo
 // Lucide: traço 2px, sem preenchimento, cor herdada via currentColor).
 // Helper central pra não repetir o markup do <use> em cada render().
+// O viewBox/width/height ficam aqui, no <svg> que de fato aparece na
+// página — sem isso alguns navegadores não sabem escalar o <use> e
+// renderizam o ícone no tamanho intrínseco (gigante) em vez do da CSS.
 function icone(nome, classeExtra) {
-  return `<svg class="icone ${classeExtra || ""}" aria-hidden="true" focusable="false"><use href="#icone-${nome}"></use></svg>`;
+  return `<svg class="icone ${classeExtra || ""}" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><use href="#icone-${nome}"></use></svg>`;
 }
 
 // Guarda de permissão para cliques em linha/cartão inteiro (Extrato,
