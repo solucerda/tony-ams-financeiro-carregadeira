@@ -317,6 +317,15 @@ body.sem-financeiro #abas [data-aba="painel"] { display: none !important; }
 body.sem-financeiro .topo-saldo { display: none !important; }
 
 .acao-botoes { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 12px; }
+
+/* ── Confirmação de exclusão (substitui o confirm() nativo) ─────────── */
+.confirmar-exclusao { padding: 4px 0 14px; }
+.confirmar-exclusao p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--texto-suave); }
+.confirmar-exclusao-aviso {
+  margin-top: 10px !important; padding: 9px 11px; border-radius: 8px;
+  background: rgba(240,86,74,.08); border: 1px solid rgba(240,86,74,.25);
+  color: var(--vermelho) !important; font-size: 12.5px !important;
+}
 .acao-botao {
   display: flex; flex-direction: column; gap: 2px; text-align: left; width: 100%;
   background: var(--superficie-2); border: 1px solid var(--borda-clara); border-radius: 10px;
@@ -474,6 +483,7 @@ input[data-moeda="1"] { text-align: right; font-family: var(--fonte-mono); }
   font-family: var(--fonte-titulo); font-size: 16px; letter-spacing: 1px;
   text-transform: uppercase; margin: 0; padding: 20px 20px 14px; flex: 0 0 auto;
 }
+.modal-titulo-perigo { color: var(--vermelho); }
 .modal-corpo { padding: 0 20px 4px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 .form-grade { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .form-grade label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--texto-mudo); }

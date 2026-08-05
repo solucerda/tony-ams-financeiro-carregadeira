@@ -456,8 +456,46 @@ async function iniciarApp() {
   });
 
   // modal
-  $("modal-cancelar").addEventListener("click", fecharModal);
+  $("modal-cancelar").addEventListener("click", () => {
+    if (modalCtx && modalCtx.aoCancelarClique) { modalCtx.aoCancelarClique(); return; }
+    fecharModal();
+  });
   $("modal-fundo").addEventListener("click", (ev) => { if (ev.target === $("modal-fundo")) fecharModal(); });
+
+  // ── Teclado no modal: Esc fecha, Enter num campo de texto/número/data/
+  // moeda salva, Tab/Shift+Tab ficam presos dentro do modal (focus trap).
+  // Um listener só, sempre ativo — checa a cada tecla se o modal está
+  // aberto, então funciona igual pro modal que estiver na tela no momento,
+  // inclusive nos encadeados da Agenda (cada abrirModal() troca o conteúdo
+  // e o listener passa a valer pro conteúdo novo, sem nada extra a fazer).
+  document.addEventListener("keydown", (ev) => {
+    if ($("modal-fundo").classList.contains("oculto")) return;
+
+    if (ev.key === "Escape") { ev.preventDefault(); fecharModal(); return; }
+
+    if (ev.key === "Enter") {
+      const ativo = document.activeElement;
+      const emCampoDeTexto = ativo && ativo.matches('#modal-campos input:not([type="checkbox"])');
+      if (emCampoDeTexto) {
+        ev.preventDefault();
+        const btnSalvar = $("modal-salvar");
+        if (!btnSalvar.classList.contains("oculto") && !btnSalvar.disabled) btnSalvar.click();
+      }
+      // Enter em <select> ou em botão (ex.: "Baixar"/"Editar" da Agenda,
+      // itens de "detalhe-lista") segue o comportamento nativo — não intercepta.
+      return;
+    }
+
+    if (ev.key === "Tab") {
+      const focaveis = Array.from($("modal-fundo").querySelectorAll(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )).filter(el => el.offsetParent !== null && !el.classList.contains("oculto"));
+      if (!focaveis.length) return;
+      const primeiro = focaveis[0], ultimo = focaveis[focaveis.length - 1];
+      if (ev.shiftKey && document.activeElement === primeiro) { ev.preventDefault(); ultimo.focus(); }
+      else if (!ev.shiftKey && document.activeElement === ultimo) { ev.preventDefault(); primeiro.focus(); }
+    }
+  });
 
   await carregarTudo();
 }
@@ -1055,6 +1093,10 @@ function abrirModalRecebimento(id) {
   abrirModal({
     titulo: r ? "Editar registro" : "Novo registro",
     tabela: "recebimentos", id,
+    tituloExclusao: r ? `o registro de ${r.cliente} (${fData(r.data)})` : null,
+    avisoExcluir: r && (r.lancamento_id || r.lancamento_pendente_id || r.agenda_id)
+      ? "Isso também remove o(s) lançamento(s) vinculado(s) no Extrato" + (r.agenda_id ? " e o compromisso pendente na Agenda." : ".")
+      : null,
     campos: [
       { nome:"data", rotulo:"Data", tipo:"date", valor: r?.data || hoje() },
       { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(r?.equipamento_id, false) },
@@ -1317,6 +1359,10 @@ function abrirModalDiesel(id) {
   abrirModal({
     titulo: d ? "Editar abastecimento" : "Novo abastecimento",
     tabela: "diesel", id,
+    tituloExclusao: d ? `o abastecimento de ${fData(d.data)}` : null,
+    avisoExcluir: d && (d.lancamento_id || d.agenda_id)
+      ? "Isso também remove o lançamento vinculado no Extrato" + (d.agenda_id ? " e o compromisso pendente na Agenda." : ".")
+      : null,
     campos,
     montar(f) {
       const litros = Number(f.litros) || 0;
@@ -1485,6 +1531,10 @@ function abrirModalManutencao(id) {
   abrirModal({
     titulo: m ? "Editar manutenção" : "Nova manutenção",
     tabela: "manutencoes", id,
+    tituloExclusao: m ? `a manutenção de ${fData(m.data)}` : null,
+    avisoExcluir: m && (m.lancamento_id || m.agenda_id)
+      ? "Isso também remove o lançamento vinculado no Extrato" + (m.agenda_id ? " e o compromisso pendente na Agenda." : ".")
+      : null,
     campos: [
       { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(m?.equipamento_id, false) },
       { nome:"tipo", rotulo:"Tipo", tipo:"select", opcoes:["preventiva|Preventiva","preditiva|Preditiva","corretiva|Corretiva"], valor: m?.tipo || "preventiva" },
@@ -2129,6 +2179,10 @@ function abrirModalAgenda(id) {
   abrirModal({
     titulo: a ? "Editar compromisso" : "Novo compromisso",
     tabela: "agenda", id,
+    tituloExclusao: a ? `o compromisso "${a.item}"` : null,
+    avisoExcluir: a && a.lancamento_id
+      ? "Isso também remove o lançamento vinculado no Extrato."
+      : null,
     campos,
     montar(f) {
       if (!f.item.trim()) throw "Informe o nome do compromisso.";
@@ -2282,6 +2336,7 @@ let modalCtx = null;
 function abrirModal(ctx) {
   modalCtx = ctx;
   $("modal-titulo").textContent = ctx.titulo;
+  $("modal-titulo").classList.toggle("modal-titulo-perigo", !!ctx.tituloPerigo);
   $("modal-erro").classList.add("oculto");
 
   if (ctx.corpoCustom) {
@@ -2349,12 +2404,24 @@ function abrirModal(ctx) {
   }
 
   const btnExcluir = $("modal-excluir");
-  btnExcluir.classList.toggle("oculto", !ctx.id || !!ctx.semExcluir);
-  btnExcluir.onclick = () => excluirRegistro();
+  btnExcluir.classList.toggle("oculto", !(ctx.id || ctx.mostrarExcluir) || !!ctx.semExcluir);
+  btnExcluir.disabled = false;
+  btnExcluir.textContent = "Excluir";
+  btnExcluir.onclick = ctx.aoExcluirClique ? ctx.aoExcluirClique : () => excluirRegistro();
   $("modal-salvar").classList.toggle("oculto", !!ctx.semSalvar);
   $("modal-salvar").textContent = ctx.rotuloSalvar || (ctx.id ? "Editar" : "Salvar");
   $("modal-salvar").onclick = () => salvarRegistro();
   $("modal-fundo").classList.remove("oculto");
+
+  // autofoco no primeiro campo do formulário (ou primeiro botão, nos
+  // modais de corpoCustom — escolha de mês/ação da Agenda etc.), pra quem
+  // usa teclado não precisar clicar antes de digitar/navegar.
+  requestAnimationFrame(() => {
+    const primeiro = $("modal-campos").querySelector(
+      'input:not([type="hidden"]):not(:disabled), select:not(:disabled), button:not(:disabled)'
+    );
+    if (primeiro) primeiro.focus({ preventScroll: true });
+  });
 }
 
 function fecharModal() {
@@ -2407,17 +2474,59 @@ async function salvarRegistro() {
   await carregarTudo();
 }
 
-async function excluirRegistro() {
+// Excluir sempre passa primeiro pela confirmação estilizada (nunca exclui
+// direto) — substitui o confirm() nativo do navegador, que quebrava a
+// linguagem visual bem na hora de uma ação destrutiva.
+function excluirRegistro() {
   if (!modalCtx || !modalCtx.id) return;
-  if (!confirm("Excluir este registro? Essa ação não pode ser desfeita.")) return;
+  abrirModalConfirmarExclusao(modalCtx);
+}
 
-  if (modalCtx.aoExcluir) {
-    try { await modalCtx.aoExcluir(); }
+// Guarda o contexto do formulário que estava aberto (ctxOriginal) e troca
+// o conteúdo do MESMO modal pra uma confirmação — "Cancelar" reabre esse
+// contexto do zero (equivalente ao confirm() cancelado: nada muda), e o
+// botão vermelho só executa a exclusão de fato quando confirmado. Nenhuma
+// regra de exclusão/sincronização muda — aoExcluir, o delete da tabela e
+// o carregarTudo() continuam sendo os mesmos de sempre, só que chamados
+// depois dessa etapa a mais em vez de depois do confirm().
+function abrirModalConfirmarExclusao(ctxOriginal) {
+  const nome = ctxOriginal.tituloExclusao || ("o registro \"" + ctxOriginal.titulo + "\"");
+  const avisoHtml = ctxOriginal.avisoExcluir
+    ? `<p class="confirmar-exclusao-aviso">${escHtml(ctxOriginal.avisoExcluir)}</p>` : "";
+  abrirModal({
+    titulo: "Excluir registro?",
+    tituloPerigo: true,
+    tabela: "_confirmar_exclusao",
+    corpoCustom: `<div class="confirmar-exclusao">
+      <p>Tem certeza que quer excluir ${escHtml(nome)}? Essa ação não pode ser desfeita.</p>
+      ${avisoHtml}
+    </div>`,
+    semSalvar: true,
+    mostrarExcluir: true,
+    aoExcluirClique: () => executarExclusao(ctxOriginal),
+    aoCancelarClique: () => abrirModal(ctxOriginal),
+  });
+  // o corpo da confirmação não tem campo nenhum (é só texto), então o
+  // autofoco genérico do abrirModal() não acha nada — aqui a gente manda
+  // explicitamente pro botão seguro (Cancelar), não pro destrutivo, pra um
+  // Enter apertado sem querer não confirmar a exclusão.
+  requestAnimationFrame(() => $("modal-cancelar").focus({ preventScroll: true }));
+}
+
+async function executarExclusao(ctxOriginal) {
+  const btn = $("modal-excluir");
+  btn.disabled = true;
+  btn.textContent = "Excluindo…";
+
+  if (ctxOriginal.aoExcluir) {
+    try { await ctxOriginal.aoExcluir(); }
     catch (e) { console.error("Falha ao remover lançamento vinculado:", e); }
   }
 
-  const { error } = await sb.from(modalCtx.tabela).delete().eq("id", modalCtx.id);
+  const { error } = await sb.from(ctxOriginal.tabela).delete().eq("id", ctxOriginal.id);
   if (error) {
+    btn.disabled = false;
+    btn.textContent = "Excluir";
     $("modal-erro").textContent = "Não foi possível excluir: " + error.message;
     $("modal-erro").classList.remove("oculto");
     return;
