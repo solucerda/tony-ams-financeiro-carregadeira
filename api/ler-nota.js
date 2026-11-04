@@ -94,7 +94,7 @@ async function chamarGemini(imagem, tipo, signal) {
   let r;
   for (const modelo of MODELOS_GEMINI) {
     r = await fetchGemini(modelo, imagem, tipo, signal);
-    if (r.status !== 404) break;
+    if (r.status !== 404 && r.status !== 402) break;
   }
   return r;
 }
@@ -140,7 +140,7 @@ module.exports = async (req, res) => {
     console.error("IA respondeu", resp.status, detalhe.slice(0, 300)); // fica só no log da Vercel
     if (resp.status === 429) return responder(res, 502, { erro: "ia_limite" });
     if (resp.status === 401 || (usaGemini && (resp.status === 403 || /API key not valid/i.test(detalhe)))) return responder(res, 502, { erro: "ia_chave_invalida" });
-    if (/credit balance/i.test(detalhe)) return responder(res, 502, { erro: "ia_sem_saldo" });
+    if (resp.status === 402 || /credit balance|prepayment credits/i.test(detalhe)) return responder(res, 502, { erro: "ia_sem_saldo" });
     return responder(res, 502, { erro: "ia_falhou" });
   }
 
