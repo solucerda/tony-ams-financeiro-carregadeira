@@ -736,3 +736,14 @@ input[data-moeda="1"] { text-align: right; font-family: var(--fonte-mono); }
 .detalhe-total { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--borda); padding: 10px 2px 12px; font-size: 14px; }
 .detalhe-total b { font-family: var(--fonte-mono); font-size: 16px; color: var(--amarelo); }
 .arquivo-status.erro { color: var(--vermelho); border-left-color: var(--vermelho); font-weight: 600; }
+
+/* ── Painel de abastecimento: selo do combustível e nota conjunta ── */
+.badge-comb {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 5px;
+  border-radius: 6px; font-family: var(--fonte-mono); font-size: 11px; font-weight: 800; letter-spacing: .3px;
+  color: #14161a; background: var(--cor-comb, #8a8f98); flex: none;
+}
+.comb-linha { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tag-par { font-size: 10.5px; color: var(--texto-mudo); border: 1px solid var(--borda-clara); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+.linha-par > td:first-child { box-shadow: inset 3px 0 0 var(--amarelo); }
+.linha-par.par-ini > td { border-bottom-style: dashed; }

@@ -1199,6 +1199,14 @@ function abrirModalRecebimento(id) {
 }
 
 /* ═══════════════ DIESEL ═══════════════ */
+// cor e letra de cada combustível (selo no painel e linhas do gráfico)
+const COR_COMB = { Diesel: "#F5B301", Gasolina: "#FF7A3D", Etanol: "#3ECF8E", GNV: "#4DA3FF", Flex: "#A78BFA" };
+const LETRA_COMB = { Diesel: "D", Gasolina: "G", Etanol: "E", GNV: "GNV", Flex: "F" };
+function badgeComb(c) {
+  const nome = c || "Diesel";
+  return `<span class="badge-comb" style="--cor-comb:${COR_COMB[nome] || "#8a8f98"}" title="${escHtml(nome)}">${LETRA_COMB[nome] || escHtml(nome.charAt(0).toUpperCase())}</span>`;
+}
+
 // todos os abastecimentos visíveis: os da seleção atual + os pares (carro de apoio)
 const todosAbastecimentos = () => dados.die.concat(dados.dieExtra || []);
 const acharAbastecimento = (id) => todosAbastecimentos().find(x => x.id === id);
@@ -1219,35 +1227,47 @@ function renderDiesel() {
   );
 
   let litros = 0, custo = 0, aPagar = 0, vencido = 0;
-  const pontos = [];
   const hj = hoje();
+  const porComb = {}; // litros e custo por combustível (preço médio não se mistura)
   for (const d of doFiltro) {
     litros += d.litros; custo += d.valor_total;
-    if (d.valor_unit > 0 && d.litros > 0) pontos.push({ x: fData(d.data), y: d.valor_unit });
+    const c = d.combustivel || "Diesel";
+    (porComb[c] = porComb[c] || { litros: 0, custo: 0 });
+    porComb[c].litros += d.litros || 0; porComb[c].custo += d.valor_total || 0;
     if (d.status === "pendente") {
       aPagar += d.valor_total;
       if (d.vencimento && d.vencimento < hj) vencido += d.valor_total;
     }
   }
+  const combs = Object.keys(porComb).sort((x, y) => porComb[y].litros - porComb[x].litros);
+  const medio = (c) => porComb[c].litros > 0 ? porComb[c].custo / porComb[c].litros : 0;
   const kpisBase = [
     kpi("Combustível consumido", num(litros,0) + " L", brl0(custo) + " no período"),
-    kpi("Preço médio do litro", brl(litros > 0 ? custo/litros : 0)),
+    combs.length <= 1
+      ? kpi("Preço médio do litro", brl(litros > 0 ? custo/litros : 0))
+      : kpi(`Preço médio do litro · ${combs[0]}`, brl(medio(combs[0])), combs.slice(1).map(c => `${c} ${brl(medio(c))}`).join(" · ")),
     kpi("Combustível a pagar", brl0(aPagar), vencido > 0 ? brl0(vencido) + " vencido" : "em dia", aPagar > 0 ? "neg" : "pos"),
   ];
   $("kpis-diesel").innerHTML = kpisBase.join("");
 
+  // gráfico: uma linha por combustível (cada um com a sua cor)
+  const pts = doFiltro.filter(d => d.valor_unit > 0 && d.litros > 0)
+    .sort((x, y) => String(x.data).localeCompare(String(y.data)) || x.id - y.id);
+  const combsGraf = [...new Set(pts.map(p => p.combustivel || "Diesel"))];
   desenharGrafico("graf-diesel", {
     type: "line",
     data: {
-      labels: pontos.map(p => p.x),
-      datasets: [{ label:"R$/L", data: pontos.map(p => p.y),
-        borderColor:"#F5B301", backgroundColor:"#F5B301", borderWidth:2, pointRadius:2.5, tension:.1 }]
+      labels: pts.map(p => fData(p.data)),
+      datasets: combsGraf.map(c => ({ label: c + " R$/L",
+        data: pts.map(p => (p.combustivel || "Diesel") === c ? p.valor_unit : null), spanGaps: true,
+        borderColor: COR_COMB[c] || "#F5B301", backgroundColor: COR_COMB[c] || "#F5B301", borderWidth:2, pointRadius:3, tension:.1 }))
     },
-    options: opcoesGrafico({ legenda:false, decimais:2 })
+    options: opcoesGrafico({ legenda: combsGraf.length > 1, decimais:2 })
   });
 
-  // agrupa o par (principal + carro de apoio) numa linha só — só agrupa se
-  // os dois passaram no filtro atual; senão mostra cada um separado.
+  // Cada equipamento/combustível é uma linha própria no demonstrativo, com
+  // um selo colorido (D, G, E…). Os dois lados de uma nota conjunta ficam
+  // juntos e marcados com 🔗 — mas cada um mostra o seu valor.
   const gruposMap = {};
   doFiltro.forEach(d => {
     const chave = d.grupo_abastecimento_id
@@ -1256,52 +1276,34 @@ function renderDiesel() {
     (gruposMap[chave] = gruposMap[chave] || []).push(d);
   });
   const grupos = Object.values(gruposMap).sort((a,b) => Math.max(...b.map(x=>x.id)) - Math.max(...a.map(x=>x.id)));
+  grupos.forEach(g => g.sort((x, y) => (tipoEquipamento(x.equipamento_id) === "Maquina" ? 0 : 1) - (tipoEquipamento(y.equipamento_id) === "Maquina" ? 0 : 1) || x.id - y.id));
 
-  $("die-corpo").innerHTML = grupos.map(grupo => {
-    if (grupo.length === 1) {
-      const d = grupo[0];
-      const venceu = d.status === "pendente" && d.vencimento && d.vencimento < hj;
-      const statusHtml = d.status === "pendente"
-        ? `<span class="chip chip-status ${venceu ? "chip-vencido" : "chip-pendente"}">${venceu ? "Vencido" : "A pagar"}</span>`
-        : `<span class="chip chip-status chip-pago">Pago</span>`;
-      return `<tr class="linha-clicavel" role="button" tabindex="0" title="Editar abastecimento"
+  const linhas = [];
+  grupos.forEach(grupo => grupo.forEach((d, i) => {
+    const venceu = d.status === "pendente" && d.vencimento && d.vencimento < hj;
+    const statusHtml = d.status === "pendente"
+      ? `<span class="chip chip-status ${venceu ? "chip-vencido" : "chip-pendente"}">${venceu ? "Vencido" : "A pagar"}</span>`
+      : `<span class="chip chip-status chip-pago">Pago</span>`;
+    const emPar = grupo.length > 1;
+    const classe = "linha-clicavel" + (emPar ? " linha-par" + (i === 0 ? " par-ini" : "") + (i === grupo.length - 1 ? " par-fim" : "") : "");
+    const tagPar = d.grupo_abastecimento_id
+      ? ` <span class="tag-par" title="Esta linha faz parte de uma nota conjunta (máquina + carro de apoio)">🔗 nota conjunta</span>` : "";
+    const desc = Number(d.desconto) > 0 ? `<div class="td-vencimento">desconto ${brl(d.desconto)}</div>` : "";
+    linhas.push(`<tr class="${classe}" role="button" tabindex="0" title="Editar abastecimento"
         onclick="aoClicarLinha(() => abrirModalDiesel(${d.id}))" onkeydown="teclaLinha(event)">
       <td class="td-data">${fData(d.data)}</td>
       <td>
-        ${escHtml(nomeEquipamento(d.equipamento_id)) || "—"}
+        <div class="comb-linha">${badgeComb(d.combustivel)} <span>${escHtml(nomeEquipamento(d.equipamento_id)) || "—"}</span>${tagPar}</div>
         <div class="td-natureza">${escHtml(d.combustivel || "Diesel")}${d.local ? " · " + escHtml(d.local) : ""}${d.comprovante_pagamento_path || d.nota_fiscal_path ? ` <span title="Tem comprovante/nota anexado">📎</span>` : ""}</div>
       </td>
-      <td class="num">${d.litros ? num(d.litros,0) : "—"}</td>
-      <td class="num td-mudo">${d.valor_unit ? brl(d.valor_unit) : "—"}</td>
+      <td class="num">${d.litros ? num(d.litros, d.litros % 1 ? 2 : 0) : "—"}</td>
+      <td class="num td-mudo">${d.valor_unit ? brl(d.valor_unit) : "—"}${desc}</td>
       <td class="num neg">${d.valor_total ? brl(d.valor_total) : "—"}</td>
       <td>${statusHtml}${d.status === "pendente" && d.vencimento ? `<div class="td-vencimento">vence ${fData(d.vencimento)}</div>` : ""}</td>
       <td class="td-acao"><span class="indicador-acao" title="Editar abastecimento">${icone("chevron-right", "icone-sm")}</span></td>
-    </tr>`;
-    }
-    // par agrupado — soma o total, mostra os equipamentos/combustíveis, e
-    // clicar abre o detalhamento de cada um
-    const total = grupo.reduce((s,d) => s + (d.valor_total || 0), 0);
-    const litrosTotal = grupo.reduce((s,d) => s + (d.litros || 0), 0);
-    const equipamentos = grupo.map(d => escHtml(nomeEquipamento(d.equipamento_id))).join(" + ");
-    const combustiveis = grupo.map(d => escHtml(d.combustivel)).join(" + ");
-    const mesmoStatus = grupo.every(d => d.status === grupo[0].status);
-    const statusHtml = mesmoStatus
-      ? (grupo[0].status === "pendente" ? `<span class="chip chip-status chip-pendente">A pagar</span>` : `<span class="chip chip-status chip-pago">Pago</span>`)
-      : `<span class="chip chip-status chip-pendente">Misto</span>`;
-    return `<tr class="linha-clicavel" role="button" tabindex="0" title="Ver abastecimento conjunto"
-      onclick="aoClicarLinha(() => abrirDetalheAbastecimentoConjunto([${grupo.map(d=>d.id).join(",")}]))" onkeydown="teclaLinha(event)">
-      <td class="td-data">${fData(grupo[0].data)}</td>
-      <td>
-        ${equipamentos}
-        <div class="td-natureza">Abastecimento conjunto · ${combustiveis}</div>
-      </td>
-      <td class="num">${num(litrosTotal,0)}</td>
-      <td class="num td-mudo">—</td>
-      <td class="num neg">${brl(total)}</td>
-      <td>${statusHtml}</td>
-      <td class="td-acao td-mudo">${icone("chevron-right", "icone-sm")} ${grupo.length} itens</td>
-    </tr>`;
-  }).join("") ||
+    </tr>`);
+  }));
+  $("die-corpo").innerHTML = linhas.join("") ||
   '<tr><td colspan="7" class="vazio">Nenhum abastecimento para este filtro.</td></tr>';
 }
 
@@ -1441,8 +1443,10 @@ function abrirModalDiesel(id) {
     let avisoDesconto = null;
     if (!itens.some(i => i.desc > 0) && (Number(nota.descontoTotal) || 0) > 0) {
       const maiorItem = combustiveis.reduce((a, b) => (b.valorTotal > a.valorTotal ? b : a));
-      if (principal === maiorItem || carro === maiorItem) maiorItem.desc = Math.min(Number(nota.descontoTotal), maiorItem.valorTotal);
-      else avisoDesconto = `⚠ A nota tem desconto de ${brl(nota.descontoTotal)}, mas não sei a qual item pertence. Não apliquei, confira.`;
+      if (principal === maiorItem || carro === maiorItem) {
+        maiorItem.desc = Math.min(Number(nota.descontoTotal), maiorItem.valorTotal);
+        avisoDesconto = `⚠ A nota só informa o desconto no total (${brl(nota.descontoTotal)}). Apliquei ao maior item (${maiorItem.combustivel}); se ele valia para outro, corrija.`;
+      } else avisoDesconto = `⚠ A nota tem desconto de ${brl(nota.descontoTotal)}, mas não sei a qual item pertence. Não apliquei, confira.`;
     }
     const pago = (i) => arred(i.valorTotal - i.desc, 2);
     const duasCasas = (v) => Math.abs(v * 100 - Math.round(v * 100)) < 0.0001;
