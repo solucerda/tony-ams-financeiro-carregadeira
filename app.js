@@ -1099,8 +1099,8 @@ function abrirModalRecebimento(id) {
       : null,
     campos: [
       { nome:"data", rotulo:"Data", tipo:"date", valor: r?.data || hoje() },
-      { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(r?.equipamento_id, false) },
-      { nome:"cliente", rotulo:"Cliente", tipo:"texto", valor: r?.cliente || "", lista: nomesAtivos(dados.clientes),
+      { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(r?.equipamento_id, false), obrigatorio: true },
+      { nome:"cliente", rotulo:"Cliente", tipo:"texto", valor: r?.cliente || "", lista: nomesAtivos(dados.clientes), obrigatorio: true,
         aoMudar(nome) {
           const c = dados.clientes.find(x => x.nome === nome);
           if (c && c.valor_hora_padrao) {
@@ -1477,6 +1477,7 @@ function abrirModalDiesel(id) {
   // O desconto e o preço FINAL do litro (total ÷ litros) saem sozinhos.
   const arred = (n, casas) => Math.round(n * 10 ** casas) / 10 ** casas;
   const campoForm = (nome) => document.querySelector(`#modal-campos [data-campo="${nome}"]`);
+  const parGrupo = d && d.grupo_abastecimento_id ? dados.die.find(x => x.id === d.grupo_abastecimento_id) : null;
   const precoBrutoInicial = d ? (d.valor_unit_bruto ?? d.valor_unit) : "";
   // enquanto o total não for mexido à mão, ele acompanha litros × preço.
   // Num registro já salvo com desconto, o total é respeitado como está.
@@ -1501,8 +1502,8 @@ function abrirModalDiesel(id) {
   const recalcularCarro = () => recalcular("carro_", carroTotalEditado);
 
   const campos = [
-    { nome:"data", rotulo:"Data", tipo:"date", valor: d?.data || hoje() },
-    { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(d?.equipamento_id, false),
+    { nome:"data", rotulo:"Data", tipo:"date", valor: d?.data || hoje(), obrigatorio: true },
+    { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(d?.equipamento_id, false), obrigatorio: true,
       // o carro de apoio só faz sentido quando quem está abastecendo é uma
       // máquina (Pá Carregadeira, Retroescavadeira) — troca o equipamento
       // no formulário e o checkbox aparece/some na hora, sem reabrir o modal.
@@ -1527,12 +1528,12 @@ function abrirModalDiesel(id) {
       { nome:"tem_carro_apoio", rotulo:"🚗 Houve carro de apoio nesse abastecimento?", tipo:"checkbox", largo:true, controla:"carroApoio",
         valor:false, oculto: tipoEquip !== "Maquina" },
       { tipo:"separador", rotulo:"Dados do carro de apoio", grupoCondicional:"carroApoio", oculto:true },
-      { nome:"carro_equipamento_id", rotulo:"Qual carro de apoio", tipo:"select", largo:true, opcoes: opcoesEquipamentoPorTipo("Veiculo"), valor:"", grupoCondicional:"carroApoio", oculto:true },
+      { nome:"carro_equipamento_id", rotulo:"Qual carro de apoio", tipo:"select", largo:true, opcoes: opcoesEquipamentoPorTipo("Veiculo"), valor:"", grupoCondicional:"carroApoio", oculto:true, obrigatorio: true },
       { nome:"carro_combustivel", rotulo:"Combustível do carro", tipo:"select",
         opcoes:["Gasolina|Gasolina","Etanol|Etanol/Álcool","GNV|GNV"], valor:"Gasolina", grupoCondicional:"carroApoio", oculto:true },
-      { nome:"carro_litros", rotulo:"Litros (carro)", tipo:"numero", valor:"", grupoCondicional:"carroApoio", oculto:true, aoMudar: recalcularCarro },
+      { nome:"carro_litros", rotulo:"Litros (carro)", tipo:"numero", valor:"", grupoCondicional:"carroApoio", oculto:true, obrigatorio: true, aoMudar: recalcularCarro },
       { nome:"carro_valor_unit_bruto", rotulo:"Preço do litro do carro (R$)", tipo:"moeda", valor:"", grupoCondicional:"carroApoio", oculto:true, aoMudar: recalcularCarro },
-      { nome:"carro_valor_total", rotulo:"Valor total pago do carro (R$)", tipo:"moeda", largo:true, valor:"", grupoCondicional:"carroApoio", oculto:true,
+      { nome:"carro_valor_total", rotulo:"Valor total pago do carro (R$)", tipo:"moeda", largo:true, valor:"", grupoCondicional:"carroApoio", oculto:true, obrigatorio: true,
         aoMudar() { carroTotalEditado = true; recalcularCarro(); } },
       { nome:"carro_desconto_calc", rotulo:"Desconto (carro)", tipo:"calculado", valor:"—", grupoCondicional:"carroApoio", oculto:true },
       { nome:"carro_preco_final_calc", rotulo:"Preço final do litro (carro)", tipo:"calculado", valor:"—", grupoCondicional:"carroApoio", oculto:true },
@@ -1545,15 +1546,19 @@ function abrirModalDiesel(id) {
       opcoes:["Diesel|Diesel","Gasolina|Gasolina","Etanol|Etanol","Flex|Flex"],
       valor: d?.combustivel || (tipoEquip === "Veiculo" ? "Gasolina" : "Diesel") },
     { nome:"local", rotulo:"Local / fornecedor", tipo:"texto", largo:true, valor: d?.local || "", autocompletar:true, lista: nomesAtivos(dados.fornecedores) },
-    { nome:"litros", rotulo:"Litros", tipo:"numero", valor: d?.litros ?? "", aoMudar: recalcularValores },
+    { nome:"litros", rotulo:"Litros", tipo:"numero", valor: d?.litros ?? "", obrigatorio: true, aoMudar: recalcularValores },
     { nome:"valor_unit_bruto", rotulo:"Preço do litro (R$)", tipo:"moeda", valor: precoBrutoInicial ?? "", aoMudar: recalcularValores },
-    { nome:"valor_total", rotulo:"Valor total pago (R$)", tipo:"moeda", largo:true, valor: d?.valor_total ?? "",
+    { nome:"valor_total", rotulo:"Valor total pago (R$)", tipo:"moeda", largo:true, valor: d?.valor_total ?? "", obrigatorio: true,
       aoMudar() { totalEditado = true; recalcularValores(); } },
     { nome:"desconto_calc", rotulo:"Desconto", tipo:"calculado", valor:"—" },
     { nome:"preco_final_calc", rotulo:"Preço final do litro", tipo:"calculado", valor:"—" },
+    // abastecimento ligado a outro (diesel da máquina + gasolina do carro de
+    // apoio): cada um é um lançamento próprio; aqui mostra a soma da nota
+    ...(parGrupo ? [{ nome:"total_grupo_calc", rotulo:`Total da nota (este + ${parGrupo.combustivel} do ${nomeEquipamento(parGrupo.equipamento_id)}: ${brl(parGrupo.valor_total)})`,
+      tipo:"calculado", largo:true, valor: brl((Number(d.valor_total) || 0) + (Number(parGrupo.valor_total) || 0)) }] : []),
     { tipo:"separador", rotulo:"Pagamento" },
     { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar (fiado)"], valor: d?.status || "pago" },
-    { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: d?.vencimento || "" },
+    { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: d?.vencimento || "", obrigatorio: (f) => f.status === "pendente" },
     { tipo:"separador", rotulo:"Comprovantes (foto ou PDF, até 10 MB)" },
     { nome:"arq_comprovante", rotulo:"Comprovante de pagamento", tipo:"arquivo", largo:true, atual: d?.comprovante_pagamento_path || "" },
     { nome:"arq_nota", rotulo:"Nota fiscal ou recibo do abastecimento", tipo:"arquivo", largo:true, atual: d?.nota_fiscal_path || "", aoEscolher: lerNotaAnexada },
@@ -1671,7 +1676,7 @@ async function buscarNomeEmpresa(cnpj) {
     const r = await fetch("https://brasilapi.com.br/api/cnpj/v1/" + cnpj, { signal: ctrl.signal });
     if (!r.ok) return null;
     const j = await r.json();
-    const nome = nomeAmigavel(j.nome_fantasia || j.razao_social || "");
+    const nome = nomeAmigavel(j.razao_social || j.nome_fantasia || "");
     if (nome) cacheEmpresas.set(cnpj, nome);
     return nome || null;
   } catch (e) {
@@ -1889,7 +1894,7 @@ function abrirModalManutencao(id) {
       ? "Isso também remove o lançamento vinculado no Extrato" + (m.agenda_id ? " e o compromisso pendente na Agenda." : ".")
       : null,
     campos: [
-      { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(m?.equipamento_id, false) },
+      { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(m?.equipamento_id, false), obrigatorio: true },
       { nome:"tipo", rotulo:"Tipo", tipo:"select", opcoes:["preventiva|Preventiva","preditiva|Preditiva","corretiva|Corretiva"], valor: m?.tipo || "preventiva" },
       { nome:"data", rotulo:"Data (realizada ou prevista)", tipo:"date", valor: m?.data || hoje() },
       { nome:"realizada", rotulo:"Já foi realizada", tipo:"checkbox", valor: m?.realizada ?? true },
@@ -1902,7 +1907,7 @@ function abrirModalManutencao(id) {
       { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: m?.natureza || "Variavel" },
       { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(m?.centro_custo_id) },
       { nome:"status_pagamento", rotulo:"Situação do pagamento", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar"], valor: m?.status_pagamento || "pago" },
-      { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: m?.vencimento || "" },
+      { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: m?.vencimento || "", obrigatorio: (f) => f.status_pagamento === "pendente" },
       { nome:"proxima_data", rotulo:"Próxima revisão (data)", tipo:"date", valor: m?.proxima_data || "" },
       { nome:"proxima_horimetro", rotulo:"Próxima revisão (horímetro)", tipo:"numero", valor: m?.proxima_horimetro ?? "" },
     ],
@@ -2148,7 +2153,7 @@ function criarModalCadastro(tabela, chaveDados, tituloSingular, camposExtra = []
       titulo: item ? "Editar " + tituloSingular : "Novo " + tituloSingular,
       tabela, id,
       campos: [
-        { nome:"nome", rotulo:"Nome", tipo:"texto", largo:true, valor: item?.nome || "" },
+        { nome:"nome", rotulo:"Nome", tipo:"texto", largo:true, valor: item?.nome || "", obrigatorio: true },
         ...camposExtra.map(c => ({ ...c, valor: item ? (item[c.nome] ?? "") : "" })),
         { nome:"ativo", rotulo:"Ativo", tipo:"checkbox", valor: item?.ativo ?? true },
       ],
@@ -2761,6 +2766,22 @@ function abrirModal(ctx) {
   // absorve ponto/vírgula digitados — quem manda é o dígito, não o separador)
   document.querySelectorAll('#modal-campos [data-moeda]').forEach(ligarMascaraMoeda);
 
+  // marca os obrigatórios com * e tira o aviso vermelho assim que o campo é mexido
+  ctx.campos.forEach(c => {
+    if (!c.obrigatorio || !c.nome) return;
+    const el = document.querySelector(`#modal-campos [data-campo="${c.nome}"]`);
+    if (!el) return;
+    const rot = el.closest("label");
+    if (rot && !rot.querySelector(".req-marca")) {
+      const marca = document.createElement("span");
+      marca.className = "req-marca"; marca.textContent = " *";
+      rot.insertBefore(marca, el);
+    }
+    const limpar = () => limparObrigatorio(el);
+    el.addEventListener("input", limpar);
+    el.addEventListener("change", limpar);
+  });
+
   // hooks de campo (ex.: autopreencher valor de hora ao escolher o cliente,
   // mostrar/esconder o carro de apoio conforme o equipamento escolhido)
   ctx.campos.forEach(c => {
@@ -2925,11 +2946,56 @@ function lerFormulario() {
 // criado/atualizado" (que senão cobriria na hora qualquer aviso de falha)
 let avisoAposSalvar = null;
 
+// Campos com `obrigatorio: true` (ou uma função (f) => boolean, p/ obrigatório
+// só em certas situações) piscam em vermelho com "Campo obrigatório" quando
+// ficam vazios. Campos escondidos (ex.: carro de apoio desligado) são ignorados.
+function limparObrigatorio(el) {
+  const rot = el.closest("label");
+  if (!rot) return;
+  rot.classList.remove("campo-invalido");
+  const m = rot.querySelector(".msg-obrigatorio");
+  if (m) m.classList.add("oculto");
+}
+// campo dentro de um grupo escondido do formulário (o próprio modal não conta)
+function escondidoNoForm(el) {
+  const raiz = $("modal-campos");
+  for (let n = el; n && n !== raiz; n = n.parentElement) if (n.classList.contains("oculto")) return true;
+  return false;
+}
+function validarObrigatorios() {
+  const ctx = modalCtx;
+  if (!ctx || !ctx.campos) return true;
+  const f = lerFormulario();
+  let primeiro = null;
+  for (const c of ctx.campos) {
+    if (!c.obrigatorio || !c.nome) continue;
+    if (typeof c.obrigatorio === "function" && !c.obrigatorio(f)) continue;
+    const el = document.querySelector(`#modal-campos [data-campo="${c.nome}"]`);
+    if (!el || escondidoNoForm(el)) continue;
+    const vazio = el.hasAttribute("data-moeda") ? !(numDeMoeda(el.value) > 0) : String(el.value).trim() === "";
+    if (!vazio) continue;
+    const rot = el.closest("label");
+    if (!rot) continue;
+    let m = rot.querySelector(".msg-obrigatorio");
+    if (!m) { m = document.createElement("span"); m.className = "msg-obrigatorio"; m.textContent = "Campo obrigatório"; rot.appendChild(m); }
+    m.classList.remove("oculto");
+    rot.classList.remove("campo-invalido");
+    void rot.offsetWidth; // reinicia a animação de piscar
+    rot.classList.add("campo-invalido");
+    if (!primeiro) primeiro = el;
+  }
+  if (!primeiro) return true;
+  if (primeiro.scrollIntoView) primeiro.scrollIntoView({ block: "center", behavior: "smooth" });
+  primeiro.focus({ preventScroll: true });
+  return false;
+}
+
 async function salvarRegistro() {
   if (!modalCtx) return;
   const btn = $("modal-salvar"), erro = $("modal-erro");
   erro.classList.add("oculto");
   avisoAposSalvar = null;
+  if (!validarObrigatorios()) return;
   let reg;
   try { reg = modalCtx.montar(lerFormulario()); }
   catch (msg) { erro.textContent = msg; erro.classList.remove("oculto"); return; }

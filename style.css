@@ -717,3 +717,14 @@ input[data-moeda="1"] { text-align: right; font-family: var(--fonte-mono); }
   * { transition: none !important; animation: none !important; }
 }
 .amarelo { color: var(--amarelo); }
+
+/* ── Campo obrigatório vazio: pisca em vermelho e mostra o aviso ── */
+.req-marca { color: var(--vermelho); font-weight: 700; }
+.msg-obrigatorio { color: var(--vermelho); font-size: 11.5px; font-weight: 600; }
+.campo-invalido > input, .campo-invalido > select { border-color: var(--vermelho) !important; }
+.campo-invalido { animation: piscar-obrigatorio .45s ease-in-out 3; border-radius: 8px; }
+@keyframes piscar-obrigatorio {
+  0%, 100% { background: transparent; box-shadow: none; }
+  50% { background: rgba(240,86,74,.18); box-shadow: 0 0 0 3px rgba(240,86,74,.35); }
+}
+@media (prefers-reduced-motion: reduce) { .campo-invalido { animation: none; background: rgba(240,86,74,.12); } }
