@@ -115,7 +115,27 @@
     return null;
   }
 
-  const api = { dvChave, extrairChave, cnpjValido, formatarCnpj, interpretarChave, decodificarQrDeImageData, lerQrDeArquivo };
+  // Reduz a foto (lado maior = maxLado) e devolve em base64 JPEG — fotos de
+  // celular passam de 4 MB, e o envio pra IA tem limite.
+  async function reduzirImagem(arquivo, maxLado, qualidade) {
+    const img = await abrirBitmap(arquivo);
+    const escala = Math.min(1, maxLado / Math.max(img.width, img.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(img.width * escala));
+    canvas.height = Math.max(1, Math.round(img.height * escala));
+    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((ok) => canvas.toBlob(ok, "image/jpeg", qualidade));
+    if (!blob) throw new Error("não consegui reduzir a imagem");
+    const url = await new Promise((ok, erro) => {
+      const fr = new FileReader();
+      fr.onload = () => ok(fr.result);
+      fr.onerror = () => erro(fr.error);
+      fr.readAsDataURL(blob);
+    });
+    return { base64: String(url).split(",")[1], tipo: "image/jpeg" };
+  }
+
+  const api = { reduzirImagem, dvChave, extrairChave, cnpjValido, formatarCnpj, interpretarChave, decodificarQrDeImageData, lerQrDeArquivo };
   raiz.NotaQR = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

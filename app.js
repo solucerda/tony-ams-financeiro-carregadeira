@@ -1308,67 +1308,97 @@ function abrirModalDiesel(id) {
   let chaveNota = null;      // chave de 44 dígitos lida do QR da nota anexada
   let notaTrocada = false;   // escolheu outro arquivo de nota nesta edição
 
-  // Ao anexar a foto da nota: lê o QR Code, mostra os dados da chave (número,
-  // CNPJ do posto), avisa se a nota já foi lançada e, se o fornecedor ainda
-  // está vazio, preenche com o nome do posto.
+  // Ao anexar a foto da nota: (1) lê o QR Code (chave, número, CNPJ do posto,
+  // aviso de nota repetida) e (2) a IA lê os itens da foto (litros, preços,
+  // desconto) e preenche o formulário. Uma parte falhar não derruba a outra.
   async function lerNotaAnexada(arquivo, mostrar) {
     chaveNota = null;
     notaTrocada = !!arquivo;
     if (!arquivo) { mostrar(""); return; }
     if (!arquivo.type.startsWith("image/")) {
-      mostrar("PDF anexado. A leitura automática do QR Code só funciona com foto da nota.");
+      mostrar("PDF anexado. A leitura automática só funciona com foto da nota.");
       return;
     }
-    mostrar("Lendo o QR Code da nota…");
-    let texto = null;
-    try { texto = await NotaQR.lerQrDeArquivo(arquivo); } catch (e) { console.error("Falha ao ler o QR:", e); }
     const aindaEsta = () => campoForm("arq_nota")?.files?.[0] === arquivo; // trocou a foto no meio?
-    if (!aindaEsta()) return;
-    const chave = NotaQR.extrairChave(texto);
-    if (!chave) { mostrar("Não consegui ler o QR Code dessa foto. Preencha os dados manualmente.", "aviso"); return; }
-    const info = NotaQR.interpretarChave(chave);
-    if (!info.chaveConfere) { mostrar("QR lido, mas a chave da nota não confere. Confira a foto.", "aviso"); return; }
-    chaveNota = chave;
+    const linhas = [];
+    let tom = "ok";
+    const atualizar = (extra) => mostrar([...linhas, ...(extra ? [extra] : [])].join("\n"), tom);
+    mostrar("Lendo o QR Code da nota…");
 
-    const linhas = [`${info.tipo} nº ${info.numero} · série ${info.serie} · ${String(info.mes).padStart(2, "0")}/${info.ano} · CNPJ ${NotaQR.formatarCnpj(info.cnpj)}`];
-    const repetida = dados.die.find(x => x.nota_chave === chave && x.id !== d?.id);
-    if (repetida) linhas.push(`⚠ Essa nota já foi lançada em ${fData(repetida.data)}${repetida.local ? " (" + repetida.local + ")" : ""}.`);
-    let tom = repetida ? "aviso" : "ok";
-    mostrar(linhas.join("\n"), tom);
-
-    const nome = info.cnpjConfere ? await buscarNomeEmpresa(info.cnpj) : null;
-    if (!aindaEsta()) return;
-    if (nome) {
+    // usa a chave de 44 dígitos: mostra os dados e avisa se a nota já foi lançada
+    const usarChave = (info) => {
+      chaveNota = info.chave;
+      linhas.push(`${info.tipo} nº ${info.numero} · série ${info.serie} · ${String(info.mes).padStart(2, "0")}/${info.ano} · CNPJ ${NotaQR.formatarCnpj(info.cnpj)}`);
+      const repetida = dados.die.find(x => x.nota_chave === info.chave && x.id !== d?.id);
+      if (repetida) {
+        linhas.push(`⚠ Essa nota já foi lançada em ${fData(repetida.data)}${repetida.local ? " (" + repetida.local + ")" : ""}.`);
+        tom = "aviso";
+      }
+    };
+    // preenche o fornecedor só se estiver vazio (nunca sobrescreve o que você digitou)
+    const usarEmitente = (nome) => {
+      if (!nome) return false;
       const existente = dados.fornecedores.find(f => semAcento(f.nome) === semAcento(nome));
       const campoLocal = campoForm("local");
       if (campoLocal && !campoLocal.value.trim()) {
         campoLocal.value = existente ? existente.nome : nome;
         linhas.push("Fornecedor preenchido: " + campoLocal.value);
       } else linhas.push("Emitente: " + nome);
-    } else {
-      linhas.push("Não consegui buscar o nome do posto. Preencha o fornecedor.");
-    }
-    mostrar(linhas.join("\n"), tom);
+      return true;
+    };
 
-    // itens da nota (litros, preços, desconto): hoje só a SEFAZ-BA
-    if (/^https?:\/\/nfe\.sefaz\.ba\.gov\.br\//i.test(texto || "")) {
-      mostrar([...linhas, "Buscando os itens da nota na SEFAZ…"].join("\n"), tom);
-      const nota = await buscarItensNfce(texto);
-      if (!aindaEsta()) return;
-      if (nota.erro) {
-        linhas.push("Não consegui buscar os itens da nota (" + nota.erro + "). Preencha litros e valores à mão.");
-        tom = "aviso";
-      } else if (preencherPelaNota(nota, linhas)) tom = "aviso";
-      mostrar(linhas.join("\n"), tom);
+    // ── 1) QR Code
+    let texto = null;
+    try { texto = await NotaQR.lerQrDeArquivo(arquivo); } catch (e) { console.error("Falha ao ler o QR:", e); }
+    if (!aindaEsta()) return;
+    let info = null;
+    const chaveQr = NotaQR.extrairChave(texto);
+    if (!chaveQr) linhas.push("Não consegui ler o QR Code dessa foto.");
+    else {
+      info = NotaQR.interpretarChave(chaveQr);
+      if (!info.chaveConfere) { linhas.push("QR lido, mas a chave da nota não confere. Confira a foto."); tom = "aviso"; info = null; }
+      else usarChave(info);
     }
+    atualizar();
+
+    let nomeUsado = false;
+    if (info && info.cnpjConfere) {
+      const nome = await buscarNomeEmpresa(info.cnpj);
+      if (!aindaEsta()) return;
+      nomeUsado = usarEmitente(nome);
+      if (!nome) linhas.push("Não consegui buscar o nome do posto. Preencha o fornecedor.");
+      atualizar();
+    }
+
+    // ── 2) IA lê os itens — só em abastecimento novo e sem litros/valor digitados
+    if (d || campoForm("litros")?.value || campoForm("valor_total")?.value) return;
+    atualizar("Lendo os itens da nota com IA…");
+    const nota = await lerNotaComIA(arquivo);
+    if (!aindaEsta()) return;
+    if (nota.erro) {
+      linhas.push(MENSAGEM_ERRO_IA[nota.erro] || `Não consegui ler os itens da nota (${nota.erro}). Preencha litros e valores à mão.`);
+      tom = "aviso";
+      atualizar();
+      return;
+    }
+    if (!info && nota.chave) {
+      const infoIA = NotaQR.interpretarChave(nota.chave);
+      if (infoIA && infoIA.chaveConfere) usarChave(infoIA);
+    }
+    if (!nomeUsado) {
+      const nome = nota.emitente?.cnpj && NotaQR.cnpjValido(nota.emitente.cnpj) ? await buscarNomeEmpresa(nota.emitente.cnpj) : null;
+      if (!aindaEsta()) return;
+      usarEmitente(nome || nota.emitente?.nome);
+    }
+    if (preencherPelaNota(nota, linhas)) tom = "aviso";
+    atualizar();
   }
 
-  // Preenche o formulário com os itens da nota. Só em abastecimento NOVO e
-  // com litros/total ainda vazios — nunca por cima do que você já digitou.
-  // O desconto da nota (que vem só no total) é aplicado ao combustível
-  // principal. Devolve true quando há algo pra conferir.
+  // Preenche o formulário com os itens lidos da nota. Cada item traz o seu
+  // desconto; se a nota só informa o desconto no total, ele vai pro maior
+  // item (e só se for o principal). Devolve true quando há algo pra conferir.
   function preencherPelaNota(nota, linhas) {
-    const itens = (nota.itens || []).map(i => ({ ...i, combustivel: combustivelDoItem(i.descricao) }));
+    const itens = (nota.itens || []).map(i => ({ ...i, combustivel: combustivelDoItem(i.descricao), desc: Number(i.desconto) || 0 }));
     const combustiveis = itens.filter(i => i.combustivel && i.quantidade > 0 && i.valorTotal > 0);
     if (!combustiveis.length) { linhas.push("A nota não tem item de combustível reconhecido."); return true; }
 
@@ -1376,64 +1406,60 @@ function abrirModalDiesel(id) {
     const principal = combustiveis.find(i => ehMaquina ? i.combustivel === "Diesel" : i.combustivel !== "Diesel") || combustiveis[0];
     const carro = ehMaquina && temVeiculoCadastrado
       ? combustiveis.find(i => i !== principal && i.combustivel !== principal.combustivel && i.combustivel !== "Diesel") : null;
-    // o desconto vem só no total da nota: aplica no item de maior valor, e só
-    // se for o principal — senão não arrisca e pede pra conferir
-    const maiorItem = combustiveis.reduce((a, b) => (b.valorTotal > a.valorTotal ? b : a));
-    const descontoNota = Number(nota.desconto) || 0;
-    const desconto = principal === maiorItem ? Math.min(descontoNota, principal.valorTotal) : 0;
-    const pagoPrincipal = arred(principal.valorTotal - desconto, 2);
+
+    let avisoDesconto = null;
+    if (!itens.some(i => i.desc > 0) && (Number(nota.descontoTotal) || 0) > 0) {
+      const maiorItem = combustiveis.reduce((a, b) => (b.valorTotal > a.valorTotal ? b : a));
+      if (principal === maiorItem) principal.desc = Math.min(Number(nota.descontoTotal), principal.valorTotal);
+      else avisoDesconto = `⚠ A nota tem desconto de ${brl(nota.descontoTotal)}, mas não sei a qual item pertence. Não apliquei, confira.`;
+    }
+    const pago = (i) => arred(i.valorTotal - i.desc, 2);
     const duasCasas = (v) => Math.abs(v * 100 - Math.round(v * 100)) < 0.0001;
+    const linhaItem = (i) =>
+      `${i.combustivel} ${num(i.quantidade, i.quantidade % 1 ? 3 : 0)} L × ${brl(i.valorUnit || 0)}${i.desc > 0 ? " − desconto " + brl(i.desc) : ""} = ${brl(pago(i))}`;
     let conferir = false;
-    const avisoDesconto = descontoNota > 0 && !desconto
-      ? `⚠ A nota tem desconto de ${brl(descontoNota)}, mas não sei a qual item pertence. Não apliquei, confira.` : null;
-
-    const linhaItem = (i, pago, desc) =>
-      `${i.combustivel} ${num(i.quantidade, i.quantidade % 1 ? 3 : 0)} L × ${brl(i.valorUnit)}${desc > 0 ? " − desconto " + brl(desc) : ""} = ${brl(pago)}`;
-
-    if (d) {
-      linhas.push("Itens da nota: " + linhaItem(principal, pagoPrincipal, desconto) + (carro ? " · " + linhaItem(carro, carro.valorTotal, 0) : "") + ". Não alterei os campos porque este abastecimento já existe.");
-      return false;
-    }
-    if (campoForm("litros")?.value || campoForm("valor_total")?.value) {
-      linhas.push("Itens da nota: " + linhaItem(principal, pagoPrincipal, desconto) + ". Não alterei os campos porque litros/valor já estavam preenchidos.");
-      return false;
-    }
 
     if (nota.data) campoForm("data").value = nota.data;
     campoForm("combustivel").value = principal.combustivel;
     campoForm("litros").value = String(principal.quantidade);
-    campoForm("valor_unit_bruto").value = moedaMascara(principal.valorUnit);
-    campoForm("valor_total").value = moedaMascara(pagoPrincipal);
+    campoForm("valor_unit_bruto").value = moedaMascara(principal.valorUnit || arred(principal.valorTotal / principal.quantidade, 2));
+    campoForm("valor_total").value = moedaMascara(pago(principal));
     totalEditado = true; // o total vem da nota, não de litros × preço
     recalcularValores();
-    linhas.push("Preenchido pela nota: " + linhaItem(principal, pagoPrincipal, desconto));
+    linhas.push("Lido da nota: " + linhaItem(principal));
     if (avisoDesconto) { linhas.push(avisoDesconto); conferir = true; }
-    if (!duasCasas(principal.valorUnit)) {
+    if (principal.valorUnit && !duasCasas(principal.valorUnit)) {
       linhas.push(`⚠ O preço do litro na nota tem 3 casas (${principal.valorUnit}); o campo guarda 2. Confira o desconto.`);
       conferir = true;
     }
 
-    let somaPaga = pagoPrincipal;
     const chk = campoForm("tem_carro_apoio");
     if (carro && chk) {
       chk.checked = true;
       chk.dispatchEvent(new Event("change"));
       campoForm("carro_combustivel").value = carro.combustivel;
       campoForm("carro_litros").value = String(carro.quantidade);
-      campoForm("carro_valor_unit").value = moedaMascara(carro.valorUnit);
+      campoForm("carro_valor_unit").value = moedaMascara(carro.desc > 0 ? arred(pago(carro) / carro.quantidade, 2) : (carro.valorUnit || arred(carro.valorTotal / carro.quantidade, 2)));
       const veiculos = opcoesEquipamentoPorTipo("Veiculo");
       if (veiculos.length === 1) campoForm("carro_equipamento_id").value = String(veiculos[0]).split("|")[0];
-      somaPaga += carro.valorTotal;
-      linhas.push("Carro de apoio: " + linhaItem(carro, carro.valorTotal, 0) + (veiculos.length === 1 ? "" : " (escolha qual carro)"));
-      if (veiculos.length !== 1) conferir = true;
+      linhas.push("Carro de apoio: " + linhaItem(carro) + (veiculos.length === 1 ? "" : " (escolha qual carro)"));
+      if (veiculos.length !== 1 || carro.desc > 0) conferir = true;
     }
+
     const sobras = itens.filter(i => i !== principal && i !== carro);
     if (sobras.length) {
-      linhas.push("Itens da nota que não foram lançados: " + sobras.map(i => `${i.descricao} (${brl(i.valorTotal)})`).join(", ") + ".");
+      linhas.push("Itens da nota que não foram lançados: " + sobras.map(i => `${i.descricao} (${brl(pago(i))})`).join(", ") + ".");
       conferir = true;
     }
-    if (nota.aPagar != null && Math.abs(somaPaga - nota.aPagar) > 0.05 && !sobras.length) {
-      linhas.push(`⚠ A soma lançada (${brl(somaPaga)}) não bate com o valor a pagar da nota (${brl(nota.aPagar)}).`);
+    // a IA pode errar um dígito: as contas da própria nota entregam o erro
+    const contaErrada = itens.find(i => i.valorUnit && Math.abs(i.quantidade * i.valorUnit - i.valorTotal) > 0.06);
+    if (contaErrada) {
+      linhas.push(`⚠ Na linha "${contaErrada.descricao}", quantidade × preço não bate com o valor do item. Confira os números com a foto.`);
+      conferir = true;
+    }
+    const somaNota = itens.reduce((t, i) => t + pago(i), 0);
+    if (nota.valorPago != null && Math.abs(somaNota - nota.valorPago) > 0.05) {
+      linhas.push(`⚠ A soma dos itens (${brl(somaNota)}) não bate com o valor pago na nota (${brl(nota.valorPago)}). Confira os números com a foto.`);
       conferir = true;
     }
     return conferir;
@@ -1653,23 +1679,35 @@ function combustivelDoItem(descricao) {
   return achado ? achado[1] : null;
 }
 
-// Pede ao servidor (/api/nfce) os itens e totais da nota — o navegador não
-// consegue ler a página da SEFAZ direto. Devolve os dados ou { erro }.
-async function buscarItensNfce(textoQr) {
+// Mensagens amigáveis para os erros da leitura por IA.
+const MENSAGEM_ERRO_IA = {
+  ia_nao_configurada: "A leitura por IA ainda não foi ativada (falta a chave da API na Vercel). Preencha litros e valores à mão.",
+  ia_chave_invalida: "A chave da API da IA é inválida. Preencha litros e valores à mão.",
+  ia_sem_saldo: "A conta da API da IA está sem saldo. Preencha litros e valores à mão.",
+  ia_limite: "A IA atingiu o limite de uso por agora. Tente de novo em instantes ou preencha à mão.",
+  nota_nao_legivel: "A IA não conseguiu ler os itens dessa foto. Tente uma foto mais nítida ou preencha à mão.",
+};
+
+// Manda a foto (reduzida) pro servidor (/api/ler-nota), que pede à IA a leitura
+// dos itens, desconto e totais. Devolve os dados ou { erro }.
+async function lerNotaComIA(arquivo) {
+  let img;
+  try { img = await NotaQR.reduzirImagem(arquivo, 2000, 0.88); }
+  catch (e) { console.error("Falha ao preparar a imagem:", e); return { erro: "imagem_ilegivel" }; }
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 15000);
+  const timer = setTimeout(() => ctrl.abort(), 60000);
   try {
     const { data: { session } } = await sb.auth.getSession();
     if (!session) return { erro: "sem_sessao" };
-    const r = await fetch("/api/nfce", {
+    const r = await fetch("/api/ler-nota", {
       method: "POST", signal: ctrl.signal,
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.access_token },
-      body: JSON.stringify({ qr: textoQr }),
+      body: JSON.stringify({ imagem: img.base64, tipo: img.tipo }),
     });
     const j = await r.json().catch(() => ({}));
     return r.ok ? j : { erro: j.erro || "http_" + r.status };
   } catch (e) {
-    console.error("Falha ao buscar os itens da nota:", e);
+    console.error("Falha ao ler a nota com IA:", e);
     return { erro: e && e.name === "AbortError" ? "demorou_demais" : "sem_conexao" };
   } finally { clearTimeout(timer); }
 }
