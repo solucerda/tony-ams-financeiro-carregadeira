@@ -314,6 +314,18 @@
             <option value="GNV">GNV</option>
             <option value="Flex">Flex</option>
           </select>
+          <select id="die-filtro-periodo">
+            <option value="tudo">Todo o período</option>
+            <option value="mes_atual">Mês atual</option>
+            <option value="mes_anterior">Mês anterior</option>
+            <option value="3m">Últimos 3 meses</option>
+            <option value="6m">Últimos 6 meses</option>
+            <option value="12m">Últimos 12 meses</option>
+            <option value="personalizado">Personalizado…</option>
+          </select>
+          <span id="die-filtro-periodo-grupo" class="periodo-grupo oculto">
+            <input type="date" id="die-filtro-de"> <span class="periodo-ate">até</span> <input type="date" id="die-filtro-ate">
+          </span>
           <button class="btn-primario" id="die-novo">+ Abastecimento</button>
         </div>
         <div class="tabela-rolagem">

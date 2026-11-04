@@ -18,7 +18,7 @@ let filtroExt = { modo: "mes", mes: "todos", semana: "", dia: "", de: "", ate: "
 let filtroCliente = "todos";
 let filtroPainel = { periodo: "tudo", natureza: "todos", tipoFluxo: "bar", agrupar: "grupo", visual: "lista" };
 let filtroManutencao = { tipo: "todos", status: "todos" };
-let filtroDiesel = { centro: "todos", combustivel: "todos" };
+let filtroDiesel = { centro: "todos", combustivel: "todos", periodo: "tudo", de: "", ate: "" };
 const graficos = {};           // instâncias Chart.js
 
 const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
@@ -429,6 +429,13 @@ async function iniciarApp() {
   // filtros do abastecimento
   $("die-filtro-centro").addEventListener("change", e => { filtroDiesel.centro = e.target.value; renderDiesel(); });
   $("die-filtro-combustivel").addEventListener("change", e => { filtroDiesel.combustivel = e.target.value; renderDiesel(); });
+  $("die-filtro-periodo").addEventListener("change", e => {
+    filtroDiesel.periodo = e.target.value;
+    $("die-filtro-periodo-grupo").classList.toggle("oculto", e.target.value !== "personalizado");
+    renderDiesel();
+  });
+  $("die-filtro-de").addEventListener("change", e => { filtroDiesel.de = e.target.value; renderDiesel(); });
+  $("die-filtro-ate").addEventListener("change", e => { filtroDiesel.ate = e.target.value; renderDiesel(); });
 
   $("man-filtro-tipo").addEventListener("change", e => { filtroManutencao.tipo = e.target.value; renderManutencao(); });
   ligarSegmentado("man-filtro-status", (v) => { filtroManutencao.status = v; renderManutencao(); });
@@ -1207,12 +1214,28 @@ function badgeComb(c) {
   return `<span class="badge-comb" style="--cor-comb:${COR_COMB[nome] || "#8a8f98"}" title="${escHtml(nome)}">${LETRA_COMB[nome] || escHtml(nome.charAt(0).toUpperCase())}</span>`;
 }
 
+// Janela de datas escolhida no filtro de período do abastecimento.
+function intervaloDiesel() {
+  const [y, m] = hoje().split("-").map(Number);
+  const ym = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+  const ini = (n) => ym(new Date(y, m - 1 - n, 1)) + "-01";
+  switch (filtroDiesel.periodo) {
+    case "mes_atual": return { de: ini(0), ate: "" };
+    case "mes_anterior": { const u = new Date(y, m - 1, 0); return { de: ini(1), ate: `${ym(u)}-${String(u.getDate()).padStart(2, "0")}` }; }
+    case "3m": return { de: ini(2), ate: "" };
+    case "6m": return { de: ini(5), ate: "" };
+    case "12m": return { de: ini(11), ate: "" };
+    case "personalizado": return { de: filtroDiesel.de || "", ate: filtroDiesel.ate || "" };
+    default: return { de: "", ate: "" };
+  }
+}
+
 // Eficiência da máquina: litros de diesel por hora trabalhada, "tanque a
 // tanque". Para cada abastecimento, divide os litros pelas horas faturadas
 // (Recebimentos) entre o abastecimento anterior e este. Assume tanque cheio
 // a cada abastecimento; o primeiro só serve de marco inicial.
 const PALETA_EQUIP = ["#F5B301", "#4DA3FF", "#3ECF8E", "#A78BFA", "#FF7A3D"];
-function calcularEficiencia() {
+function calcularEficiencia(de = "", ate = "") {
   const porAbast = new Map(), series = [];
   let litros = 0, horas = 0, custo = 0;
   const maquinas = [...new Set(dados.die.map(d => d.equipamento_id))].filter(id => tipoEquipamento(id) === "Maquina");
@@ -1224,6 +1247,7 @@ function calcularEficiencia() {
     const pontos = [];
     for (let i = 1; i < fills.length; i++) {
       const ini = fills[i - 1].data, fim = fills[i].data;
+      if ((de && fim < de) || (ate && fim > ate)) continue; // fora do período escolhido (o abastecimento anterior pode estar fora: serve de marco)
       if (fim <= ini) continue; // dois no mesmo dia: não dá pra separar as horas
       const h = recs.filter(r => r.data > ini && r.data <= fim).reduce((t, r) => t + r.horas, 0);
       if (h <= 0) continue;
@@ -1254,7 +1278,9 @@ function renderDiesel() {
   // fica de fora). Selos de combustível e marca de nota conjunta só
   // aparecem no "Total do negócio", onde todos os equipamentos se misturam.
   const visaoGeral = contexto.equipamentoId == null;
+  const { de, ate } = intervaloDiesel();
   const doFiltro = dados.die.filter(d =>
+    (!de || d.data >= de) && (!ate || d.data <= ate) &&
     (filtroDiesel.centro === "todos" || String(d.centro_custo_id) === filtroDiesel.centro) &&
     (filtroDiesel.combustivel === "todos" || d.combustivel === filtroDiesel.combustivel)
   );
@@ -1274,7 +1300,7 @@ function renderDiesel() {
   }
   const combs = Object.keys(porComb).sort((x, y) => porComb[y].litros - porComb[x].litros);
   const medio = (c) => porComb[c].litros > 0 ? porComb[c].custo / porComb[c].litros : 0;
-  const efic = calcularEficiencia();
+  const efic = calcularEficiencia(de, ate);
   const kpisBase = [
     kpi("Consumo médio", efic.horas > 0 ? num(efic.litros / efic.horas, 1) + " L/h" : "—",
       efic.horas > 0 ? `${num(efic.litros, 0)} L em ${num(efic.horas, 1)} h trabalhadas` : "precisa de 2+ abastecimentos e horas lançadas em Recebimentos", null, true),
