@@ -1356,13 +1356,14 @@ function abrirModalDiesel(id) {
     mostrar("Lendo o QR Code da nota…");
 
     // usa a chave de 44 dígitos: mostra os dados e avisa se a nota já foi lançada
-    const usarChave = (info) => {
+    const usarChave = async (info) => {
       chaveNota = info.chave;
       linhas.push(`${info.tipo} nº ${info.numero} · série ${info.serie} · ${String(info.mes).padStart(2, "0")}/${info.ano} · CNPJ ${NotaQR.formatarCnpj(info.cnpj)}`);
-      const repetida = todosAbastecimentos().find(x => x.nota_chave === info.chave && x.id !== d?.id);
+      // confere no banco (não só no que está na tela): vale em qualquer equipamento
+      const repetida = await buscarNotaRepetida(info.chave, d?.id);
       if (repetida) {
-        linhas.push(`⚠ Essa nota já foi lançada em ${fData(repetida.data)}${repetida.local ? " (" + repetida.local + ")" : ""}.`);
-        tom = "aviso";
+        linhas.push(`⛔ ESSA NOTA JÁ FOI LANÇADA em ${fData(repetida.data)}${repetida.local ? " (" + repetida.local + ")" : ""}. O app não vai deixar salvar de novo.`);
+        tom = "erro";
       }
     };
     // preenche o fornecedor só se estiver vazio (nunca sobrescreve o que você digitou)
@@ -1387,7 +1388,7 @@ function abrirModalDiesel(id) {
     else {
       info = NotaQR.interpretarChave(chaveQr);
       if (!info.chaveConfere) { linhas.push("QR lido, mas a chave da nota não confere. Confira a foto."); tom = "aviso"; info = null; }
-      else usarChave(info);
+      else await usarChave(info);
     }
     atualizar();
 
@@ -1413,14 +1414,14 @@ function abrirModalDiesel(id) {
     }
     if (!info && nota.chave) {
       const infoIA = NotaQR.interpretarChave(nota.chave);
-      if (infoIA && infoIA.chaveConfere) usarChave(infoIA);
+      if (infoIA && infoIA.chaveConfere) await usarChave(infoIA);
     }
     if (!nomeUsado) {
       const nome = nota.emitente?.cnpj && NotaQR.cnpjValido(nota.emitente.cnpj) ? await buscarNomeEmpresa(nota.emitente.cnpj) : null;
       if (!aindaEsta()) return;
       usarEmitente(nome || nota.emitente?.nome);
     }
-    if (preencherPelaNota(nota, linhas)) tom = "aviso";
+    if (preencherPelaNota(nota, linhas) && tom !== "erro") tom = "aviso";
     atualizar();
   }
 
@@ -1623,6 +1624,12 @@ function abrirModalDiesel(id) {
       ? "Isso também remove o lançamento vinculado no Extrato" + (d.agenda_id ? " e o compromisso pendente na Agenda." : ".")
       : null,
     campos,
+    // última barreira: mesmo com o aviso ignorado, nota repetida não grava
+    async antesDeSalvar() {
+      if (!chaveNota) return null;
+      const rep = await buscarNotaRepetida(chaveNota, d?.id);
+      return rep ? `⛔ Essa nota já foi lançada em ${fData(rep.data)}${rep.local ? " (" + rep.local + ")" : ""}. Para lançar outra, troque ou remova a nota anexada.` : null;
+    },
     montar(f) {
       const litros = Number(f.litros) || 0;
       const bruto = numDeMoeda(f.valor_unit_bruto);
@@ -1711,6 +1718,18 @@ function abrirModalDiesel(id) {
     },
   });
   recalcularValores();
+}
+
+// Procura no banco um abastecimento já lançado com a mesma chave de nota.
+async function buscarNotaRepetida(chave, ignorarId) {
+  try {
+    const { data, error } = await sb.from("diesel").select("id,data,local").eq("nota_chave", chave);
+    if (error) throw error;
+    return (data || []).find(x => x.id !== ignorarId) || null;
+  } catch (e) {
+    console.error("Falha ao conferir nota repetida:", e);
+    return todosAbastecimentos().find(x => x.nota_chave === chave && x.id !== ignorarId) || null;
+  }
 }
 
 // Nome do posto a partir do CNPJ (consulta pública, gratuita — BrasilAPI).
@@ -3053,6 +3072,13 @@ async function salvarRegistro() {
   let reg;
   try { reg = modalCtx.montar(lerFormulario()); }
   catch (msg) { erro.textContent = msg; erro.classList.remove("oculto"); return; }
+  if (modalCtx.antesDeSalvar) {
+    btn.disabled = true;
+    let barrar = null;
+    try { barrar = await modalCtx.antesDeSalvar(reg); } catch (e) { console.error(e); }
+    btn.disabled = false;
+    if (barrar) { erro.textContent = barrar; erro.classList.remove("oculto"); return; }
+  }
 
   if (modalCtx.aoSalvar) { await modalCtx.aoSalvar(reg); return; }
 
