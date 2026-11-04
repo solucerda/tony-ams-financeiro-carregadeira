@@ -9,7 +9,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL || "https://tueevnugbwdlsdzwgvss.s
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_QSUtvgXIkIp2A3tgD1Qabg_Qs-xUFrN";
 const MODELO = process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5";
 // o 2.5-flash foi desligado em out/2026; tenta cada modelo até um existir
-const MODELOS_GEMINI = [process.env.GEMINI_MODEL, "gemini-3-flash-preview", "gemini-3.1-flash-lite"].filter(Boolean);
+const MODELOS_GEMINI = [process.env.GEMINI_MODEL, "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3-flash-preview"].filter(Boolean);
 const TIPOS = new Set(["image/jpeg", "image/png", "image/webp"]);
 const LIMITE_BASE64 = 4000000;
 
