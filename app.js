@@ -1681,9 +1681,11 @@ function abrirModalDiesel(id) {
     titulo: d ? "Editar abastecimento" : "Novo abastecimento",
     tabela: "diesel", id,
     tituloExclusao: d ? `o abastecimento de ${fData(d.data)}` : null,
-    avisoExcluir: d && (d.lancamento_id || d.agenda_id)
-      ? "Isso também remove o lançamento vinculado no Extrato" + (d.agenda_id ? " e o compromisso pendente na Agenda." : ".")
-      : null,
+    avisoExcluir: [
+      d && (d.lancamento_id || d.agenda_id)
+        ? "Isso também remove o lançamento vinculado no Extrato" + (d.agenda_id ? " e o compromisso pendente na Agenda." : ".") : null,
+      parGrupo ? `Nota conjunta: o abastecimento ${nomeEquipamento(parGrupo.equipamento_id)} · ${parGrupo.combustivel} (${brl(parGrupo.valor_total)}) e o lançamento dele no Extrato também serão excluídos.` : null,
+    ].filter(Boolean).join(" ") || null,
     campos,
     // última barreira: mesmo com o aviso ignorado, nota repetida não grava
     async antesDeSalvar() {
@@ -1776,6 +1778,9 @@ function abrirModalDiesel(id) {
       if (d?.agenda_id) await sb.from("agenda").delete().eq("id", d.agenda_id);
       await removerAnexo(d?.comprovante_pagamento_path);
       await removerAnexo(d?.nota_fiscal_path);
+      // nota conjunta: excluir um lado exclui o outro (e o lançamento dele no Extrato)
+      const apagados = await excluirParesDoAbastecimento(d);
+      if (apagados.length) avisoAposExcluir = `Nota conjunta excluída: ${apagados.join(" e ")} também ${apagados.length > 1 ? "foram removidos" : "foi removido"}.`;
     },
   });
   recalcularValores();
@@ -3210,7 +3215,42 @@ function abrirModalConfirmarExclusao(ctxOriginal) {
   requestAnimationFrame(() => $("modal-cancelar").focus({ preventScroll: true }));
 }
 
+let avisoAposExcluir = null;
+
+// Apaga os outros abastecimentos da mesma nota conjunta (o par para o qual
+// este aponta e qualquer um que aponte para este), com o lançamento no
+// Extrato, o compromisso na Agenda e os anexos de cada um.
+// Devolve uma descrição de cada um que foi removido.
+async function excluirParesDoAbastecimento(d) {
+  if (!d) return [];
+  const pares = new Map();
+  try {
+    if (d.grupo_abastecimento_id) {
+      const { data } = await sb.from("diesel").select("*").eq("id", d.grupo_abastecimento_id).maybeSingle();
+      if (data) pares.set(data.id, data);
+    }
+    const { data: apontam } = await sb.from("diesel").select("*").eq("grupo_abastecimento_id", d.id);
+    (apontam || []).forEach(x => pares.set(x.id, x));
+  } catch (e) { console.error("Falha ao localizar o par da nota conjunta:", e); return []; }
+
+  const apagados = [];
+  for (const par of pares.values()) {
+    if (par.id === d.id) continue;
+    try {
+      await removerLancamentoVinculado(par.lancamento_id);
+      if (par.agenda_id) await sb.from("agenda").delete().eq("id", par.agenda_id);
+      await removerAnexo(par.comprovante_pagamento_path);
+      await removerAnexo(par.nota_fiscal_path);
+      const { error } = await sb.from("diesel").delete().eq("id", par.id);
+      if (error) throw error;
+      apagados.push(`${nomeEquipamento(par.equipamento_id)} · ${par.combustivel} (${brl(par.valor_total)})`);
+    } catch (e) { console.error("Falha ao excluir o par da nota conjunta:", e); }
+  }
+  return apagados;
+}
+
 async function executarExclusao(ctxOriginal) {
+  avisoAposExcluir = null;
   const btn = $("modal-excluir");
   btn.disabled = true;
   btn.textContent = "Excluindo…";
@@ -3229,7 +3269,8 @@ async function executarExclusao(ctxOriginal) {
     return;
   }
   fecharModal();
-  toast("Registro excluído.");
+  toast(avisoAposExcluir || "Registro excluído.");
+  avisoAposExcluir = null;
   await carregarTudo();
 }
 
