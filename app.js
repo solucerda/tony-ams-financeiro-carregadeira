@@ -1207,6 +1207,35 @@ function badgeComb(c) {
   return `<span class="badge-comb" style="--cor-comb:${COR_COMB[nome] || "#8a8f98"}" title="${escHtml(nome)}">${LETRA_COMB[nome] || escHtml(nome.charAt(0).toUpperCase())}</span>`;
 }
 
+// Eficiência da máquina: litros de diesel por hora trabalhada, "tanque a
+// tanque". Para cada abastecimento, divide os litros pelas horas faturadas
+// (Recebimentos) entre o abastecimento anterior e este. Assume tanque cheio
+// a cada abastecimento; o primeiro só serve de marco inicial.
+const PALETA_EQUIP = ["#F5B301", "#4DA3FF", "#3ECF8E", "#A78BFA", "#FF7A3D"];
+function calcularEficiencia() {
+  const porAbast = new Map(), series = [];
+  let litros = 0, horas = 0, custo = 0;
+  const maquinas = [...new Set(dados.die.map(d => d.equipamento_id))].filter(id => tipoEquipamento(id) === "Maquina");
+  for (const id of maquinas) {
+    const fills = dados.die
+      .filter(d => d.equipamento_id === id && (d.combustivel || "Diesel") === "Diesel" && d.litros > 0)
+      .slice().sort((a, b) => String(a.data).localeCompare(String(b.data)) || a.id - b.id);
+    const recs = dados.rec.filter(r => r.equipamento_id === id && r.horas > 0);
+    const pontos = [];
+    for (let i = 1; i < fills.length; i++) {
+      const ini = fills[i - 1].data, fim = fills[i].data;
+      if (fim <= ini) continue; // dois no mesmo dia: não dá pra separar as horas
+      const h = recs.filter(r => r.data > ini && r.data <= fim).reduce((t, r) => t + r.horas, 0);
+      if (h <= 0) continue;
+      porAbast.set(fills[i].id, { lh: fills[i].litros / h, h });
+      pontos.push({ data: fim, lh: fills[i].litros / h });
+      litros += fills[i].litros; horas += h; custo += fills[i].valor_total || 0;
+    }
+    if (pontos.length) series.push({ id, pontos });
+  }
+  return { porAbast, series, litros, horas, custo };
+}
+
 // todos os abastecimentos visíveis: os da seleção atual + os pares (carro de apoio)
 const todosAbastecimentos = () => dados.die.concat(dados.dieExtra || []);
 const acharAbastecimento = (id) => todosAbastecimentos().find(x => x.id === id);
@@ -1245,14 +1274,38 @@ function renderDiesel() {
   }
   const combs = Object.keys(porComb).sort((x, y) => porComb[y].litros - porComb[x].litros);
   const medio = (c) => porComb[c].litros > 0 ? porComb[c].custo / porComb[c].litros : 0;
+  const efic = calcularEficiencia();
   const kpisBase = [
+    kpi("Consumo médio", efic.horas > 0 ? num(efic.litros / efic.horas, 1) + " L/h" : "—",
+      efic.horas > 0 ? `${num(efic.litros, 0)} L em ${num(efic.horas, 1)} h trabalhadas` : "precisa de 2+ abastecimentos e horas lançadas em Recebimentos", null, true),
+    kpi("Custo de combustível por hora", efic.horas > 0 ? brl(efic.custo / efic.horas) + "/h" : "—",
+      efic.horas > 0 ? "diesel ÷ horas trabalhadas" : ""),
     kpi("Combustível consumido", num(litros,0) + " L", brl0(custo) + " no período"),
     combs.length <= 1
       ? kpi("Preço médio do litro", brl(litros > 0 ? custo/litros : 0))
       : kpi(`Preço médio do litro · ${combs[0]}`, brl(medio(combs[0])), combs.slice(1).map(c => `${c} ${brl(medio(c))}`).join(" · ")),
-    kpi("Combustível a pagar", brl0(aPagar), vencido > 0 ? brl0(vencido) + " vencido" : "em dia", aPagar > 0 ? "neg" : "pos"),
   ];
   $("kpis-diesel").innerHTML = kpisBase.join("");
+
+  // gráfico do consumo (L/h) a cada abastecimento, uma linha por máquina
+  const cardConsumo = $("card-consumo");
+  if (cardConsumo) {
+    cardConsumo.classList.toggle("oculto", !efic.series.length);
+    if (efic.series.length) {
+      const datas = [...new Set(efic.series.flatMap(sr => sr.pontos.map(p => p.data)))].sort();
+      desenharGrafico("graf-consumo", {
+        type: "line",
+        data: {
+          labels: datas.map(fData),
+          datasets: efic.series.map((sr, i) => ({ label: nomeEquipamento(sr.id) + " · L/h",
+            data: datas.map(dt => { const p = sr.pontos.find(x => x.data === dt); return p ? Math.round(p.lh * 100) / 100 : null; }),
+            spanGaps: true, borderColor: PALETA_EQUIP[i % PALETA_EQUIP.length], backgroundColor: PALETA_EQUIP[i % PALETA_EQUIP.length],
+            borderWidth: 2, pointRadius: 3.5, tension: .1 }))
+        },
+        options: opcoesGrafico({ legenda: efic.series.length > 1, decimais: 1 })
+      });
+    }
+  }
 
   // gráfico: uma linha por combustível (cada um com a sua cor)
   const pts = doFiltro.filter(d => d.valor_unit > 0 && d.litros > 0)
@@ -1300,7 +1353,7 @@ function renderDiesel() {
         <div class="comb-linha">${visaoGeral ? badgeComb(d.combustivel) + " " : ""}<span>${escHtml(nomeEquipamento(d.equipamento_id)) || "—"}</span>${tagPar}</div>
         <div class="td-natureza">${escHtml(d.combustivel || "Diesel")}${d.local ? " · " + escHtml(d.local) : ""}${d.comprovante_pagamento_path || d.nota_fiscal_path ? ` <span title="Tem comprovante/nota anexado">📎</span>` : ""}</div>
       </td>
-      <td class="num">${d.litros ? num(d.litros, d.litros % 1 ? 2 : 0) : "—"}</td>
+      <td class="num">${d.litros ? num(d.litros, d.litros % 1 ? 2 : 0) : "—"}${efic.porAbast.has(d.id) ? `<div class="td-vencimento" title="Litros ÷ horas trabalhadas desde o abastecimento anterior (${num(efic.porAbast.get(d.id).h, 1)} h)">${num(efic.porAbast.get(d.id).lh, 1)} L/h</div>` : ""}</td>
       <td class="num td-mudo">${d.valor_unit ? brl(d.valor_unit) : "—"}${desc}</td>
       <td class="num neg">${d.valor_total ? brl(d.valor_total) : "—"}</td>
       <td>${statusHtml}${d.status === "pendente" && d.vencimento ? `<div class="td-vencimento">vence ${fData(d.vencimento)}</div>` : ""}</td>

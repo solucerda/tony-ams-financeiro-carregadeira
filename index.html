@@ -295,6 +295,11 @@
       <!-- ─── DIESEL ─── -->
       <section id="aba-diesel" class="secao oculto">
         <div class="kpi-grade" id="kpis-diesel"></div>
+        <div class="cartao oculto" id="card-consumo">
+          <h2 class="titulo-risco"><span>Consumo da máquina (litros por hora trabalhada)</span></h2>
+          <p class="cartao-nota">a cada abastecimento: litros ÷ horas faturadas desde o abastecimento anterior (assume tanque cheio)</p>
+          <div class="grafico-caixa grafico-baixo"><canvas id="graf-consumo"></canvas></div>
+        </div>
         <div class="cartao">
           <h2 class="titulo-risco"><span>Preço do litro por abastecimento</span></h2>
           <div class="grafico-caixa grafico-baixo"><canvas id="graf-diesel"></canvas></div>
