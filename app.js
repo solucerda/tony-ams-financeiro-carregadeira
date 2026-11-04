@@ -1213,7 +1213,7 @@ const acharAbastecimento = (id) => todosAbastecimentos().find(x => x.id === id);
 
 function renderDiesel() {
   // filtro de centro de custo: só lista os que já têm abastecimento
-  const centrosUsados = [...new Set(todosAbastecimentos().map(d => d.centro_custo_id).filter(x => x != null))];
+  const centrosUsados = [...new Set(dados.die.map(d => d.centro_custo_id).filter(x => x != null))];
   const selCentro = $("die-filtro-centro");
   const atual = selCentro.value || filtroDiesel.centro;
   selCentro.innerHTML = '<option value="todos">Todos os centros de custo</option>' +
@@ -1221,7 +1221,11 @@ function renderDiesel() {
   selCentro.value = (atual !== "todos" && centrosUsados.includes(Number(atual))) ? atual : "todos";
   filtroDiesel.centro = selCentro.value;
 
-  const doFiltro = todosAbastecimentos().filter(d =>
+  // Vendo uma máquina, só entram os abastecimentos DELA (o carro de apoio
+  // fica de fora). Selos de combustível e marca de nota conjunta só
+  // aparecem no "Total do negócio", onde todos os equipamentos se misturam.
+  const visaoGeral = contexto.equipamentoId == null;
+  const doFiltro = dados.die.filter(d =>
     (filtroDiesel.centro === "todos" || String(d.centro_custo_id) === filtroDiesel.centro) &&
     (filtroDiesel.combustivel === "todos" || d.combustivel === filtroDiesel.combustivel)
   );
@@ -1286,14 +1290,14 @@ function renderDiesel() {
       : `<span class="chip chip-status chip-pago">Pago</span>`;
     const emPar = grupo.length > 1;
     const classe = "linha-clicavel" + (emPar ? " linha-par" + (i === 0 ? " par-ini" : "") + (i === grupo.length - 1 ? " par-fim" : "") : "");
-    const tagPar = d.grupo_abastecimento_id
+    const tagPar = visaoGeral && d.grupo_abastecimento_id
       ? ` <span class="tag-par" title="Esta linha faz parte de uma nota conjunta (máquina + carro de apoio)">🔗 nota conjunta</span>` : "";
     const desc = Number(d.desconto) > 0 ? `<div class="td-vencimento">desconto ${brl(d.desconto)}</div>` : "";
     linhas.push(`<tr class="${classe}" role="button" tabindex="0" title="Editar abastecimento"
         onclick="aoClicarLinha(() => abrirModalDiesel(${d.id}))" onkeydown="teclaLinha(event)">
       <td class="td-data">${fData(d.data)}</td>
       <td>
-        <div class="comb-linha">${badgeComb(d.combustivel)} <span>${escHtml(nomeEquipamento(d.equipamento_id)) || "—"}</span>${tagPar}</div>
+        <div class="comb-linha">${visaoGeral ? badgeComb(d.combustivel) + " " : ""}<span>${escHtml(nomeEquipamento(d.equipamento_id)) || "—"}</span>${tagPar}</div>
         <div class="td-natureza">${escHtml(d.combustivel || "Diesel")}${d.local ? " · " + escHtml(d.local) : ""}${d.comprovante_pagamento_path || d.nota_fiscal_path ? ` <span title="Tem comprovante/nota anexado">📎</span>` : ""}</div>
       </td>
       <td class="num">${d.litros ? num(d.litros, d.litros % 1 ? 2 : 0) : "—"}</td>
