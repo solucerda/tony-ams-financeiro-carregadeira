@@ -517,6 +517,9 @@ input[data-moeda="1"] { text-align: right; font-family: var(--fonte-mono); }
   font-size: 12px; color: var(--texto-suave); background: var(--superficie-2);
   border: 1px dashed var(--borda-clara); border-radius: 6px; padding: 8px;
 }
+.arquivo-status { font-size: 12px; line-height: 1.45; white-space: pre-line; color: var(--texto-suave); border-left: 3px solid var(--borda-clara); padding: 2px 0 2px 9px; }
+.arquivo-status.ok { color: var(--verde); border-left-color: var(--verde); }
+.arquivo-status.aviso { color: var(--amarelo-claro); border-left-color: var(--amarelo); }
 .arquivo-atual { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; }
 .btn-link { background: none; border: none; color: var(--amarelo); cursor: pointer; font-size: 12px; padding: 0; text-decoration: underline; }
 .btn-link:hover { color: var(--amarelo-claro); }

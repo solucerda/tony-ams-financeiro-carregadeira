@@ -1305,6 +1305,50 @@ function abrirModalDiesel(id) {
   const tipoEquip = tipoEquipamento(equipInicial);
   let carroApoioForm = null; // captura os dados do carro de apoio no montar(), lido no aposSalvar
   let anexosForm = {};       // arquivos escolhidos no formulário, enviados no aposSalvar
+  let chaveNota = null;      // chave de 44 dígitos lida do QR da nota anexada
+  let notaTrocada = false;   // escolheu outro arquivo de nota nesta edição
+
+  // Ao anexar a foto da nota: lê o QR Code, mostra os dados da chave (número,
+  // CNPJ do posto), avisa se a nota já foi lançada e, se o fornecedor ainda
+  // está vazio, preenche com o nome do posto.
+  async function lerNotaAnexada(arquivo, mostrar) {
+    chaveNota = null;
+    notaTrocada = !!arquivo;
+    if (!arquivo) { mostrar(""); return; }
+    if (!arquivo.type.startsWith("image/")) {
+      mostrar("PDF anexado. A leitura automática do QR Code só funciona com foto da nota.");
+      return;
+    }
+    mostrar("Lendo o QR Code da nota…");
+    let texto = null;
+    try { texto = await NotaQR.lerQrDeArquivo(arquivo); } catch (e) { console.error("Falha ao ler o QR:", e); }
+    const aindaEsta = () => campoForm("arq_nota")?.files?.[0] === arquivo; // trocou a foto no meio?
+    if (!aindaEsta()) return;
+    const chave = NotaQR.extrairChave(texto);
+    if (!chave) { mostrar("Não consegui ler o QR Code dessa foto. Preencha os dados manualmente.", "aviso"); return; }
+    const info = NotaQR.interpretarChave(chave);
+    if (!info.chaveConfere) { mostrar("QR lido, mas a chave da nota não confere. Confira a foto.", "aviso"); return; }
+    chaveNota = chave;
+
+    const linhas = [`${info.tipo} nº ${info.numero} · série ${info.serie} · ${String(info.mes).padStart(2, "0")}/${info.ano} · CNPJ ${NotaQR.formatarCnpj(info.cnpj)}`];
+    const repetida = dados.die.find(x => x.nota_chave === chave && x.id !== d?.id);
+    if (repetida) linhas.push(`⚠ Essa nota já foi lançada em ${fData(repetida.data)}${repetida.local ? " (" + repetida.local + ")" : ""}.`);
+    mostrar(linhas.join("\n"), repetida ? "aviso" : "ok");
+
+    const nome = info.cnpjConfere ? await buscarNomeEmpresa(info.cnpj) : null;
+    if (!aindaEsta()) return;
+    if (nome) {
+      const existente = dados.fornecedores.find(f => semAcento(f.nome) === semAcento(nome));
+      const campoLocal = campoForm("local");
+      if (campoLocal && !campoLocal.value.trim()) {
+        campoLocal.value = existente ? existente.nome : nome;
+        linhas.push("Fornecedor preenchido: " + campoLocal.value);
+      } else linhas.push("Emitente: " + nome);
+    } else {
+      linhas.push("Não consegui buscar o nome do posto. Preencha o fornecedor.");
+    }
+    mostrar(linhas.join("\n"), repetida ? "aviso" : "ok");
+  }
 
   // ── Valores do litro / desconto ──────────────────────────────────────
   // Você informa litros, preço do litro (o da bomba) e o valor total pago.
@@ -1381,7 +1425,7 @@ function abrirModalDiesel(id) {
     { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: d?.vencimento || "" },
     { tipo:"separador", rotulo:"Comprovantes (foto ou PDF, até 10 MB)" },
     { nome:"arq_comprovante", rotulo:"Comprovante de pagamento", tipo:"arquivo", largo:true, atual: d?.comprovante_pagamento_path || "" },
-    { nome:"arq_nota", rotulo:"Nota fiscal ou recibo do abastecimento", tipo:"arquivo", largo:true, atual: d?.nota_fiscal_path || "" },
+    { nome:"arq_nota", rotulo:"Nota fiscal ou recibo do abastecimento", tipo:"arquivo", largo:true, atual: d?.nota_fiscal_path || "", aoEscolher: lerNotaAnexada },
     { tipo:"separador", rotulo:"Classificação" },
     { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel" },
     { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(d?.centro_custo_id) },
@@ -1426,12 +1470,16 @@ function abrirModalDiesel(id) {
       validarAnexo(anexosForm.comprovante, "Comprovante de pagamento");
       validarAnexo(anexosForm.nota, "Nota fiscal/recibo");
 
-      return {
+      const registro = {
         data: f.data, equipamento_id: Number(f.equipamento_id), combustivel: f.combustivel,
         local: f.local.trim(), litros, valor_unit: vu, valor_unit_bruto: precoBruto, desconto, valor_total: total,
         status: f.status, vencimento: f.status === "pendente" ? f.vencimento : null,
         natureza: f.natureza, centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
       };
+      // chave da nota (do QR): só mexe quando a nota foi trocada ou removida
+      if (chaveNota) registro.nota_chave = chaveNota;
+      else if (notaTrocada || anexosForm.removerNota) registro.nota_chave = null;
+      return registro;
     },
     async aposSalvar(salvo) {
       // anexos e fornecedor novo não podem derrubar o resto da sincronização
@@ -1474,6 +1522,38 @@ function abrirModalDiesel(id) {
     },
   });
   recalcularValores();
+}
+
+// Nome do posto a partir do CNPJ (consulta pública, gratuita — BrasilAPI).
+// Se falhar ou demorar, devolve null e o fornecedor é preenchido à mão.
+const cacheEmpresas = new Map();
+async function buscarNomeEmpresa(cnpj) {
+  if (cacheEmpresas.has(cnpj)) return cacheEmpresas.get(cnpj);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 7000);
+  try {
+    const r = await fetch("https://brasilapi.com.br/api/cnpj/v1/" + cnpj, { signal: ctrl.signal });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const nome = nomeAmigavel(j.nome_fantasia || j.razao_social || "");
+    if (nome) cacheEmpresas.set(cnpj, nome);
+    return nome || null;
+  } catch (e) {
+    console.error("Falha ao consultar o CNPJ:", e);
+    return null;
+  } finally { clearTimeout(timer); }
+}
+// "AUTO POSTO SAO JOSE LTDA" -> "Auto Posto Sao Jose LTDA"
+function nomeAmigavel(txt) {
+  txt = String(txt).trim().replace(/\s+/g, " ");
+  if (txt !== txt.toUpperCase()) return txt; // já vem com maiúsculas/minúsculas certas
+  const siglas = new Set(["LTDA", "ME", "EPP", "EIRELI", "SA", "S/A", "MEI", "CIA"]);
+  const miudas = new Set(["DE", "DA", "DO", "DAS", "DOS", "E"]);
+  return txt.split(" ").map((p, i) => {
+    if (siglas.has(p)) return p;
+    if (i > 0 && miudas.has(p)) return p.toLowerCase();
+    return p.charAt(0) + p.slice(1).toLowerCase();
+  }).join(" ");
 }
 
 // Cadastra o fornecedor/posto digitado, se ainda não existe — assim ele já
@@ -2478,6 +2558,7 @@ function abrirModal(ctx) {
           </div>` : "";
       return `<div class="campo-arquivo ${largo}" ${dataGrupo}>
         <label>${c.rotulo}<input type="file" accept="image/*,application/pdf" data-campo="${c.nome}"></label>
+        <div class="arquivo-status oculto" data-status-arquivo="${c.nome}"></div>
         ${atual}
       </div>`;
     }
@@ -2533,6 +2614,21 @@ function abrirModal(ctx) {
   });
   document.querySelectorAll("#modal-campos [data-ver-arquivo]").forEach(b =>
     b.addEventListener("click", () => abrirAnexo(b.dataset.verArquivo)));
+
+  // campo de arquivo com leitura automática (ex.: QR da nota fiscal): chama
+  // o aoEscolher(arquivo, mostrar) assim que um arquivo é escolhido; "mostrar"
+  // escreve a mensagem de status logo abaixo do campo.
+  ctx.campos.forEach(c => {
+    if (c.tipo !== "arquivo" || !c.aoEscolher) return;
+    const el = document.querySelector(`#modal-campos [data-campo="${c.nome}"]`);
+    const st = document.querySelector(`#modal-campos [data-status-arquivo="${c.nome}"]`);
+    if (!el || !st) return;
+    const mostrar = (texto, tom) => {
+      st.textContent = texto || "";
+      st.className = "arquivo-status" + (texto ? " " + (tom || "") : " oculto");
+    };
+    el.addEventListener("change", () => c.aoEscolher(el.files[0] || null, mostrar));
+  });
   }
 
   const btnExcluir = $("modal-excluir");
