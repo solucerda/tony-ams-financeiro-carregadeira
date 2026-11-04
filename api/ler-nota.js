@@ -8,7 +8,8 @@ const SUPABASE_URL = process.env.SUPABASE_URL || "https://tueevnugbwdlsdzwgvss.s
 // a anon key é pública por natureza (a mesma do config.js)
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_QSUtvgXIkIp2A3tgD1Qabg_Qs-xUFrN";
 const MODELO = process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5";
-const MODELO_GEMINI = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+// o 2.5-flash foi desligado em out/2026; tenta cada modelo até um existir
+const MODELOS_GEMINI = [process.env.GEMINI_MODEL, "gemini-3-flash-preview", "gemini-3.1-flash-lite"].filter(Boolean);
 const TIPOS = new Set(["image/jpeg", "image/png", "image/webp"]);
 const LIMITE_BASE64 = 4000000;
 
@@ -89,8 +90,17 @@ function chamarAnthropic(imagem, tipo, signal) {
 }
 
 // Google Gemini (tem camada gratuita). A chave vai no cabeçalho, nunca na URL.
-function chamarGemini(imagem, tipo, signal) {
-  return fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(MODELO_GEMINI) + ":generateContent", {
+async function chamarGemini(imagem, tipo, signal) {
+  let r;
+  for (const modelo of MODELOS_GEMINI) {
+    r = await fetchGemini(modelo, imagem, tipo, signal);
+    if (r.status !== 404) break;
+  }
+  return r;
+}
+
+function fetchGemini(modelo, imagem, tipo, signal) {
+  return fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(modelo) + ":generateContent", {
     method: "POST", signal,
     headers: { "content-type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
     body: JSON.stringify({
