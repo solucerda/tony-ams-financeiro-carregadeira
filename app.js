@@ -1333,7 +1333,8 @@ function abrirModalDiesel(id) {
     const linhas = [`${info.tipo} nº ${info.numero} · série ${info.serie} · ${String(info.mes).padStart(2, "0")}/${info.ano} · CNPJ ${NotaQR.formatarCnpj(info.cnpj)}`];
     const repetida = dados.die.find(x => x.nota_chave === chave && x.id !== d?.id);
     if (repetida) linhas.push(`⚠ Essa nota já foi lançada em ${fData(repetida.data)}${repetida.local ? " (" + repetida.local + ")" : ""}.`);
-    mostrar(linhas.join("\n"), repetida ? "aviso" : "ok");
+    let tom = repetida ? "aviso" : "ok";
+    mostrar(linhas.join("\n"), tom);
 
     const nome = info.cnpjConfere ? await buscarNomeEmpresa(info.cnpj) : null;
     if (!aindaEsta()) return;
@@ -1347,7 +1348,95 @@ function abrirModalDiesel(id) {
     } else {
       linhas.push("Não consegui buscar o nome do posto. Preencha o fornecedor.");
     }
-    mostrar(linhas.join("\n"), repetida ? "aviso" : "ok");
+    mostrar(linhas.join("\n"), tom);
+
+    // itens da nota (litros, preços, desconto): hoje só a SEFAZ-BA
+    if (/^https?:\/\/nfe\.sefaz\.ba\.gov\.br\//i.test(texto || "")) {
+      mostrar([...linhas, "Buscando os itens da nota na SEFAZ…"].join("\n"), tom);
+      const nota = await buscarItensNfce(texto);
+      if (!aindaEsta()) return;
+      if (nota.erro) {
+        linhas.push("Não consegui buscar os itens da nota (" + nota.erro + "). Preencha litros e valores à mão.");
+        tom = "aviso";
+      } else if (preencherPelaNota(nota, linhas)) tom = "aviso";
+      mostrar(linhas.join("\n"), tom);
+    }
+  }
+
+  // Preenche o formulário com os itens da nota. Só em abastecimento NOVO e
+  // com litros/total ainda vazios — nunca por cima do que você já digitou.
+  // O desconto da nota (que vem só no total) é aplicado ao combustível
+  // principal. Devolve true quando há algo pra conferir.
+  function preencherPelaNota(nota, linhas) {
+    const itens = (nota.itens || []).map(i => ({ ...i, combustivel: combustivelDoItem(i.descricao) }));
+    const combustiveis = itens.filter(i => i.combustivel && i.quantidade > 0 && i.valorTotal > 0);
+    if (!combustiveis.length) { linhas.push("A nota não tem item de combustível reconhecido."); return true; }
+
+    const ehMaquina = tipoEquipamento(Number(campoForm("equipamento_id")?.value)) === "Maquina";
+    const principal = combustiveis.find(i => ehMaquina ? i.combustivel === "Diesel" : i.combustivel !== "Diesel") || combustiveis[0];
+    const carro = ehMaquina && temVeiculoCadastrado
+      ? combustiveis.find(i => i !== principal && i.combustivel !== principal.combustivel && i.combustivel !== "Diesel") : null;
+    // o desconto vem só no total da nota: aplica no item de maior valor, e só
+    // se for o principal — senão não arrisca e pede pra conferir
+    const maiorItem = combustiveis.reduce((a, b) => (b.valorTotal > a.valorTotal ? b : a));
+    const descontoNota = Number(nota.desconto) || 0;
+    const desconto = principal === maiorItem ? Math.min(descontoNota, principal.valorTotal) : 0;
+    const pagoPrincipal = arred(principal.valorTotal - desconto, 2);
+    const duasCasas = (v) => Math.abs(v * 100 - Math.round(v * 100)) < 0.0001;
+    let conferir = false;
+    const avisoDesconto = descontoNota > 0 && !desconto
+      ? `⚠ A nota tem desconto de ${brl(descontoNota)}, mas não sei a qual item pertence. Não apliquei, confira.` : null;
+
+    const linhaItem = (i, pago, desc) =>
+      `${i.combustivel} ${num(i.quantidade, i.quantidade % 1 ? 3 : 0)} L × ${brl(i.valorUnit)}${desc > 0 ? " − desconto " + brl(desc) : ""} = ${brl(pago)}`;
+
+    if (d) {
+      linhas.push("Itens da nota: " + linhaItem(principal, pagoPrincipal, desconto) + (carro ? " · " + linhaItem(carro, carro.valorTotal, 0) : "") + ". Não alterei os campos porque este abastecimento já existe.");
+      return false;
+    }
+    if (campoForm("litros")?.value || campoForm("valor_total")?.value) {
+      linhas.push("Itens da nota: " + linhaItem(principal, pagoPrincipal, desconto) + ". Não alterei os campos porque litros/valor já estavam preenchidos.");
+      return false;
+    }
+
+    if (nota.data) campoForm("data").value = nota.data;
+    campoForm("combustivel").value = principal.combustivel;
+    campoForm("litros").value = String(principal.quantidade);
+    campoForm("valor_unit_bruto").value = moedaMascara(principal.valorUnit);
+    campoForm("valor_total").value = moedaMascara(pagoPrincipal);
+    totalEditado = true; // o total vem da nota, não de litros × preço
+    recalcularValores();
+    linhas.push("Preenchido pela nota: " + linhaItem(principal, pagoPrincipal, desconto));
+    if (avisoDesconto) { linhas.push(avisoDesconto); conferir = true; }
+    if (!duasCasas(principal.valorUnit)) {
+      linhas.push(`⚠ O preço do litro na nota tem 3 casas (${principal.valorUnit}); o campo guarda 2. Confira o desconto.`);
+      conferir = true;
+    }
+
+    let somaPaga = pagoPrincipal;
+    const chk = campoForm("tem_carro_apoio");
+    if (carro && chk) {
+      chk.checked = true;
+      chk.dispatchEvent(new Event("change"));
+      campoForm("carro_combustivel").value = carro.combustivel;
+      campoForm("carro_litros").value = String(carro.quantidade);
+      campoForm("carro_valor_unit").value = moedaMascara(carro.valorUnit);
+      const veiculos = opcoesEquipamentoPorTipo("Veiculo");
+      if (veiculos.length === 1) campoForm("carro_equipamento_id").value = String(veiculos[0]).split("|")[0];
+      somaPaga += carro.valorTotal;
+      linhas.push("Carro de apoio: " + linhaItem(carro, carro.valorTotal, 0) + (veiculos.length === 1 ? "" : " (escolha qual carro)"));
+      if (veiculos.length !== 1) conferir = true;
+    }
+    const sobras = itens.filter(i => i !== principal && i !== carro);
+    if (sobras.length) {
+      linhas.push("Itens da nota que não foram lançados: " + sobras.map(i => `${i.descricao} (${brl(i.valorTotal)})`).join(", ") + ".");
+      conferir = true;
+    }
+    if (nota.aPagar != null && Math.abs(somaPaga - nota.aPagar) > 0.05 && !sobras.length) {
+      linhas.push(`⚠ A soma lançada (${brl(somaPaga)}) não bate com o valor a pagar da nota (${brl(nota.aPagar)}).`);
+      conferir = true;
+    }
+    return conferir;
   }
 
   // ── Valores do litro / desconto ──────────────────────────────────────
@@ -1554,6 +1643,35 @@ function nomeAmigavel(txt) {
     if (i > 0 && miudas.has(p)) return p.toLowerCase();
     return p.charAt(0) + p.slice(1).toLowerCase();
   }).join(" ");
+}
+
+// Tipo de combustível a partir da descrição do item da nota.
+function combustivelDoItem(descricao) {
+  const t = semAcento(descricao).toUpperCase();
+  const achado = [["DIESEL", "Diesel"], ["GASOLINA", "Gasolina"], ["ETANOL", "Etanol"], ["ALCOOL", "Etanol"], ["GNV", "GNV"]]
+    .find(([palavra]) => t.includes(palavra));
+  return achado ? achado[1] : null;
+}
+
+// Pede ao servidor (/api/nfce) os itens e totais da nota — o navegador não
+// consegue ler a página da SEFAZ direto. Devolve os dados ou { erro }.
+async function buscarItensNfce(textoQr) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return { erro: "sem_sessao" };
+    const r = await fetch("/api/nfce", {
+      method: "POST", signal: ctrl.signal,
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.access_token },
+      body: JSON.stringify({ qr: textoQr }),
+    });
+    const j = await r.json().catch(() => ({}));
+    return r.ok ? j : { erro: j.erro || "http_" + r.status };
+  } catch (e) {
+    console.error("Falha ao buscar os itens da nota:", e);
+    return { erro: e && e.name === "AbortError" ? "demorou_demais" : "sem_conexao" };
+  } finally { clearTimeout(timer); }
 }
 
 // Cadastra o fornecedor/posto digitado, se ainda não existe — assim ele já
