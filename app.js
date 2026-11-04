@@ -1681,7 +1681,7 @@ function combustivelDoItem(descricao) {
 
 // Mensagens amigáveis para os erros da leitura por IA.
 const MENSAGEM_ERRO_IA = {
-  ia_nao_configurada: "A leitura por IA ainda não foi ativada (falta a chave da API na Vercel). Preencha litros e valores à mão.",
+  ia_nao_configurada: "A leitura por IA ainda não foi ativada (falta cadastrar a chave da IA na Vercel). Preencha litros e valores à mão.",
   ia_chave_invalida: "A chave da API da IA é inválida. Preencha litros e valores à mão.",
   ia_sem_saldo: "A conta da API da IA está sem saldo. Preencha litros e valores à mão.",
   ia_limite: "A IA atingiu o limite de uso por agora. Tente de novo em instantes ou preencha à mão.",

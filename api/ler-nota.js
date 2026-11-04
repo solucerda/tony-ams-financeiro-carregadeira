@@ -1,13 +1,14 @@
 /* POST /api/ler-nota  { imagem: "<base64 jpeg/png/webp>", tipo: "image/jpeg" }
-   Manda a foto da nota/cupom de abastecimento pra IA da Anthropic ler e
+   Manda a foto da nota/cupom de abastecimento pra IA da IA ler e
    devolve itens, desconto e totais em JSON. Só atende usuário logado no
-   Supabase. A chave da API fica na variável de ambiente ANTHROPIC_API_KEY
+   Supabase. A chave fica em GEMINI_API_KEY (grátis, tem prioridade) ou ANTHROPIC_API_KEY
    (Vercel → Settings → Environment Variables) — nunca no código do site. */
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://tueevnugbwdlsdzwgvss.supabase.co";
 // a anon key é pública por natureza (a mesma do config.js)
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_QSUtvgXIkIp2A3tgD1Qabg_Qs-xUFrN";
 const MODELO = process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5";
+const MODELO_GEMINI = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const TIPOS = new Set(["image/jpeg", "image/png", "image/webp"]);
 const LIMITE_BASE64 = 4000000;
 
@@ -72,13 +73,41 @@ function extrairJson(texto) {
   try { return JSON.parse(texto.slice(ini, fim + 1)); } catch (e) { return null; }
 }
 
+
+function chamarAnthropic(imagem, tipo, signal) {
+  return fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST", signal,
+    headers: { "content-type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({
+      model: MODELO, max_tokens: 1500, system: SISTEMA,
+      messages: [{ role: "user", content: [
+        { type: "image", source: { type: "base64", media_type: tipo, data: imagem } },
+        { type: "text", text: "Extraia os dados desta nota." },
+      ] }],
+    }),
+  });
+}
+
+// Google Gemini (tem camada gratuita). A chave vai no cabeçalho, nunca na URL.
+function chamarGemini(imagem, tipo, signal) {
+  return fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(MODELO_GEMINI) + ":generateContent", {
+    method: "POST", signal,
+    headers: { "content-type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: SISTEMA }] },
+      contents: [{ role: "user", parts: [{ inlineData: { mimeType: tipo, data: imagem } }, { text: "Extraia os dados desta nota." }] }],
+      generationConfig: { responseMimeType: "application/json", temperature: 0, maxOutputTokens: 2000 },
+    }),
+  });
+}
+
 module.exports = async (req, res) => {
   if (req.method !== "POST") return responder(res, 405, { erro: "metodo_invalido" });
   const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
   if (!token || !(await usuarioLogado(token))) return responder(res, 401, { erro: "nao_autorizado" });
 
-  const chave = process.env.ANTHROPIC_API_KEY;
-  if (!chave) return responder(res, 503, { erro: "ia_nao_configurada" });
+  const usaGemini = !!process.env.GEMINI_API_KEY;
+  if (!usaGemini && !process.env.ANTHROPIC_API_KEY) return responder(res, 503, { erro: "ia_nao_configurada" });
 
   let corpo = req.body;
   if (typeof corpo === "string") { try { corpo = JSON.parse(corpo); } catch (e) { corpo = {}; } }
@@ -90,17 +119,7 @@ module.exports = async (req, res) => {
   const timer = setTimeout(() => ctrl.abort(), 50000);
   let resp;
   try {
-    resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST", signal: ctrl.signal,
-      headers: { "content-type": "application/json", "x-api-key": chave, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({
-        model: MODELO, max_tokens: 1500, system: SISTEMA,
-        messages: [{ role: "user", content: [
-          { type: "image", source: { type: "base64", media_type: tipo, data: imagem } },
-          { type: "text", text: "Extraia os dados desta nota." },
-        ] }],
-      }),
-    });
+    resp = usaGemini ? await chamarGemini(imagem, tipo, ctrl.signal) : await chamarAnthropic(imagem, tipo, ctrl.signal);
   } catch (e) {
     return responder(res, 502, { erro: e && e.name === "AbortError" ? "ia_demorou" : "ia_inacessivel" });
   } finally { clearTimeout(timer); }
@@ -108,15 +127,17 @@ module.exports = async (req, res) => {
   if (!resp.ok) {
     let detalhe = "";
     try { detalhe = JSON.stringify(await resp.json()); } catch (e) { /* sem corpo */ }
-    console.error("Anthropic respondeu", resp.status, detalhe.slice(0, 300)); // fica só no log da Vercel
-    if (resp.status === 401) return responder(res, 502, { erro: "ia_chave_invalida" });
+    console.error("IA respondeu", resp.status, detalhe.slice(0, 300)); // fica só no log da Vercel
     if (resp.status === 429) return responder(res, 502, { erro: "ia_limite" });
+    if (resp.status === 401 || (usaGemini && (resp.status === 403 || /API key not valid/i.test(detalhe)))) return responder(res, 502, { erro: "ia_chave_invalida" });
     if (/credit balance/i.test(detalhe)) return responder(res, 502, { erro: "ia_sem_saldo" });
     return responder(res, 502, { erro: "ia_falhou" });
   }
 
   const dados = await resp.json();
-  const texto = (dados.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+  const texto = usaGemini
+    ? ((dados.candidates && dados.candidates[0] && dados.candidates[0].content && dados.candidates[0].content.parts) || []).map((x) => x.text || "").join("")
+    : (dados.content || []).filter((x) => x.type === "text").map((x) => x.text).join("");
   const resultado = limparResultado(extrairJson(texto));
   if (!resultado || !resultado.itens.length) return responder(res, 422, { erro: "nota_nao_legivel" });
   return responder(res, 200, resultado);
