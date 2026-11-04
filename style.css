@@ -510,6 +510,26 @@ input[data-moeda="1"] { text-align: right; font-family: var(--fonte-mono); }
 }
 .campo-checkbox input { width: 16px; height: 16px; accent-color: var(--verde); cursor: pointer; }
 
+/* ── Formulário: campos calculados, anexos e autocomplete ── */
+.campo-calculado { color: var(--amarelo); font-family: var(--fonte-mono); opacity: 1; -webkit-text-fill-color: var(--amarelo); background: var(--superficie-2); }
+.campo-arquivo { display: flex; flex-direction: column; gap: 6px; }
+.campo-arquivo input[type="file"] {
+  font-size: 12px; color: var(--texto-suave); background: var(--superficie-2);
+  border: 1px dashed var(--borda-clara); border-radius: 6px; padding: 8px;
+}
+.arquivo-atual { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; }
+.btn-link { background: none; border: none; color: var(--amarelo); cursor: pointer; font-size: 12px; padding: 0; text-decoration: underline; }
+.btn-link:hover { color: var(--amarelo-claro); }
+.campo-auto { position: relative; }
+.sugestoes {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 20; list-style: none;
+  margin-top: 2px; max-height: 190px; overflow-y: auto;
+  background: var(--superficie); border: 1px solid var(--borda-clara);
+  border-radius: 6px; box-shadow: var(--sombra-2);
+}
+.sugestoes li { padding: 9px 11px; font-size: 13px; color: var(--texto); cursor: pointer; }
+.sugestoes li:hover, .sugestoes li.ativo { background: rgba(245,179,1,.14); color: var(--amarelo-claro); }
+
 /* ── Agenda: item quitado ──────────────────────────────── */
 .tabela-agenda td.pago { color: var(--verde); font-weight: 600; }
 .legenda-pago { color: var(--verde); }

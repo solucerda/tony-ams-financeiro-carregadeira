@@ -1246,7 +1246,7 @@ function renderDiesel() {
       <td class="td-data">${fData(d.data)}</td>
       <td>
         ${escHtml(nomeEquipamento(d.equipamento_id)) || "—"}
-        <div class="td-natureza">${escHtml(d.combustivel || "Diesel")}${d.local ? " · " + escHtml(d.local) : ""}</div>
+        <div class="td-natureza">${escHtml(d.combustivel || "Diesel")}${d.local ? " · " + escHtml(d.local) : ""}${d.comprovante_pagamento_path || d.nota_fiscal_path ? ` <span title="Tem comprovante/nota anexado">📎</span>` : ""}</div>
       </td>
       <td class="num">${d.litros ? num(d.litros,0) : "—"}</td>
       <td class="num td-mudo">${d.valor_unit ? brl(d.valor_unit) : "—"}</td>
@@ -1304,6 +1304,30 @@ function abrirModalDiesel(id) {
   const equipInicial = Number(equipamentoPadrao(d?.equipamento_id, false)) || null;
   const tipoEquip = tipoEquipamento(equipInicial);
   let carroApoioForm = null; // captura os dados do carro de apoio no montar(), lido no aposSalvar
+  let anexosForm = {};       // arquivos escolhidos no formulário, enviados no aposSalvar
+
+  // ── Valores do litro / desconto ──────────────────────────────────────
+  // Você informa litros, preço do litro (o da bomba) e o valor total pago.
+  // O desconto e o preço FINAL do litro (total ÷ litros) saem sozinhos.
+  const arred = (n, casas) => Math.round(n * 10 ** casas) / 10 ** casas;
+  const campoForm = (nome) => document.querySelector(`#modal-campos [data-campo="${nome}"]`);
+  const precoBrutoInicial = d ? (d.valor_unit_bruto ?? d.valor_unit) : "";
+  // enquanto o total não for mexido à mão, ele acompanha litros × preço.
+  // Num registro já salvo com desconto, o total é respeitado como está.
+  let totalEditado = !!d && Math.abs((d.litros || 0) * (precoBrutoInicial || 0) - (d.valor_total || 0)) > 0.005;
+  const fmtLitro = (v) => "R$ " + v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  function recalcularValores() {
+    const litros = Number(campoForm("litros")?.value) || 0;
+    const bruto = numDeMoeda(campoForm("valor_unit_bruto")?.value);
+    if (!totalEditado && litros > 0 && bruto > 0) campoForm("valor_total").value = moedaMascara(arred(litros * bruto, 2));
+    const total = numDeMoeda(campoForm("valor_total")?.value);
+    const desconto = litros > 0 && bruto > 0 && total > 0 ? arred(litros * bruto - total, 2) : 0;
+    const final = litros > 0 && total > 0 ? total / litros : 0;
+    const pct = desconto !== 0 && litros * bruto > 0 ? ` (${num(Math.abs(desconto) / (litros * bruto) * 100, 1)}%)` : "";
+    campoForm("desconto_calc").value = !total || !litros || !bruto ? "—"
+      : desconto === 0 ? "Sem desconto" : (desconto > 0 ? brl(desconto) : "Acréscimo de " + brl(-desconto)) + pct;
+    campoForm("preco_final_calc").value = final > 0 ? fmtLitro(final) : "—";
+  }
 
   const campos = [
     { nome:"data", rotulo:"Data", tipo:"date", valor: d?.data || hoje() },
@@ -1345,12 +1369,19 @@ function abrirModalDiesel(id) {
     { nome:"combustivel", rotulo:"Combustível", tipo:"select",
       opcoes:["Diesel|Diesel","Gasolina|Gasolina","Etanol|Etanol","Flex|Flex"],
       valor: d?.combustivel || (tipoEquip === "Veiculo" ? "Gasolina" : "Diesel") },
-    { nome:"local", rotulo:"Local / fornecedor", tipo:"texto", largo:true, valor: d?.local || "", lista: nomesAtivos(dados.fornecedores) },
-    { nome:"litros", rotulo:"Litros", tipo:"numero", valor: d?.litros ?? "" },
-    { nome:"valor_unit", rotulo:"Preço do litro (R$)", tipo:"moeda", valor: d?.valor_unit ?? "" },
+    { nome:"local", rotulo:"Local / fornecedor", tipo:"texto", largo:true, valor: d?.local || "", autocompletar:true, lista: nomesAtivos(dados.fornecedores) },
+    { nome:"litros", rotulo:"Litros", tipo:"numero", valor: d?.litros ?? "", aoMudar: recalcularValores },
+    { nome:"valor_unit_bruto", rotulo:"Preço do litro (R$)", tipo:"moeda", valor: precoBrutoInicial ?? "", aoMudar: recalcularValores },
+    { nome:"valor_total", rotulo:"Valor total pago (R$)", tipo:"moeda", largo:true, valor: d?.valor_total ?? "",
+      aoMudar() { totalEditado = true; recalcularValores(); } },
+    { nome:"desconto_calc", rotulo:"Desconto", tipo:"calculado", valor:"—" },
+    { nome:"preco_final_calc", rotulo:"Preço final do litro", tipo:"calculado", valor:"—" },
     { tipo:"separador", rotulo:"Pagamento" },
     { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar (fiado)"], valor: d?.status || "pago" },
     { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: d?.vencimento || "" },
+    { tipo:"separador", rotulo:"Comprovantes (foto ou PDF, até 10 MB)" },
+    { nome:"arq_comprovante", rotulo:"Comprovante de pagamento", tipo:"arquivo", largo:true, atual: d?.comprovante_pagamento_path || "" },
+    { nome:"arq_nota", rotulo:"Nota fiscal ou recibo do abastecimento", tipo:"arquivo", largo:true, atual: d?.nota_fiscal_path || "" },
     { tipo:"separador", rotulo:"Classificação" },
     { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel" },
     { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(d?.centro_custo_id) },
@@ -1366,8 +1397,13 @@ function abrirModalDiesel(id) {
     campos,
     montar(f) {
       const litros = Number(f.litros) || 0;
-      const vu = numDeMoeda(f.valor_unit);
-      if (!litros && !vu) throw "Informe pelo menos os litros e o preço.";
+      const bruto = numDeMoeda(f.valor_unit_bruto);
+      // total pago manda; se não foi preenchido, vale litros × preço do litro
+      const total = numDeMoeda(f.valor_total) || arred(litros * bruto, 2);
+      if (!total) throw "Informe o valor total pago (ou os litros e o preço do litro).";
+      const vu = litros > 0 ? arred(total / litros, 4) : bruto;
+      const precoBruto = bruto > 0 ? bruto : vu;
+      const desconto = litros > 0 && bruto > 0 ? arred(litros * bruto - total, 2) : 0;
       if (!f.equipamento_id) throw "Selecione o equipamento.";
       if (f.status === "pendente" && !f.vencimento) throw "Informe o vencimento para abastecimentos a pagar.";
 
@@ -1383,14 +1419,24 @@ function abrirModalDiesel(id) {
         };
       }
 
+      anexosForm = {
+        comprovante: campoForm("arq_comprovante")?.files?.[0] || null, removerComprovante: !!f.arq_comprovante_remover,
+        nota: campoForm("arq_nota")?.files?.[0] || null,               removerNota: !!f.arq_nota_remover,
+      };
+      validarAnexo(anexosForm.comprovante, "Comprovante de pagamento");
+      validarAnexo(anexosForm.nota, "Nota fiscal/recibo");
+
       return {
         data: f.data, equipamento_id: Number(f.equipamento_id), combustivel: f.combustivel,
-        local: f.local.trim(), litros, valor_unit: vu, valor_total: litros * vu,
+        local: f.local.trim(), litros, valor_unit: vu, valor_unit_bruto: precoBruto, desconto, valor_total: total,
         status: f.status, vencimento: f.status === "pendente" ? f.vencimento : null,
         natureza: f.natureza, centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
       };
     },
     async aposSalvar(salvo) {
+      // anexos e fornecedor novo não podem derrubar o resto da sincronização
+      await salvarAnexosAbastecimento(salvo, d, anexosForm);
+      await registrarFornecedor(salvo.local);
       // sempre sincroniza com o extrato — "pago" entra como realizado,
       // "a pagar" entra como pendente (não conta no saldo até dar baixa).
       await sincronizarLancamento({
@@ -1423,8 +1469,58 @@ function abrirModalDiesel(id) {
     async aoExcluir() {
       await removerLancamentoVinculado(d?.lancamento_id);
       if (d?.agenda_id) await sb.from("agenda").delete().eq("id", d.agenda_id);
+      await removerAnexo(d?.comprovante_pagamento_path);
+      await removerAnexo(d?.nota_fiscal_path);
     },
   });
+  recalcularValores();
+}
+
+// Cadastra o fornecedor/posto digitado, se ainda não existe — assim ele já
+// aparece na lista da próxima vez (e na aba Administração → Fornecedores).
+async function registrarFornecedor(nome) {
+  nome = String(nome || "").trim();
+  if (!nome) return;
+  const jaExiste = dados.fornecedores.some(f => String(f.nome).trim().toLowerCase() === nome.toLowerCase());
+  if (jaExiste) return;
+  try {
+    const { error } = await sb.from("fornecedores").insert({ nome });
+    if (error && error.code !== "23505") throw error; // 23505 = já existia, tudo bem
+  } catch (e) {
+    console.error("Falha ao cadastrar o fornecedor:", e);
+  }
+}
+
+// Envia/troca/remove o comprovante e a nota depois que o abastecimento foi
+// salvo, e grava os caminhos no registro. Se algo falhar, o abastecimento
+// continua salvo e o aviso aparece no lugar de "Registro criado".
+async function salvarAnexosAbastecimento(salvo, anterior, arq) {
+  if (!arq) return;
+  const itens = [
+    { arquivo: arq.comprovante, remover: arq.removerComprovante, coluna: "comprovante_pagamento_path", rotulo: "o comprovante de pagamento" },
+    { arquivo: arq.nota,        remover: arq.removerNota,        coluna: "nota_fiscal_path",           rotulo: "a nota fiscal/recibo" },
+  ];
+  const mudancas = {}, antigos = [], falhas = [];
+  for (const it of itens) {
+    const antigo = anterior?.[it.coluna] || null;
+    if (it.arquivo) {
+      try { mudancas[it.coluna] = await enviarAnexo("abastecimentos", it.arquivo); if (antigo) antigos.push(antigo); }
+      catch (e) { console.error("Falha ao enviar anexo:", e); falhas.push(it.rotulo); }
+    } else if (it.remover && antigo) {
+      mudancas[it.coluna] = null; antigos.push(antigo);
+    }
+  }
+  if (Object.keys(mudancas).length) {
+    const { error } = await sb.from("diesel").update(mudancas).eq("id", salvo.id);
+    if (error) {
+      console.error("Falha ao gravar os anexos:", error);
+      for (const c in mudancas) if (mudancas[c]) await removerAnexo(mudancas[c]); // não deixa arquivo órfão
+      antigos.length = 0;
+      falhas.push("os anexos");
+    }
+  }
+  for (const caminho of antigos) await removerAnexo(caminho);
+  if (falhas.length) avisoAposSalvar = "Abastecimento salvo, mas não consegui enviar " + falhas.join(" e ") + ". Edite e tente de novo.";
 }
 
 async function criarAbastecimentoCarroApoio(salvoPrincipal, carro) {
@@ -2365,8 +2461,36 @@ function abrirModal(ctx) {
         <input type="text" inputmode="decimal" data-campo="${c.nome}" data-moeda="1" data-negativo="${c.negativo ? 1 : 0}" value="${escHtml(moedaMascara(c.valor))}">
       </label>`;
     }
+    // campo só de leitura, preenchido por código (ex.: desconto e preço
+    // final do litro no abastecimento) — disabled pra não parecer editável
+    if (c.tipo === "calculado") {
+      return `<label class="${largo}" ${dataGrupo}>${c.rotulo}
+        <input type="text" disabled class="campo-calculado" data-campo="${c.nome}" value="${escHtml(c.valor)}">
+      </label>`;
+    }
+    // anexo (foto ou PDF) — o arquivo só sobe quando o registro é salvo;
+    // se já existe um anexo, dá pra abrir ou marcar pra remover
+    if (c.tipo === "arquivo") {
+      const atual = c.atual
+        ? `<div class="arquivo-atual">
+            <button type="button" class="btn-link" data-ver-arquivo="${escHtml(c.atual)}">📎 Ver arquivo atual</button>
+            <label class="campo-checkbox"><input type="checkbox" data-campo="${c.nome}_remover"> Remover</label>
+          </div>` : "";
+      return `<div class="campo-arquivo ${largo}" ${dataGrupo}>
+        <label>${c.rotulo}<input type="file" accept="image/*,application/pdf" data-campo="${c.nome}"></label>
+        ${atual}
+      </div>`;
+    }
     const tipo = c.tipo === "date" ? "date" : c.tipo === "numero" ? "number" : c.tipo === "senha" ? "password" : "text";
     const extra = c.tipo === "numero" ? 'step="any" inputmode="decimal"' : "";
+    // autocompletar: lista própria que desce assim que o campo ganha foco
+    // ou começa a digitar (funciona igual no celular, onde o datalist
+    // nativo é inconsistente). Sem a opção, segue o datalist de sempre.
+    if (c.autocompletar && c.lista) {
+      return `<label class="campo-auto ${largo}" ${dataGrupo}>${c.rotulo}
+        <input type="${tipo}" autocomplete="off" data-campo="${c.nome}" value="${escHtml(c.valor)}">
+        <ul class="sugestoes oculto" role="listbox"></ul></label>`;
+    }
     const listaId = c.lista ? `lista-${c.nome}` : "";
     const listaHtml = c.lista
       ? `<datalist id="${listaId}">${c.lista.map(v => `<option value="${escHtml(v)}">`).join("")}</datalist>` : "";
@@ -2401,6 +2525,14 @@ function abrirModal(ctx) {
     chk.addEventListener("change", aplicar);
     aplicar();
   });
+
+  ctx.campos.forEach(c => {
+    if (!c.autocompletar || !c.lista) return;
+    const el = document.querySelector(`#modal-campos [data-campo="${c.nome}"]`);
+    if (el) ligarAutocompletar(el, c.lista);
+  });
+  document.querySelectorAll("#modal-campos [data-ver-arquivo]").forEach(b =>
+    b.addEventListener("click", () => abrirAnexo(b.dataset.verArquivo)));
   }
 
   const btnExcluir = $("modal-excluir");
@@ -2429,6 +2561,85 @@ function fecharModal() {
   modalCtx = null;
 }
 
+// Lista de sugestões que desce sob o campo de texto: filtra pelo que foi
+// digitado (sem diferenciar maiúsculas/acentos), setas + Enter escolhem,
+// Esc fecha só a lista. Continua sendo texto livre — digitar um nome novo
+// funciona normalmente (e, no abastecimento, ele é cadastrado ao salvar).
+function semAcento(s) {
+  return String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+function ligarAutocompletar(input, lista) {
+  const ul = input.parentElement.querySelector(".sugestoes");
+  if (!ul) return;
+  let itens = [], ativo = -1;
+  const fechar = () => { ul.classList.add("oculto"); ativo = -1; };
+  const marcar = () => ul.querySelectorAll("li").forEach((li, i) => li.classList.toggle("ativo", i === ativo));
+  const escolher = (valor) => { input.value = valor; fechar(); };
+  const abrir = () => {
+    const q = semAcento(input.value.trim());
+    itens = lista.filter(n => !q || semAcento(n).includes(q)).slice(0, 8);
+    if (!itens.length || (itens.length === 1 && semAcento(itens[0]) === q)) { fechar(); return; }
+    ul.innerHTML = itens.map((n, i) => `<li role="option" data-i="${i}">${escHtml(n)}</li>`).join("");
+    ativo = -1;
+    ul.classList.remove("oculto");
+  };
+  input.addEventListener("input", abrir);
+  input.addEventListener("focus", abrir);
+  input.addEventListener("blur", fechar);
+  // mousedown (não click) + preventDefault: escolhe antes do campo perder o foco
+  ul.addEventListener("mousedown", (ev) => {
+    ev.preventDefault();
+    const li = ev.target.closest("li");
+    if (li) escolher(itens[Number(li.dataset.i)]);
+  });
+  input.addEventListener("keydown", (ev) => {
+    const aberta = !ul.classList.contains("oculto");
+    if (!aberta) { if (ev.key === "ArrowDown") { ev.preventDefault(); abrir(); } return; }
+    if (ev.key === "ArrowDown") { ev.preventDefault(); ativo = (ativo + 1) % itens.length; marcar(); }
+    else if (ev.key === "ArrowUp") { ev.preventDefault(); ativo = (ativo - 1 + itens.length) % itens.length; marcar(); }
+    else if (ev.key === "Enter" && ativo >= 0) { ev.preventDefault(); ev.stopPropagation(); escolher(itens[ativo]); }
+    else if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); fechar(); }
+  });
+}
+
+/* ═══════════ ANEXOS (Supabase Storage) ═══════════
+   Comprovantes e notas ficam num bucket PRIVADO ("comprovantes", criado
+   pelo correcoes_v22.sql). No banco guardamos só o caminho; pra abrir, o
+   sistema pede um link temporário assinado (vale 5 minutos). */
+const BUCKET_ANEXOS = "comprovantes";
+const TAMANHO_MAX_ANEXO = 10 * 1024 * 1024; // 10 MB
+
+function validarAnexo(arquivo, rotulo) {
+  if (!arquivo) return;
+  if (arquivo.size > TAMANHO_MAX_ANEXO) throw `${rotulo}: o arquivo passa de 10 MB.`;
+  const ok = arquivo.type.startsWith("image/") || arquivo.type === "application/pdf";
+  if (!ok) throw `${rotulo}: envie uma foto (JPG/PNG) ou um PDF.`;
+}
+async function enviarAnexo(pasta, arquivo) {
+  const nome = semAcento(arquivo.name).replace(/[^a-z0-9._-]+/g, "_").slice(-80);
+  const caminho = `${pasta}/${crypto.randomUUID()}-${nome}`;
+  const { error } = await sb.storage.from(BUCKET_ANEXOS).upload(caminho, arquivo, { contentType: arquivo.type || undefined, upsert: false });
+  if (error) throw error;
+  return caminho;
+}
+async function removerAnexo(caminho) {
+  if (!caminho) return;
+  try { await sb.storage.from(BUCKET_ANEXOS).remove([caminho]); }
+  catch (e) { console.error("Falha ao remover anexo:", e); }
+}
+async function abrirAnexo(caminho) {
+  // abre a aba antes do await, senão o navegador bloqueia como pop-up
+  const aba = window.open("", "_blank");
+  const { data, error } = await sb.storage.from(BUCKET_ANEXOS).createSignedUrl(caminho, 300);
+  if (error || !data) {
+    if (aba) aba.close();
+    console.error("Falha ao abrir anexo:", error);
+    toast("Não foi possível abrir o anexo.");
+    return;
+  }
+  if (aba) aba.location.href = data.signedUrl; else window.open(data.signedUrl, "_blank");
+}
+
 function lerFormulario() {
   const f = {};
   document.querySelectorAll("#modal-campos [data-campo]").forEach(el => {
@@ -2437,10 +2648,15 @@ function lerFormulario() {
   return f;
 }
 
+// mensagem que o aposSalvar() pode deixar pra aparecer no lugar do "Registro
+// criado/atualizado" (que senão cobriria na hora qualquer aviso de falha)
+let avisoAposSalvar = null;
+
 async function salvarRegistro() {
   if (!modalCtx) return;
   const btn = $("modal-salvar"), erro = $("modal-erro");
   erro.classList.add("oculto");
+  avisoAposSalvar = null;
   let reg;
   try { reg = modalCtx.montar(lerFormulario()); }
   catch (msg) { erro.textContent = msg; erro.classList.remove("oculto"); return; }
@@ -2470,7 +2686,8 @@ async function salvarRegistro() {
   const eraEdicao = !!modalCtx.id;
   btn.disabled = false; btn.textContent = eraEdicao ? "Editar" : "Salvar";
   fecharModal();
-  toast(eraEdicao ? "Registro atualizado." : "Registro criado.");
+  toast(avisoAposSalvar || (eraEdicao ? "Registro atualizado." : "Registro criado."));
+  avisoAposSalvar = null;
   await carregarTudo();
 }
 
