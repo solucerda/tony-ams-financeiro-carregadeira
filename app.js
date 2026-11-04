@@ -9,6 +9,7 @@
 let sb = null;                 // cliente Supabase
 const dados = {
   saldoInicial: 0, lanc: [], rec: [], die: [], age: [], man: [],
+  dieExtra: [],
   equipamentos: [], centrosCusto: [], clientes: [], fornecedores: [],
   gruposDespesa: [], contasBancarias: [], operadores: [], obras: [], feriados: [], tiposRecebimento: [], perfis: [],
   perfisEquipamentos: [], logAtividade: [],
@@ -527,6 +528,24 @@ async function carregarTudo() {
     dados.lanc = (lanc.data || []).map(o => normNum(o, "lancamentos"));
     dados.rec  = (rec.data  || []).map(o => normNum(o, "recebimentos"));
     dados.die  = (die.data  || []).map(o => normNum(o, "diesel"));
+    // O carro de apoio é OUTRO equipamento (o Veículo). Vendo só a máquina, o
+    // lançamento da gasolina nunca vinha — e o painel, o filtro e o total da
+    // nota ficavam sem ele. Busca à parte os "pares" dos abastecimentos
+    // carregados; ficam em dieExtra, só pra exibição (não entram nos
+    // totais do painel nem do Extrato da máquina).
+    dados.dieExtra = [];
+    if (contexto.equipamentoId != null && dados.die.length) {
+      try {
+        const aqui = new Set(dados.die.map(x => x.id));
+        const faltam = [...new Set(dados.die.map(x => x.grupo_abastecimento_id).filter(g => g && !aqui.has(g)))];
+        const cond = [];
+        if (faltam.length) cond.push(`id.in.(${faltam.join(",")})`);
+        cond.push(`grupo_abastecimento_id.in.(${[...aqui].join(",")})`);
+        const { data: extra, error: erroExtra } = await sb.from("diesel").select("*").or(cond.join(",")).order("data").order("id");
+        if (erroExtra) throw erroExtra;
+        dados.dieExtra = (extra || []).filter(x => !aqui.has(x.id)).map(o => normNum(o, "diesel"));
+      } catch (e) { console.error("Falha ao buscar os pares do carro de apoio:", e); }
+    }
     dados.age  = (age.data  || []).map(o => normNum(o, "agenda"));
     dados.man  = (man.data  || []).map(o => normNum(o, "manutencoes"));
     dados.equipamentos = equipTodos.data || [];
@@ -1180,9 +1199,13 @@ function abrirModalRecebimento(id) {
 }
 
 /* ═══════════════ DIESEL ═══════════════ */
+// todos os abastecimentos visíveis: os da seleção atual + os pares (carro de apoio)
+const todosAbastecimentos = () => dados.die.concat(dados.dieExtra || []);
+const acharAbastecimento = (id) => todosAbastecimentos().find(x => x.id === id);
+
 function renderDiesel() {
   // filtro de centro de custo: só lista os que já têm abastecimento
-  const centrosUsados = [...new Set(dados.die.map(d => d.centro_custo_id).filter(x => x != null))];
+  const centrosUsados = [...new Set(todosAbastecimentos().map(d => d.centro_custo_id).filter(x => x != null))];
   const selCentro = $("die-filtro-centro");
   const atual = selCentro.value || filtroDiesel.centro;
   selCentro.innerHTML = '<option value="todos">Todos os centros de custo</option>' +
@@ -1190,7 +1213,7 @@ function renderDiesel() {
   selCentro.value = (atual !== "todos" && centrosUsados.includes(Number(atual))) ? atual : "todos";
   filtroDiesel.centro = selCentro.value;
 
-  const doFiltro = dados.die.filter(d =>
+  const doFiltro = todosAbastecimentos().filter(d =>
     (filtroDiesel.centro === "todos" || String(d.centro_custo_id) === filtroDiesel.centro) &&
     (filtroDiesel.combustivel === "todos" || d.combustivel === filtroDiesel.combustivel)
   );
@@ -1283,23 +1306,30 @@ function renderDiesel() {
 }
 
 function abrirDetalheAbastecimentoConjunto(ids) {
-  const itens = ids.map(id => dados.die.find(d => d.id === id)).filter(Boolean);
+  const itens = ids.map(acharAbastecimento).filter(Boolean);
   if (!itens.length) return;
-  const html = itens.map(d => `
+  const total = itens.reduce((t, d) => t + (d.valor_total || 0), 0);
+  const html = itens.map(d => {
+    const desc = Number(d.desconto) > 0 ? ` · desconto ${brl(d.desconto)}` : "";
+    return `
     <button type="button" class="detalhe-linha" onclick="fecharModal(); abrirModalDiesel(${d.id})">
-      <span>${escHtml(nomeEquipamento(d.equipamento_id))} · ${escHtml(d.combustivel)}</span>
-      <b>${brl0(d.valor_total)}</b>
-    </button>`).join("");
+      <span><strong>${escHtml(nomeEquipamento(d.equipamento_id))}</strong> · ${escHtml(d.combustivel)}
+        <small>${num(d.litros, d.litros % 1 ? 2 : 0)} L · ${brl(d.valor_unit || 0)}/L${desc}${d.nota_fiscal_path ? " · 📎 nota" : ""}</small></span>
+      <b>${brl(d.valor_total)}</b>
+    </button>`;
+  }).join("");
   abrirModal({
     titulo: `Abastecimento conjunto — ${fData(itens[0].data)}`,
     tabela: "_detalhe_abastecimento",
-    corpoCustom: `<div class="detalhe-lista">${html}</div>`,
+    corpoCustom: `<p class="detalhe-nota">${escHtml(itens[0].local || "")}${itens[0].local ? " · " : ""}clique num item para editar.</p>
+      <div class="detalhe-lista">${html}</div>
+      <div class="detalhe-total"><span>Total da nota</span><b>${brl(total)}</b></div>`,
     semSalvar: true,
   });
 }
 
 function abrirModalDiesel(id) {
-  const d = id ? dados.die.find(x => x.id === id) : null;
+  const d = id ? acharAbastecimento(id) : null;
   const temVeiculoCadastrado = opcoesEquipamentoPorTipo("Veiculo").length > 0;
   const equipInicial = Number(equipamentoPadrao(d?.equipamento_id, false)) || null;
   const tipoEquip = tipoEquipamento(equipInicial);
@@ -1329,7 +1359,7 @@ function abrirModalDiesel(id) {
     const usarChave = (info) => {
       chaveNota = info.chave;
       linhas.push(`${info.tipo} nº ${info.numero} · série ${info.serie} · ${String(info.mes).padStart(2, "0")}/${info.ano} · CNPJ ${NotaQR.formatarCnpj(info.cnpj)}`);
-      const repetida = dados.die.find(x => x.nota_chave === info.chave && x.id !== d?.id);
+      const repetida = todosAbastecimentos().find(x => x.nota_chave === info.chave && x.id !== d?.id);
       if (repetida) {
         linhas.push(`⚠ Essa nota já foi lançada em ${fData(repetida.data)}${repetida.local ? " (" + repetida.local + ")" : ""}.`);
         tom = "aviso";
@@ -1477,7 +1507,7 @@ function abrirModalDiesel(id) {
   // O desconto e o preço FINAL do litro (total ÷ litros) saem sozinhos.
   const arred = (n, casas) => Math.round(n * 10 ** casas) / 10 ** casas;
   const campoForm = (nome) => document.querySelector(`#modal-campos [data-campo="${nome}"]`);
-  const parGrupo = d && d.grupo_abastecimento_id ? dados.die.find(x => x.id === d.grupo_abastecimento_id) : null;
+  const parGrupo = d && d.grupo_abastecimento_id ? acharAbastecimento(d.grupo_abastecimento_id) : null;
   const precoBrutoInicial = d ? (d.valor_unit_bruto ?? d.valor_unit) : "";
   // enquanto o total não for mexido à mão, ele acompanha litros × preço.
   // Num registro já salvo com desconto, o total é respeitado como está.
@@ -1497,11 +1527,29 @@ function abrirModalDiesel(id) {
     campoForm(pre + "desconto_calc").value = !total || !litros || !bruto ? "—"
       : desconto === 0 ? "Sem desconto" : (desconto > 0 ? brl(desconto) : "Acréscimo de " + brl(-desconto)) + pct;
     campoForm(pre + "preco_final_calc").value = final > 0 ? fmtLitro(final) : "—";
+    atualizarTotalNota();
   }
   const recalcularValores = () => recalcular("", totalEditado);
   const recalcularCarro = () => recalcular("carro_", carroTotalEditado);
 
+  // soma da nota: máquina + carro de apoio (novo) ou + o par já lançado (edição)
+  function atualizarTotalNota() {
+    const el = campoForm("total_nota_calc");
+    if (!el) return;
+    const a = numDeMoeda(campoForm("valor_total")?.value);
+    let b = 0;
+    if (parGrupo) b = Number(parGrupo.valor_total) || 0;
+    else if (campoForm("tem_carro_apoio")?.checked) b = numDeMoeda(campoForm("carro_valor_total")?.value);
+    el.value = brl(a + b) + (b ? `   =   ${brl(a)} + ${brl(b)}` : "");
+  }
+
+  // ordem pensada no fluxo: 1) anexa a nota (o app lê e preenche), 2) dados
+  // gerais, 3) a máquina, 4) o carro de apoio (se houve), 5) soma e pagamento.
   const campos = [
+    { tipo:"separador", rotulo:"① Nota fiscal e comprovantes (foto ou PDF, até 10 MB)" },
+    { nome:"arq_nota", rotulo:"Nota fiscal ou recibo — anexe primeiro: o app lê e preenche o formulário", tipo:"arquivo", largo:true, atual: d?.nota_fiscal_path || "", aoEscolher: lerNotaAnexada },
+    { nome:"arq_comprovante", rotulo:"Comprovante de pagamento", tipo:"arquivo", largo:true, atual: d?.comprovante_pagamento_path || "" },
+    { tipo:"separador", rotulo:"② Dados gerais" },
     { nome:"data", rotulo:"Data", tipo:"date", valor: d?.data || hoje(), obrigatorio: true },
     { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(d?.equipamento_id, false), obrigatorio: true,
       // o carro de apoio só faz sentido quando quem está abastecendo é uma
@@ -1516,52 +1564,52 @@ function abrirModalDiesel(id) {
         if (!ehMaquina && chk.checked) {
           chk.checked = false;
           document.querySelectorAll('#modal-campos [data-grupo-cond="carroApoio"]').forEach(el => el.classList.add("oculto"));
+          atualizarTotalNota();
         }
       } },
+    { nome:"local", rotulo:"Posto / fornecedor (razão social)", tipo:"texto", largo:true, valor: d?.local || "", autocompletar:true, lista: nomesAtivos(dados.fornecedores) },
   ];
-
-  // logo no topo do formulário — é a primeira decisão a tomar, antes de
-  // preencher o resto. Disponível pra qualquer abastecimento (novo ou
-  // edição) de uma máquina, desde que já exista um Veículo cadastrado.
-  if (temVeiculoCadastrado) {
-    campos.push(
-      { nome:"tem_carro_apoio", rotulo:"🚗 Houve carro de apoio nesse abastecimento?", tipo:"checkbox", largo:true, controla:"carroApoio",
-        valor:false, oculto: tipoEquip !== "Maquina" },
-      { tipo:"separador", rotulo:"Dados do carro de apoio", grupoCondicional:"carroApoio", oculto:true },
-      { nome:"carro_equipamento_id", rotulo:"Qual carro de apoio", tipo:"select", largo:true, opcoes: opcoesEquipamentoPorTipo("Veiculo"), valor:"", grupoCondicional:"carroApoio", oculto:true, obrigatorio: true },
-      { nome:"carro_combustivel", rotulo:"Combustível do carro", tipo:"select",
-        opcoes:["Gasolina|Gasolina","Etanol|Etanol/Álcool","GNV|GNV"], valor:"Gasolina", grupoCondicional:"carroApoio", oculto:true },
-      { nome:"carro_litros", rotulo:"Litros (carro)", tipo:"numero", valor:"", grupoCondicional:"carroApoio", oculto:true, obrigatorio: true, aoMudar: recalcularCarro },
-      { nome:"carro_valor_unit_bruto", rotulo:"Preço do litro do carro (R$)", tipo:"moeda", valor:"", grupoCondicional:"carroApoio", oculto:true, aoMudar: recalcularCarro },
-      { nome:"carro_valor_total", rotulo:"Valor total pago do carro (R$)", tipo:"moeda", largo:true, valor:"", grupoCondicional:"carroApoio", oculto:true, obrigatorio: true,
-        aoMudar() { carroTotalEditado = true; recalcularCarro(); } },
-      { nome:"carro_desconto_calc", rotulo:"Desconto (carro)", tipo:"calculado", valor:"—", grupoCondicional:"carroApoio", oculto:true },
-      { nome:"carro_preco_final_calc", rotulo:"Preço final do litro (carro)", tipo:"calculado", valor:"—", grupoCondicional:"carroApoio", oculto:true },
-    );
+  if (parGrupo) {
+    campos.push({ tipo:"info", largo:true, acaoId: parGrupo.id, acaoRotulo:"Abrir o outro lançamento",
+      texto:`🔗 Nota conjunta: este lançamento faz par com ${nomeEquipamento(parGrupo.equipamento_id)} · ${parGrupo.combustivel} (${brl(parGrupo.valor_total)}). Cada um tem o seu valor; a soma aparece em "Total da nota".` });
   }
-
   campos.push(
-    { tipo:"separador", rotulo:"Abastecimento" },
+    { tipo:"separador", rotulo: temVeiculoCadastrado ? "③ ⛽ Abastecimento da máquina" : "③ ⛽ Abastecimento" },
     { nome:"combustivel", rotulo:"Combustível", tipo:"select",
-      opcoes:["Diesel|Diesel","Gasolina|Gasolina","Etanol|Etanol","Flex|Flex"],
+      opcoes:["Diesel|Diesel","Gasolina|Gasolina","Etanol|Etanol","GNV|GNV","Flex|Flex"],
       valor: d?.combustivel || (tipoEquip === "Veiculo" ? "Gasolina" : "Diesel") },
-    { nome:"local", rotulo:"Local / fornecedor", tipo:"texto", largo:true, valor: d?.local || "", autocompletar:true, lista: nomesAtivos(dados.fornecedores) },
     { nome:"litros", rotulo:"Litros", tipo:"numero", valor: d?.litros ?? "", obrigatorio: true, aoMudar: recalcularValores },
-    { nome:"valor_unit_bruto", rotulo:"Preço do litro (R$)", tipo:"moeda", valor: precoBrutoInicial ?? "", aoMudar: recalcularValores },
-    { nome:"valor_total", rotulo:"Valor total pago (R$)", tipo:"moeda", largo:true, valor: d?.valor_total ?? "", obrigatorio: true,
+    { nome:"valor_unit_bruto", rotulo:"Preço do litro na bomba (R$)", tipo:"moeda", valor: precoBrutoInicial ?? "", aoMudar: recalcularValores },
+    { nome:"valor_total", rotulo:"Valor total pago (R$)", tipo:"moeda", valor: d?.valor_total ?? "", obrigatorio: true,
       aoMudar() { totalEditado = true; recalcularValores(); } },
     { nome:"desconto_calc", rotulo:"Desconto", tipo:"calculado", valor:"—" },
     { nome:"preco_final_calc", rotulo:"Preço final do litro", tipo:"calculado", valor:"—" },
-    // abastecimento ligado a outro (diesel da máquina + gasolina do carro de
-    // apoio): cada um é um lançamento próprio; aqui mostra a soma da nota
-    ...(parGrupo ? [{ nome:"total_grupo_calc", rotulo:`Total da nota (este + ${parGrupo.combustivel} do ${nomeEquipamento(parGrupo.equipamento_id)}: ${brl(parGrupo.valor_total)})`,
-      tipo:"calculado", largo:true, valor: brl((Number(d.valor_total) || 0) + (Number(parGrupo.valor_total) || 0)) }] : []),
-    { tipo:"separador", rotulo:"Pagamento" },
+  );
+  if (temVeiculoCadastrado && !parGrupo) {
+    campos.push(
+      { nome:"tem_carro_apoio", rotulo:"🚗 Esta nota também tem abastecimento do carro de apoio", tipo:"checkbox", largo:true, controla:"carroApoio",
+        valor:false, oculto: tipoEquip !== "Maquina", aoMudar: atualizarTotalNota },
+      { tipo:"separador", rotulo:"🚗 Abastecimento do carro de apoio", grupoCondicional:"carroApoio", oculto:true },
+      { nome:"carro_equipamento_id", rotulo:"Qual carro", tipo:"select", opcoes: opcoesEquipamentoPorTipo("Veiculo"), valor:"", grupoCondicional:"carroApoio", oculto:true, obrigatorio: true },
+      { nome:"carro_combustivel", rotulo:"Combustível", tipo:"select",
+        opcoes:["Gasolina|Gasolina","Etanol|Etanol/Álcool","GNV|GNV"], valor:"Gasolina", grupoCondicional:"carroApoio", oculto:true },
+      { nome:"carro_litros", rotulo:"Litros", tipo:"numero", valor:"", grupoCondicional:"carroApoio", oculto:true, obrigatorio: true, aoMudar: recalcularCarro },
+      { nome:"carro_valor_unit_bruto", rotulo:"Preço do litro na bomba (R$)", tipo:"moeda", valor:"", grupoCondicional:"carroApoio", oculto:true, aoMudar: recalcularCarro },
+      { nome:"carro_valor_total", rotulo:"Valor total pago (R$)", tipo:"moeda", valor:"", grupoCondicional:"carroApoio", oculto:true, obrigatorio: true,
+        aoMudar() { carroTotalEditado = true; recalcularCarro(); } },
+      { nome:"carro_desconto_calc", rotulo:"Desconto", tipo:"calculado", valor:"—", grupoCondicional:"carroApoio", oculto:true },
+      { nome:"carro_preco_final_calc", rotulo:"Preço final do litro", tipo:"calculado", valor:"—", grupoCondicional:"carroApoio", oculto:true },
+    );
+  }
+  // soma da nota: só quando existe carro de apoio (ligado agora ou já lançado)
+  if (parGrupo || (temVeiculoCadastrado && !parGrupo)) {
+    campos.push({ nome:"total_nota_calc", rotulo:"💰 Total da nota (máquina + carro de apoio)", tipo:"calculado", largo:true, valor:"—",
+      ...(parGrupo ? {} : { grupoCondicional:"carroApoio", oculto:true }) });
+  }
+  campos.push(
+    { tipo:"separador", rotulo:"④ Pagamento" },
     { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar (fiado)"], valor: d?.status || "pago" },
     { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: d?.vencimento || "", obrigatorio: (f) => f.status === "pendente" },
-    { tipo:"separador", rotulo:"Comprovantes (foto ou PDF, até 10 MB)" },
-    { nome:"arq_comprovante", rotulo:"Comprovante de pagamento", tipo:"arquivo", largo:true, atual: d?.comprovante_pagamento_path || "" },
-    { nome:"arq_nota", rotulo:"Nota fiscal ou recibo do abastecimento", tipo:"arquivo", largo:true, atual: d?.nota_fiscal_path || "", aoEscolher: lerNotaAnexada },
     { tipo:"separador", rotulo:"Classificação" },
     { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel" },
     { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(d?.centro_custo_id) },
@@ -2707,6 +2755,10 @@ function abrirModal(ctx) {
     if (c.tipo === "separador") {
       return `<div class="form-separador form-larga ${c.oculto ? "oculto" : ""}" ${dataGrupo}>${c.rotulo}</div>`;
     }
+    if (c.tipo === "info") {
+      return `<div class="form-info form-larga">${escHtml(c.texto)}${c.acaoId
+        ? ` <button type="button" class="btn-link" data-abrir-par="${c.acaoId}">${escHtml(c.acaoRotulo || "Abrir")}</button>` : ""}</div>`;
+    }
     if (c.tipo === "checkbox") {
       return `<label class="campo-checkbox ${largo}" ${dataGrupo}>
         <input type="checkbox" data-campo="${c.nome}" ${c.valor ? "checked" : ""}> ${c.rotulo}</label>`;
@@ -2810,6 +2862,8 @@ function abrirModal(ctx) {
     const el = document.querySelector(`#modal-campos [data-campo="${c.nome}"]`);
     if (el) ligarAutocompletar(el, c.lista);
   });
+  document.querySelectorAll("#modal-campos [data-abrir-par]").forEach(b =>
+    b.addEventListener("click", () => { const alvo = Number(b.dataset.abrirPar); fecharModal(); abrirModalDiesel(alvo); }));
   document.querySelectorAll("#modal-campos [data-ver-arquivo]").forEach(b =>
     b.addEventListener("click", () => abrirAnexo(b.dataset.verArquivo)));
 
