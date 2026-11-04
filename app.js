@@ -1410,7 +1410,7 @@ function abrirModalDiesel(id) {
     let avisoDesconto = null;
     if (!itens.some(i => i.desc > 0) && (Number(nota.descontoTotal) || 0) > 0) {
       const maiorItem = combustiveis.reduce((a, b) => (b.valorTotal > a.valorTotal ? b : a));
-      if (principal === maiorItem) principal.desc = Math.min(Number(nota.descontoTotal), principal.valorTotal);
+      if (principal === maiorItem || carro === maiorItem) maiorItem.desc = Math.min(Number(nota.descontoTotal), maiorItem.valorTotal);
       else avisoDesconto = `⚠ A nota tem desconto de ${brl(nota.descontoTotal)}, mas não sei a qual item pertence. Não apliquei, confira.`;
     }
     const pago = (i) => arred(i.valorTotal - i.desc, 2);
@@ -1439,11 +1439,18 @@ function abrirModalDiesel(id) {
       chk.dispatchEvent(new Event("change"));
       campoForm("carro_combustivel").value = carro.combustivel;
       campoForm("carro_litros").value = String(carro.quantidade);
-      campoForm("carro_valor_unit").value = moedaMascara(carro.desc > 0 ? arred(pago(carro) / carro.quantidade, 2) : (carro.valorUnit || arred(carro.valorTotal / carro.quantidade, 2)));
+      campoForm("carro_valor_unit_bruto").value = moedaMascara(carro.valorUnit || arred(carro.valorTotal / carro.quantidade, 2));
+      campoForm("carro_valor_total").value = moedaMascara(pago(carro));
+      carroTotalEditado = true; // o total vem da nota
+      recalcularCarro();
+      if (carro.valorUnit && !duasCasas(carro.valorUnit)) {
+        linhas.push(`⚠ O preço do litro do carro na nota tem 3 casas (${carro.valorUnit}); o campo guarda 2. Confira o desconto.`);
+        conferir = true;
+      }
       const veiculos = opcoesEquipamentoPorTipo("Veiculo");
       if (veiculos.length === 1) campoForm("carro_equipamento_id").value = String(veiculos[0]).split("|")[0];
       linhas.push("Carro de apoio: " + linhaItem(carro) + (veiculos.length === 1 ? "" : " (escolha qual carro)"));
-      if (veiculos.length !== 1 || carro.desc > 0) conferir = true;
+      if (veiculos.length !== 1) conferir = true;
     }
 
     const sobras = itens.filter(i => i !== principal && i !== carro);
@@ -1475,18 +1482,23 @@ function abrirModalDiesel(id) {
   // Num registro já salvo com desconto, o total é respeitado como está.
   let totalEditado = !!d && Math.abs((d.litros || 0) * (precoBrutoInicial || 0) - (d.valor_total || 0)) > 0.005;
   const fmtLitro = (v) => "R$ " + v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-  function recalcularValores() {
-    const litros = Number(campoForm("litros")?.value) || 0;
-    const bruto = numDeMoeda(campoForm("valor_unit_bruto")?.value);
-    if (!totalEditado && litros > 0 && bruto > 0) campoForm("valor_total").value = moedaMascara(arred(litros * bruto, 2));
-    const total = numDeMoeda(campoForm("valor_total")?.value);
+  let carroTotalEditado = false;
+  // pre = "" (abastecimento principal) ou "carro_" (carro de apoio)
+  function recalcular(pre, editado) {
+    if (!campoForm(pre + "litros")) return;
+    const litros = Number(campoForm(pre + "litros").value) || 0;
+    const bruto = numDeMoeda(campoForm(pre + "valor_unit_bruto").value);
+    if (!editado && litros > 0 && bruto > 0) campoForm(pre + "valor_total").value = moedaMascara(arred(litros * bruto, 2));
+    const total = numDeMoeda(campoForm(pre + "valor_total").value);
     const desconto = litros > 0 && bruto > 0 && total > 0 ? arred(litros * bruto - total, 2) : 0;
     const final = litros > 0 && total > 0 ? total / litros : 0;
     const pct = desconto !== 0 && litros * bruto > 0 ? ` (${num(Math.abs(desconto) / (litros * bruto) * 100, 1)}%)` : "";
-    campoForm("desconto_calc").value = !total || !litros || !bruto ? "—"
+    campoForm(pre + "desconto_calc").value = !total || !litros || !bruto ? "—"
       : desconto === 0 ? "Sem desconto" : (desconto > 0 ? brl(desconto) : "Acréscimo de " + brl(-desconto)) + pct;
-    campoForm("preco_final_calc").value = final > 0 ? fmtLitro(final) : "—";
+    campoForm(pre + "preco_final_calc").value = final > 0 ? fmtLitro(final) : "—";
   }
+  const recalcularValores = () => recalcular("", totalEditado);
+  const recalcularCarro = () => recalcular("carro_", carroTotalEditado);
 
   const campos = [
     { nome:"data", rotulo:"Data", tipo:"date", valor: d?.data || hoje() },
@@ -1518,8 +1530,12 @@ function abrirModalDiesel(id) {
       { nome:"carro_equipamento_id", rotulo:"Qual carro de apoio", tipo:"select", largo:true, opcoes: opcoesEquipamentoPorTipo("Veiculo"), valor:"", grupoCondicional:"carroApoio", oculto:true },
       { nome:"carro_combustivel", rotulo:"Combustível do carro", tipo:"select",
         opcoes:["Gasolina|Gasolina","Etanol|Etanol/Álcool","GNV|GNV"], valor:"Gasolina", grupoCondicional:"carroApoio", oculto:true },
-      { nome:"carro_litros", rotulo:"Litros (carro)", tipo:"numero", valor:"", grupoCondicional:"carroApoio", oculto:true },
-      { nome:"carro_valor_unit", rotulo:"Preço do litro do carro (R$)", tipo:"moeda", largo:true, valor:"", grupoCondicional:"carroApoio", oculto:true },
+      { nome:"carro_litros", rotulo:"Litros (carro)", tipo:"numero", valor:"", grupoCondicional:"carroApoio", oculto:true, aoMudar: recalcularCarro },
+      { nome:"carro_valor_unit_bruto", rotulo:"Preço do litro do carro (R$)", tipo:"moeda", valor:"", grupoCondicional:"carroApoio", oculto:true, aoMudar: recalcularCarro },
+      { nome:"carro_valor_total", rotulo:"Valor total pago do carro (R$)", tipo:"moeda", largo:true, valor:"", grupoCondicional:"carroApoio", oculto:true,
+        aoMudar() { carroTotalEditado = true; recalcularCarro(); } },
+      { nome:"carro_desconto_calc", rotulo:"Desconto (carro)", tipo:"calculado", valor:"—", grupoCondicional:"carroApoio", oculto:true },
+      { nome:"carro_preco_final_calc", rotulo:"Preço final do litro (carro)", tipo:"calculado", valor:"—", grupoCondicional:"carroApoio", oculto:true },
     );
   }
 
@@ -1569,12 +1585,17 @@ function abrirModalDiesel(id) {
       carroApoioForm = null;
       if (f.tem_carro_apoio) {
         const carroLitros = Number(f.carro_litros) || 0;
-        const carroVu = numDeMoeda(f.carro_valor_unit);
+        const carroBruto = numDeMoeda(f.carro_valor_unit_bruto);
+        const carroTotal = numDeMoeda(f.carro_valor_total) || arred(carroLitros * carroBruto, 2);
         if (!f.carro_equipamento_id) throw "Selecione qual foi o carro de apoio.";
-        if (!carroLitros && !carroVu) throw "Informe os litros e o preço do carro de apoio.";
+        if (!carroTotal) throw "Informe o valor total pago do carro de apoio (ou os litros e o preço do litro).";
         carroApoioForm = {
           equipamento_id: Number(f.carro_equipamento_id), combustivel: f.carro_combustivel,
-          litros: carroLitros, valor_unit: carroVu, valor_total: carroLitros * carroVu,
+          litros: carroLitros,
+          valor_unit: carroLitros > 0 ? arred(carroTotal / carroLitros, 4) : carroBruto,
+          valor_unit_bruto: carroBruto > 0 ? carroBruto : (carroLitros > 0 ? arred(carroTotal / carroLitros, 4) : 0),
+          desconto: carroLitros > 0 && carroBruto > 0 ? arred(carroLitros * carroBruto - carroTotal, 2) : 0,
+          valor_total: carroTotal,
         };
       }
 
@@ -1762,7 +1783,7 @@ async function salvarAnexosAbastecimento(salvo, anterior, arq) {
 async function criarAbastecimentoCarroApoio(salvoPrincipal, carro) {
   const registro = {
     data: salvoPrincipal.data, equipamento_id: carro.equipamento_id, combustivel: carro.combustivel,
-    local: salvoPrincipal.local, litros: carro.litros, valor_unit: carro.valor_unit, valor_total: carro.valor_total,
+    local: salvoPrincipal.local, litros: carro.litros, valor_unit: carro.valor_unit, valor_unit_bruto: carro.valor_unit_bruto, desconto: carro.desconto, valor_total: carro.valor_total,
     status: salvoPrincipal.status, vencimento: salvoPrincipal.vencimento,
     natureza: salvoPrincipal.natureza, centro_custo_id: salvoPrincipal.centro_custo_id,
     grupo_abastecimento_id: salvoPrincipal.id,
