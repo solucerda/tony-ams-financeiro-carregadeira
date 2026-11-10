@@ -140,6 +140,11 @@
           </div>
         </div>
         <div class="topo-direita">
+          <select id="select-base" class="select-base" title="Qual base de dados mostrar">
+            <option value="nova">Operação nova</option>
+            <option value="antiga">Base antiga</option>
+            <option value="tudo">Tudo</option>
+          </select>
           <div class="topo-saldo">
             <span class="topo-saldo-rotulo">Saldo em caixa</span>
             <span class="topo-saldo-valor" id="saldo-topo">—</span>
@@ -171,6 +176,10 @@
         </nav>
       </div>
     </header>
+    <div class="faixa-base oculto" id="faixa-base">
+      <span id="faixa-base-texto"></span>
+      <button type="button" class="btn-link" id="faixa-base-voltar">Voltar para a operação nova</button>
+    </div>
 
     <main class="conteudo">
       <div id="carregando" class="vazio">Carregando dados do banco…</div>

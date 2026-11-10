@@ -18,6 +18,17 @@ let filtroExt = { modo: "mes", mes: "todos", semana: "", dia: "", de: "", ate: "
 let filtroCliente = "todos";
 let filtroPainel = { periodo: "tudo", natureza: "todos", tipoFluxo: "bar", agrupar: "grupo", visual: "lista" };
 let filtroManutencao = { tipo: "todos", status: "todos" };
+// Base de dados em uso: "nova" (padrão, operação daqui pra frente), "antiga"
+// (legado: o que foi lançado antes da arrumação) ou "tudo". Fica lembrada
+// neste navegador. Tabelas com a coluna `legado`: lancamentos, recebimentos,
+// diesel, agenda, manutencoes.
+let modoBase = "nova";
+try { const v = localStorage.getItem("modoBase"); if (v === "antiga" || v === "tudo") modoBase = v; } catch (e) { /* sem storage */ }
+const TABELAS_COM_BASE = new Set(["lancamentos", "recebimentos", "diesel", "agenda", "manutencoes"]);
+const porBase = (q) => modoBase === "tudo" ? q : q.eq("legado", modoBase === "antiga");
+// registro novo nasce na base que está na tela (assim o que você lança sempre aparece)
+const marcarBase = (obj) => Array.isArray(obj) ? obj.map(marcarBase) : { ...obj, legado: modoBase === "antiga" };
+
 let filtroDiesel = { centro: "todos", combustivel: "todos", periodo: "tudo", de: "", ate: "" };
 const graficos = {};           // instâncias Chart.js
 
@@ -263,6 +274,25 @@ document.addEventListener("DOMContentLoaded", async () => {
     await sb.auth.signOut();
     location.reload();
   });
+  // base de dados: operação nova / base antiga / tudo
+  const selBase = $("select-base");
+  selBase.value = modoBase;
+  const atualizarFaixaBase = () => {
+    $("faixa-base").classList.toggle("oculto", modoBase === "nova");
+    $("faixa-base-texto").textContent = modoBase === "antiga"
+      ? "Você está vendo a BASE ANTIGA (legado). O que for lançado aqui também fica na base antiga."
+      : "Você está vendo TUDO: operação nova + base antiga misturadas.";
+  };
+  atualizarFaixaBase();
+  const trocarBase = (v) => {
+    modoBase = v; selBase.value = v;
+    try { localStorage.setItem("modoBase", v); } catch (e) { /* sem storage */ }
+    atualizarFaixaBase();
+    carregarTudo();
+  };
+  selBase.addEventListener("change", e => trocarBase(e.target.value));
+  $("faixa-base-voltar").addEventListener("click", () => trocarBase("nova"));
+
   $("chip-contexto").addEventListener("click", () => {
     $("app").classList.add("oculto");
     mostrarSeletorEquipamento();
@@ -519,11 +549,11 @@ async function carregarTudo() {
 
     const [cfg, lanc, rec, die, age, man, equipTodos, centros] = await Promise.all([
       sb.from("config").select("*"),
-      comEquip(sb.from("lancamentos").select("*")).order("data").order("id"),
-      comEquip(sb.from("recebimentos").select("*")).order("data").order("id"),
-      comEquip(sb.from("diesel").select("*")).order("data").order("id"),
-      comEquip(sb.from("agenda").select("*")).order("item").order("mes"),
-      comEquip(sb.from("manutencoes").select("*")).order("data", { ascending: false }),
+      porBase(comEquip(sb.from("lancamentos").select("*"))).order("data").order("id"),
+      porBase(comEquip(sb.from("recebimentos").select("*"))).order("data").order("id"),
+      porBase(comEquip(sb.from("diesel").select("*"))).order("data").order("id"),
+      porBase(comEquip(sb.from("agenda").select("*"))).order("item").order("mes"),
+      porBase(comEquip(sb.from("manutencoes").select("*"))).order("data", { ascending: false }),
       sb.from("equipamentos").select("*").order("nome"),
       sb.from("centros_custo").select("*").order("nome"),
     ]);
@@ -532,6 +562,13 @@ async function carregarTudo() {
 
     const si = (cfg.data || []).find(c => c.chave === "saldo_inicial");
     dados.saldoInicial = si ? Number(si.valor) : 0;
+    // Na operação nova o caixa não recomeça do zero: o resultado da base
+    // antiga entra como saldo de abertura.
+    if (modoBase === "nova") {
+      const { data: leg, error: erroLeg } = await comEquip(sb.from("lancamentos").select("entrada,saida,status")).eq("legado", true);
+      if (erroLeg) throw erroLeg;
+      dados.saldoInicial += (leg || []).filter(ehRealizado).reduce((t, l) => t + (Number(l.entrada) || 0) - (Number(l.saida) || 0), 0);
+    }
     dados.lanc = (lanc.data || []).map(o => normNum(o, "lancamentos"));
     dados.rec  = (rec.data  || []).map(o => normNum(o, "recebimentos"));
     dados.die  = (die.data  || []).map(o => normNum(o, "diesel"));
@@ -1952,7 +1989,7 @@ async function criarAbastecimentoCarroApoio(salvoPrincipal, carro) {
     natureza: salvoPrincipal.natureza, centro_custo_id: salvoPrincipal.centro_custo_id,
     grupo_abastecimento_id: salvoPrincipal.id,
   };
-  const { data: novo, error } = await sb.from("diesel").insert(registro).select().single();
+  const { data: novo, error } = await sb.from("diesel").insert(marcarBase(registro)).select().single();
   if (error || !novo) {
     console.error("Falha ao criar abastecimento do carro de apoio:", error);
     throw error || new Error("Falha ao criar o abastecimento do carro de apoio.");
@@ -2814,7 +2851,7 @@ async function salvarAgendaFinal(id, linhas, lancamentoIdExistente = null) {
   if (id) {
     ({ data: salvos, error } = await sb.from("agenda").update(linhas[0]).eq("id", id).select());
   } else {
-    ({ data: salvos, error } = await sb.from("agenda").insert(linhas).select());
+    ({ data: salvos, error } = await sb.from("agenda").insert(marcarBase(linhas)).select());
   }
   btn.disabled = false; btn.textContent = id ? "Editar" : "Salvar";
   if (error) {
@@ -3177,7 +3214,7 @@ async function salvarRegistro() {
   btn.disabled = true; btn.textContent = "Salvando…";
   const q = modalCtx.id
     ? sb.from(modalCtx.tabela).update(reg).eq("id", modalCtx.id).select().single()
-    : sb.from(modalCtx.tabela).insert(reg).select().single();
+    : sb.from(modalCtx.tabela).insert(TABELAS_COM_BASE.has(modalCtx.tabela) ? marcarBase(reg) : reg).select().single();
   const { data: salvo, error } = await q;
   if (error) {
     btn.disabled = false; btn.textContent = modalCtx.id ? "Editar" : "Salvar";
@@ -3326,7 +3363,7 @@ async function sincronizarAgendaEspelho({ origemId, origemTabela, agendaId, pend
   if (agendaId) {
     await sb.from("agenda").update(campos).eq("id", agendaId);
   } else {
-    const { data: novo, error } = await sb.from("agenda").insert(campos).select().single();
+    const { data: novo, error } = await sb.from("agenda").insert(marcarBase(campos)).select().single();
     if (!error && novo) await sb.from(origemTabela).update({ agenda_id: novo.id }).eq("id", origemId);
   }
 }
@@ -3353,7 +3390,7 @@ async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, val
   if (lancamentoId) {
     await sb.from("lancamentos").update(campos).eq("id", lancamentoId);
   } else {
-    const { data: novo, error } = await sb.from("lancamentos").insert(campos).select().single();
+    const { data: novo, error } = await sb.from("lancamentos").insert(marcarBase(campos)).select().single();
     if (!error && novo) {
       await sb.from(tabelaOrigem).update({ [campoVinculo]: novo.id }).eq("id", origemId);
     }
