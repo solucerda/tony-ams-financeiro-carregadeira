@@ -12,7 +12,8 @@ const NAV_PAGINAS = {
   inicio:        { titulo: "Início",        grupo: "inicio",   icone: "inicio" },
   extrato:       { titulo: "Extrato",       grupo: "caixa",    icone: "extrato",       modulo: "extrato",      financeiro: true },
   agenda:        { titulo: "Contas",        grupo: "caixa",    icone: "agenda",        modulo: "agenda",       financeiro: true, sub: "Contas a pagar" },
-  recebimentos:  { titulo: "Serviços",      grupo: "operacao", icone: "relogio",       modulo: "recebimentos", sub: "Horas e serviços" },
+  servicos:      { titulo: "Serviços",      grupo: "operacao", icone: "servico",       financeiro: true },
+  recebimentos:  { titulo: "Horas",         grupo: "operacao", icone: "relogio",       modulo: "recebimentos", sub: "Horas trabalhadas" },
   diesel:        { titulo: "Abastecimento", grupo: "operacao", icone: "abastecimento", modulo: "diesel" },
   manutencao:    { titulo: "Manutenção",    grupo: "operacao", icone: "manutencao",    modulo: "manutencao" },
   administracao: { titulo: "Configurações", grupo: "mais",     icone: "administracao", admin: true },
@@ -22,7 +23,7 @@ const NAV_GRUPOS = [
   { chave: "inicio",   rotulo: "Início",   icone: "inicio",   paginas: ["painel", "inicio"] },
   { chave: "caixa",    rotulo: "Caixa",    icone: "caixa",    paginas: ["extrato", "agenda"] },
   { chave: "novo" },
-  { chave: "operacao", rotulo: "Operação", icone: "operacao", paginas: ["recebimentos", "diesel", "manutencao"] },
+  { chave: "operacao", rotulo: "Operação", icone: "operacao", paginas: ["servicos", "recebimentos", "diesel", "manutencao"] },
   { chave: "mais",     rotulo: "Mais",     icone: "mais",     paginas: ["mais", "administracao"] },
 ];
 const ultimaDoGrupo = {};
@@ -132,6 +133,7 @@ function aplicarPermissoesNavegacao() {
 function opcoesNovoRegistro() {
   const op = [];
   if (meusModulos.diesel !== false) op.push({ chave: "abastecimento", titulo: "Abastecimento", sub: "foto da nota preenche sozinho", icone: "abastecimento", cor: "#F5B301", fn: () => abrirModalDiesel(null) });
+  if (vejoFinanceiro && dados.temServicos) op.push({ chave: "servico", titulo: "Serviço", sub: "cliente, custos e lucro do trabalho", icone: "servico", cor: "#4EC9D4", fn: () => abrirModalServico(null) });
   if (meusModulos.recebimentos !== false) op.push({ chave: "horas", titulo: "Horas trabalhadas", sub: "horímetro e cliente", icone: "relogio", cor: "#4DA3FF", fn: () => abrirModalRecebimento(null) });
   if (meusModulos.manutencao !== false) op.push({ chave: "manutencao", titulo: "Manutenção", sub: "serviço, peças e oficina", icone: "manutencao", cor: "#FF8C42", fn: () => abrirModalManutencao(null) });
   if (vejoFinanceiro && meusModulos.extrato !== false) {
@@ -298,7 +300,7 @@ window.addEventListener("popstate", () => {
 });
 
 /* ── Web app instalável (PWA) ── */
-const VERSAO_APP = "2.0.0";
+const VERSAO_APP = "2.1.0";
 function registrarWebApp() {
   window.addEventListener("beforeinstallprompt", (ev) => {
     ev.preventDefault();

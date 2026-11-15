@@ -115,6 +115,9 @@
       <symbol id="icone-alerta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>
       </symbol>
+      <symbol id="icone-servico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/><path d="M11 13v2h2v-2"/>
+      </symbol>
       <symbol id="icone-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
         <path d="M20 6 9 17l-5-5"/>
       </symbol>
@@ -320,7 +323,21 @@
         </div>
       </section>
 
-      <!-- ─── RECEBIMENTOS ─── -->
+      <!-- ─── SERVIÇOS (resultado de cada trabalho) ─── -->
+      <section id="aba-servicos" class="secao oculto">
+        <div class="filtros">
+          <div class="segmentado" id="srv-filtro">
+            <button type="button" data-valor="andamento" class="ativo">Em andamento</button>
+            <button type="button" data-valor="concluido">Concluídos</button>
+            <button type="button" data-valor="todos">Todos</button>
+          </div>
+          <button class="btn-primario so-desktop" id="srv-novo">+ Serviço</button>
+        </div>
+        <div id="srv-resumo"></div>
+        <div id="srv-lista" class="servicos-grade"></div>
+      </section>
+
+      <!-- ─── RECEBIMENTOS (horas trabalhadas) ─── -->
       <section id="aba-recebimentos" class="secao oculto">
         <div class="filtros">
           <div class="cliente-grade" id="rec-clientes"></div>
@@ -506,6 +523,7 @@
   <script src="nota-qr.js"></script>
   <script src="config.js"></script>
   <script src="app.js"></script>
+  <script src="servicos.js"></script>
   <script src="shell.js"></script>
 </body>
 </html>

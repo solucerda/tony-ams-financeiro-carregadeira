@@ -1060,3 +1060,38 @@ input[type="search"]:focus { outline: none; border-color: var(--amarelo); }
 }
 .cartao-vencimentos .cartao-cabeca { flex-direction: row !important; align-items: center !important; }
 .cartao-vencimentos .cartao-cabeca .btn-link { flex: none; font-size: 13px; }
+
+/* ── Serviços (resultado de cada trabalho) ── */
+.servicos-grade { display: grid; gap: 10px; margin-top: 12px; }
+@media (min-width: 768px) { .servicos-grade { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); } }
+.servico-card {
+  background: var(--superficie); border: 1px solid var(--borda); border-radius: 16px; padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 8px; cursor: pointer; transition: border-color .15s;
+}
+.servico-card:hover, .servico-card:focus-visible { border-color: var(--borda-clara); outline: none; }
+.servico-topo { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.servico-topo b { font-size: 15.5px; line-height: 1.3; }
+.servico-sub, .servico-rodape { font-size: 12.5px; color: var(--texto-mudo); }
+.servico-nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.servico-nums div { display: flex; flex-direction: column; gap: 1px; }
+.servico-nums span { font-size: 11.5px; color: var(--texto-mudo); }
+.servico-nums b { font-family: var(--fonte-mono); font-size: 15px; }
+.servico-nums small { font-size: 11.5px; color: var(--texto-mudo); font-family: var(--fonte-mono); }
+.servico-barra { height: 6px; border-radius: 6px; background: rgba(62,207,142,.25); overflow: hidden; }
+.servico-barra i { display: block; height: 100%; background: var(--vermelho); opacity: .8; border-radius: 6px; }
+.servico-barra i.estourou { opacity: 1; }
+.srv-nota-receber { margin: 8px 2px 0; color: var(--amarelo); }
+.srv-numeros { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.srv-numeros div { background: var(--superficie-2); border: 1px solid var(--borda); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; }
+.srv-numeros span { font-size: 11.5px; color: var(--texto-mudo); }
+.srv-numeros b { font-family: var(--fonte-mono); font-size: 16px; }
+.srv-lucro { grid-column: 1 / -1; }
+.srv-lucro b { font-size: 24px; }
+.srv-lucro.pos { border-color: rgba(62,207,142,.4) !important; }
+.srv-lucro.neg { border-color: rgba(240,86,74,.4) !important; }
+.srv-lucro.pos b { color: var(--verde); }
+.srv-lucro.neg b { color: var(--vermelho); }
+.srv-acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+.srv-acoes button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; font-size: 13px; min-height: 40px; }
+.srv-acoes .btn-primario { flex-basis: 100%; justify-content: center; min-height: 46px; }
+.srv-obs { margin-top: 12px; }

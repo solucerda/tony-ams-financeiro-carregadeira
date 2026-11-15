@@ -10,6 +10,7 @@ let sb = null;                 // cliente Supabase
 const dados = {
   saldoInicial: 0, saldoConfig: 0, legadoPorBanco: {}, lanc: [], rec: [], die: [], age: [], man: [],
   dieExtra: [],
+  servicos: [], lancServ: [], recServ: [], temServicos: false,
   equipamentos: [], centrosCusto: [], clientes: [], fornecedores: [],
   gruposDespesa: [], contasBancarias: [], operadores: [], obras: [], feriados: [], tiposRecebimento: [], perfis: [],
   perfisEquipamentos: [], logAtividade: [],
@@ -24,7 +25,7 @@ let filtroManutencao = { tipo: "todos", status: "todos" };
 // diesel, agenda, manutencoes.
 let modoBase = "nova";
 try { const v = localStorage.getItem("modoBase"); if (v === "antiga" || v === "tudo") modoBase = v; } catch (e) { /* sem storage */ }
-const TABELAS_COM_BASE = new Set(["lancamentos", "recebimentos", "diesel", "agenda", "manutencoes"]);
+const TABELAS_COM_BASE = new Set(["lancamentos", "recebimentos", "diesel", "agenda", "manutencoes", "servicos"]);
 const porBase = (q) => modoBase === "tudo" ? q : q.eq("legado", modoBase === "antiga");
 // registro novo nasce na base que está na tela (assim o que você lança sempre aparece)
 const marcarBase = (obj) => Array.isArray(obj) ? obj.map(marcarBase) : { ...obj, legado: modoBase === "antiga" };
@@ -441,6 +442,8 @@ async function iniciarApp() {
     $("ext-btn-filtros").setAttribute("aria-expanded", aberto ? "true" : "false");
   });
   ligarSegmentado("age-modo", (v) => { modoAgenda = v; renderAgenda(); });
+  ligarSegmentado("srv-filtro", (v) => { filtroServicos = v; renderServicos(); });
+  $("srv-novo").addEventListener("click", () => abrirModalServico(null));
   $("topo-saldo").addEventListener("click", () => irPara("extrato"));
   $("pnl-natureza").addEventListener("change", e => { filtroPainel.natureza = e.target.value; renderPainel(); });
   ligarSegmentado("pnl-tipo-fluxo", (v) => { filtroPainel.tipoFluxo = v; renderPainel(); });
@@ -595,6 +598,7 @@ async function carregarTudo() {
         dados.dieExtra = (extra || []).filter(x => !aqui.has(x.id)).map(o => normNum(o, "diesel"));
       } catch (e) { console.error("Falha ao buscar os pares do carro de apoio:", e); }
     }
+    await carregarServicos();
     dados.age  = (age.data  || []).map(o => normNum(o, "agenda"));
     dados.man  = (man.data  || []).map(o => normNum(o, "manutencoes"));
     dados.equipamentos = equipTodos.data || [];
@@ -689,6 +693,7 @@ const CAMPOS_TEXTO = {
   diesel:       new Set(["data"]),
   agenda:       new Set(["item", "dia"]),
   manutencoes:  new Set(["data", "descricao", "pecas", "fornecedor", "vencimento", "proxima_data"]),
+  servicos:     new Set(["nome", "cliente", "data_inicio", "data_fim", "cobranca", "status", "observacao"]),
 };
 
 function normNum(obj, tabela) {
@@ -711,6 +716,7 @@ function renderTudo() {
   rodarSemTravar(renderRecebimentos, "Recebimentos");
   rodarSemTravar(renderDiesel, "Diesel");
   rodarSemTravar(renderManutencao, "Manutenção");
+  rodarSemTravar(renderServicos, "Serviços");
   rodarSemTravar(renderAgenda, "Agenda");
   rodarSemTravar(renderAdministracao, "Configurações");
   rodarSemTravar(renderInicio, "Início");
@@ -1127,7 +1133,8 @@ function origemDoLancamento(id) {
   $("ext-corpo").innerHTML = filtrado.map(l => {
     const valor = l.entrada > 0 ? l.entrada : -l.saida;
     const natTxt = l.natureza && l.natureza !== "Receita" ? ROTULO_NATUREZA[l.natureza] || l.natureza : "";
-    const subTxt = [natTxt, nomeCentroCusto(l.centro_custo_id)].filter(Boolean).join(" · ");
+    const sv = l.servico_id ? dados.servicos.find(x => x.id === l.servico_id) : null;
+    const subTxt = [sv ? "Serviço: " + sv.nome : "", natTxt, nomeCentroCusto(l.centro_custo_id)].filter(Boolean).join(" · ");
     const pendente = l.status === "pendente";
     const origem = origemDoLancamento(l.id);
     // linha/cartão inteiro é clicável — edição de sincronizados redireciona
@@ -1177,7 +1184,12 @@ function abrirModalLancamento(id, tipoNovo) {
       { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Realizado (pago)","pendente|A pagar/receber (pendente)"], valor: l?.status || "pago" },
       { nome:"_valor", rotulo:"Valor (R$)", tipo:"moeda", valor: l ? (l.entrada > 0 ? l.entrada : l.saida) : "" },
       { nome:"descricao", rotulo:"Descrição", tipo:"texto", largo:true, valor: l?.descricao || "" },
+      ...campoServico(l?.servico_id),
     ],
+    async aposSalvar(salvo) {
+      if (salvo.servico_id) await sincronizarRecebivelServico(salvo.servico_id);
+      if (l?.servico_id && l.servico_id !== salvo.servico_id) await sincronizarRecebivelServico(l.servico_id);
+    },
     montar(f) {
       const v = numDeMoeda(f._valor);
       if (!v || v <= 0) throw "Informe um valor maior que zero.";
@@ -1193,6 +1205,7 @@ function abrirModalLancamento(id, tipoNovo) {
         descricao: f.descricao.trim(),
         natureza: f._tipo === "entrada" ? "Receita" : f.natureza,
         centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
+        ...servicoDoForm(f),
       };
     }
   });
@@ -1267,6 +1280,16 @@ function abrirModalRecebimento(id) {
     campos: [
       { nome:"data", rotulo:"Data", tipo:"date", valor: r?.data || hoje() },
       { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(r?.equipamento_id, false), obrigatorio: true },
+      ...campoServico(r?.servico_id, (id) => {
+        // horas de um serviço: o serviço é quem cobra (sem lançamento próprio)
+        const sv = dados.servicos.find(x => x.id === Number(id));
+        const cmp = (n) => document.querySelector(`#modal-campos [data-campo="${n}"]`);
+        if (sv) {
+          if (cmp("cliente") && !cmp("cliente").value && sv.cliente) cmp("cliente").value = sv.cliente;
+          if (cmp("valor_hora") && sv.valor_hora) cmp("valor_hora").value = moedaMascara(sv.valor_hora);
+        }
+        ["valor_pago", "recebido"].forEach(n => cmp(n)?.closest("label")?.classList.toggle("oculto", !!sv || semDinheiro));
+      }),
       { nome:"cliente", rotulo:"Cliente", tipo:"texto", valor: r?.cliente || "", lista: nomesAtivos(dados.clientes), obrigatorio: true,
         aoMudar(nome) {
           const c = dados.clientes.find(x => x.nome === nome);
@@ -1281,8 +1304,8 @@ function abrirModalRecebimento(id) {
       { nome:"hora_final", rotulo:"Horímetro final", tipo:"numero", valor: r?.hora_final ?? "" },
       { nome:"_sep_fin", rotulo:"Cobrança", tipo:"separador", oculto: semDinheiro },
       { nome:"valor_hora", rotulo:"Valor da hora (R$)", tipo:"moeda", valor: r?.valor_hora ?? (dados.clientes.find(c => c.nome === r?.cliente)?.valor_hora_padrao || 350), oculto: semDinheiro },
-      { nome:"valor_pago", rotulo:"Valor pago (R$)", tipo:"moeda", valor: r?.valor_pago ?? 0, oculto: semDinheiro },
-      { nome:"recebido", rotulo:"Já recebido", tipo:"checkbox", valor: r?.recebido ?? false, oculto: semDinheiro },
+      { nome:"valor_pago", rotulo:"Valor pago (R$)", tipo:"moeda", valor: r?.valor_pago ?? 0, oculto: semDinheiro || !!r?.servico_id },
+      { nome:"recebido", rotulo:"Já recebido", tipo:"checkbox", valor: r?.recebido ?? false, oculto: semDinheiro || !!r?.servico_id },
       { nome:"centro_custo_id", rotulo:"Centro de custo (onde o dinheiro entrou)", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(r?.centro_custo_id), oculto: semDinheiro },
       { nome:"tipo_recebimento_id", rotulo:"Tipo de recebimento", tipo:"select", opcoes: opcoesTipoRecebimento(true), valor: r?.tipo_recebimento_id != null ? String(r.tipo_recebimento_id) : "", oculto: semDinheiro },
     ],
@@ -1306,9 +1329,19 @@ function abrirModalRecebimento(id) {
         valor_pago, recebido: !!f.recebido,
         centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
         tipo_recebimento_id: f.tipo_recebimento_id ? Number(f.tipo_recebimento_id) : null,
+        ...servicoDoForm(f),
       };
     },
     async aposSalvar(salvo) {
+      if (salvo.servico_id) {
+        // apontamento de um serviço: quem cobra é o serviço (sem lançamento nem "a receber" próprio)
+        await sincronizarLancamento({ origemId: salvo.id, tabelaOrigem: "recebimentos", lancamentoId: r?.lancamento_id ?? salvo.lancamento_id, valor: 0, tipo: "entrada", data: salvo.data, grupo: "Recebimentos", descricao: "" });
+        await sincronizarAgendaEspelho({ origemId: salvo.id, origemTabela: "recebimentos", agendaId: r?.agenda_id ?? salvo.agenda_id, pendente: false, item: "", data: null, valor: 0, natureza: "Receita", centroCustoId: null, equipamentoId: null, grupo: "Recebimentos" });
+        await sincronizarRecebivelServico(salvo.servico_id);
+        if (r?.servico_id && r.servico_id !== salvo.servico_id) await sincronizarRecebivelServico(r.servico_id);
+        return;
+      }
+      if (r?.servico_id) await sincronizarRecebivelServico(r.servico_id);
       if (salvo.recebido) {
         // recebido: lança no Extrato como movimentação realizada, e
         // garante que não sobra nenhum compromisso pendente na Agenda
@@ -1843,6 +1876,7 @@ function abrirModalDiesel(id) {
     { tipo:"separador", rotulo:"Classificação" },
     { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel" },
     { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(d?.centro_custo_id) },
+    ...campoServico(d?.servico_id),
   );
 
   abrirModal({
@@ -1902,6 +1936,7 @@ function abrirModalDiesel(id) {
         local: f.local.trim(), litros, valor_unit: vu, valor_unit_bruto: precoBruto, desconto, valor_total: total,
         status: f.status, vencimento: f.status === "pendente" ? f.vencimento : null,
         natureza: f.natureza, centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
+        ...servicoDoForm(f),
       };
       // chave da nota (do QR): só mexe quando a nota foi trocada ou removida
       if (chaveNota) registro.nota_chave = chaveNota;
@@ -1919,6 +1954,7 @@ function abrirModalDiesel(id) {
         valor: salvo.valor_total, tipo: "saida", data: salvo.data, status: salvo.status,
         grupo: "Combustível", descricao: "Abastecimento" + (salvo.local ? " - " + salvo.local : ""),
         natureza: salvo.natureza, centroCustoId: salvo.centro_custo_id, equipamentoId: salvo.equipamento_id,
+        servicoId: salvo.servico_id ?? null,
       });
       // "a pagar" também aparece como compromisso na Agenda, na data do
       // vencimento — some sozinho quando você dá baixa aqui no Diesel.
@@ -2094,6 +2130,7 @@ async function criarAbastecimentoCarroApoio(salvoPrincipal, carro) {
     natureza: salvoPrincipal.natureza, centro_custo_id: salvoPrincipal.centro_custo_id,
     grupo_abastecimento_id: salvoPrincipal.id,
   };
+  if (dados.temServicos) registro.servico_id = salvoPrincipal.servico_id ?? null;
   const { data: novo, error } = await sb.from("diesel").insert(marcarBase(registro)).select().single();
   if (error || !novo) {
     console.error("Falha ao criar abastecimento do carro de apoio:", error);
@@ -2107,6 +2144,7 @@ async function criarAbastecimentoCarroApoio(salvoPrincipal, carro) {
     valor: novo.valor_total, tipo: "saida", data: novo.data, status: novo.status,
     grupo: "Combustível", descricao: "Abastecimento" + (novo.local ? " - " + novo.local : "") + " (carro de apoio)",
     natureza: novo.natureza, centroCustoId: novo.centro_custo_id, equipamentoId: novo.equipamento_id,
+    servicoId: novo.servico_id ?? null,
   });
   await sincronizarAgendaEspelho({
     origemId: novo.id, origemTabela: "diesel", agendaId: null,
@@ -2211,6 +2249,7 @@ function abrirModalManutencao(id) {
       { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: m?.vencimento || "", obrigatorio: (f) => f.status_pagamento === "pendente" },
       { nome:"proxima_data", rotulo:"Próxima revisão (data)", tipo:"date", valor: m?.proxima_data || "" },
       { nome:"proxima_horimetro", rotulo:"Próxima revisão (horímetro)", tipo:"numero", valor: m?.proxima_horimetro ?? "" },
+      ...campoServico(m?.servico_id),
     ],
     montar(f) {
       if (!f.equipamento_id) throw "Selecione o equipamento.";
@@ -2228,6 +2267,7 @@ function abrirModalManutencao(id) {
         vencimento: f.status_pagamento === "pendente" ? f.vencimento : null,
         proxima_data: f.proxima_data || null,
         proxima_horimetro: f.proxima_horimetro === "" ? null : Number(f.proxima_horimetro),
+        ...servicoDoForm(f),
       };
     },
     async aposSalvar(salvo) {
@@ -2241,6 +2281,7 @@ function abrirModalManutencao(id) {
         status: pendente ? "pendente" : "pago",
         descricao: "Manutenção" + (salvo.fornecedor ? " - " + salvo.fornecedor : ""),
         natureza: salvo.natureza, centroCustoId: salvo.centro_custo_id, equipamentoId: salvo.equipamento_id,
+        servicoId: salvo.servico_id ?? null,
       });
       // agendada ou a pagar também aparece como compromisso na Agenda —
       // some sozinho quando a manutenção é realizada e paga.
@@ -2627,7 +2668,7 @@ function contasEmAberto() {
     .map(a => ({ ...a, venc: vencimentoAgenda(a) }))
     .sort((x, y) => x.venc.localeCompare(y.venc));
 }
-const ROTULO_ORIGEM = { diesel: "Abastecimento", manutencoes: "Manutenção", recebimentos: "Serviço" };
+const ROTULO_ORIGEM = { diesel: "Abastecimento", manutencoes: "Manutenção", recebimentos: "Horas", servicos: "Serviço" };
 function somarDias(iso, n) { const [y, m, d] = iso.split("-").map(Number); return isoLocal(new Date(y, m - 1, d + n)); }
 
 function linhaConta(a, compacta) {
@@ -2834,6 +2875,7 @@ function abrirLinhaDaAgenda(id) {
   if (a.origem_tabela === "diesel") { abrirModalDiesel(a.origem_id); return; }
   if (a.origem_tabela === "manutencoes") { abrirModalManutencao(a.origem_id); return; }
   if (a.origem_tabela === "recebimentos") { abrirModalRecebimento(a.origem_id); return; }
+  if (a.origem_tabela === "servicos") { abrirDetalheServico(a.origem_id); return; }
   abrirModalEscolhaAcaoAgenda(id);
 }
 
@@ -3561,7 +3603,7 @@ async function sincronizarAgendaEspelho({ origemId, origemTabela, agendaId, pend
   }
 }
 
-async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, valor, tipo, data, grupo, descricao, natureza = "Variavel", centroCustoId = null, equipamentoId = null, status = "pago", banco = null, campoVinculo = "lancamento_id" }) {
+async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, valor, tipo, data, grupo, descricao, natureza = "Variavel", centroCustoId = null, equipamentoId = null, status = "pago", banco = null, campoVinculo = "lancamento_id", servicoId }) {
   banco = banco || contaPadrao();
   // sem valor: se existia um lançamento vinculado, remove
   if (!valor || valor <= 0) {
@@ -3581,6 +3623,7 @@ async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, val
     equipamento_id: equipamentoId,
     status,
   };
+  if (dados.temServicos && servicoId !== undefined) campos.servico_id = servicoId;
   if (lancamentoId) {
     await sb.from("lancamentos").update(campos).eq("id", lancamentoId);
   } else {
