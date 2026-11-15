@@ -198,10 +198,10 @@ function opcoesCentroCusto(incluirNenhum) {
   if (incluirNenhum) opts.push("|Não classificado");
   return opts;
 }
+// novo registro começa "Não classificado" (antes vinha marcado o primeiro
+// centro da lista, ex.: "Cartão de crédito", sem ninguém ter escolhido)
 function centroCustoPadrao(valorAtual) {
-  if (valorAtual != null) return String(valorAtual);
-  const primeiro = dados.centrosCusto.find(c => c.ativo);
-  return primeiro ? String(primeiro.id) : "";
+  return valorAtual != null ? String(valorAtual) : "";
 }
 function nomeCentroCusto(id) {
   const c = dados.centrosCusto.find(x => x.id === id);
@@ -254,6 +254,10 @@ function aplicarMarca(nome) {
 }
 // Conta usada nos lançamentos automáticos (abastecimento, manutenção, serviços, contas).
 // Antes era sempre "Bradesco", o que bagunçava o saldo por conta.
+function contaDoLancamento(id) {
+  const l = id ? dados.lanc.find(x => x.id === id) : null;
+  return l && opcoesContaBancaria().includes(l.banco) ? l.banco : contaPadrao();
+}
 function contaPadrao() {
   const ativas = opcoesContaBancaria();
   if (dados.contaPadrao && ativas.includes(dados.contaPadrao)) return dados.contaPadrao;
@@ -636,7 +640,7 @@ async function carregarTudo() {
     // auditoria: log das últimas 100 alterações (só admin enxerga, por RLS
     // — pra qualquer outro papel isso simplesmente volta vazio, sem erro)
     try {
-      const { data, error } = await sb.from("log_atividade").select("*").order("criado_em", { ascending: false }).limit(100);
+      const { data, error } = await sb.from("log_atividade").select("*").order("criado_em", { ascending: false }).limit(300);
       if (error) throw error;
       dados.logAtividade = data || [];
     } catch (e) {
@@ -785,9 +789,12 @@ function renderPainel() {
   }
   let horas = 0, faturado = 0;
   for (const r of periodoRec) { horas += r.horas; faturado += r.valor_total; }
-  let faturadoTotal = 0, recebidoTotal = 0;
-  for (const r of dados.rec) { faturadoTotal += r.valor_total; recebidoTotal += r.recebido ? (r.valor_pago || r.valor_total) : 0; }
-  const emAberto = faturadoTotal - recebidoTotal;
+  // a receber = contas a receber em aberto (horas avulsas, serviços concluídos,
+  // contas manuais) + o que os serviços em andamento já acumularam
+  const contasReceber = contasEmAberto().filter(a => a.valor < 0).reduce((t, a) => t + Math.abs(a.valor), 0);
+  const servAndamento = (dados.servicos || []).filter(sv => sv.status === "andamento" && (contexto.equipamentoId == null || sv.equipamento_id == null || sv.equipamento_id === contexto.equipamentoId))
+    .reduce((t, sv) => t + resumoServico(sv).aReceber, 0);
+  const emAberto = contasReceber + servAndamento;
   const aPagar = dados.lanc.filter(l => l.status === "pendente").reduce((s,l) => s + l.saida, 0);
   // combustível por hora trabalhada: mesma conta "tanque a tanque" do painel
   // de abastecimento (antes usava um campo diesel.horas que nunca era
@@ -1124,9 +1131,9 @@ function origemDoLancamento(id) {
   const m = dados.man.find(x => x.lancamento_id === id);
   if (m) return { tabela: "Manutenção", fn: "abrirModalManutencao", id: m.id };
   const a = dados.age.find(x => x.lancamento_id === id);
-  if (a) return { tabela: "Agenda", fn: "abrirModalAgenda", id: a.id };
+  if (a) return { tabela: "Contas", fn: "abrirModalAgenda", id: a.id };
   const r = dados.rec.find(x => x.lancamento_id === id || x.lancamento_pendente_id === id);
-  if (r) return { tabela: "Recebimentos", fn: "abrirModalRecebimento", id: r.id };
+  if (r) return { tabela: "Horas", fn: "abrirModalRecebimento", id: r.id };
   return null;
 }
 
@@ -1168,22 +1175,28 @@ function origemDoLancamento(id) {
 function abrirModalLancamento(id, tipoNovo) {
   const l = id ? dados.lanc.find(x => x.id === id) : null;
   const tipo = l ? (l.entrada > 0 ? "entrada" : "saida") : (tipoNovo || "saida");
+  const ehReceita = (f) => (f._tipo || tipo) === "entrada";
+  const grupos = opcoesGrupoDespesa();
+  const grupoInicial = l && l.grupo !== "Recebimentos" ? l.grupo : (grupos.includes("Outras despesas") ? "Outras despesas" : grupos[0] || "Outras despesas");
+  const nomeTipo = tipo === "entrada" ? "receita" : "despesa";
   abrirModal({
-    titulo: l ? "Editar lançamento" : tipoNovo === "entrada" ? "Nova receita" : tipoNovo === "saida" ? "Nova despesa" : "Novo lançamento",
+    titulo: l ? "Editar " + nomeTipo : tipoNovo ? "Nova " + nomeTipo : "Novo lançamento",
     tabela: "lancamentos", id,
     campos: [
-      { nome:"data", rotulo:"Data", tipo:"date", valor: l?.data || hoje() },
-      { nome:"_tipo", rotulo:"Tipo", tipo:"select", opcoes:["saida|Saída","entrada|Entrada"], valor: tipo },
-      { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(true), valor: equipamentoPadrao(l?.equipamento_id, true) },
-      { nome:"grupo", rotulo:"Grupo", tipo:"select", opcoes: opcoesGrupoDespesa().concat("Recebimentos"), valor: l?.grupo || "Combustível" },
-      { nome:"natureza", rotulo:"Natureza (só p/ saída)", tipo:"select",
-        opcoes:["Variavel|Custo variável","Fixo|Custo fixo","Investimento|Investimento"],
-        valor: (l?.natureza && l.natureza !== "Receita") ? l.natureza : (l?.grupo === "Investimento" ? "Investimento" : "Variavel") },
-      { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(l?.centro_custo_id) },
-      { nome:"banco", rotulo:"Conta", tipo:"select", opcoes: opcoesContaBancaria(), valor: l?.banco || opcoesContaBancaria()[0] || "" },
-      { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Realizado (pago)","pendente|A pagar/receber (pendente)"], valor: l?.status || "pago" },
-      { nome:"_valor", rotulo:"Valor (R$)", tipo:"moeda", valor: l ? (l.entrada > 0 ? l.entrada : l.saida) : "" },
+      // tipo só aparece quando não foi escolhido antes (botão Receita/Despesa já define)
+      { nome:"_tipo", rotulo:"É uma…", tipo:"select", opcoes:["saida|Despesa (saiu dinheiro)","entrada|Receita (entrou dinheiro)"], valor: tipo, largo:true, oculto: !!tipoNovo },
+      { nome:"_valor", rotulo:"Valor (R$)", tipo:"moeda", valor: l ? (l.entrada > 0 ? l.entrada : l.saida) : "", obrigatorio:true },
+      { nome:"data", rotulo:"Data", tipo:"date", valor: l?.data || hoje(), obrigatorio:true },
       { nome:"descricao", rotulo:"Descrição", tipo:"texto", largo:true, valor: l?.descricao || "" },
+      { nome:"grupo", rotulo:"Categoria", tipo:"select", opcoes: grupos.includes(grupoInicial) ? grupos : grupos.concat(grupoInicial), valor: grupoInicial, visivelSe: f => !ehReceita(f) },
+      { nome:"natureza", rotulo:"Tipo de custo", tipo:"select",
+        opcoes:["Variavel|Custo variável","Fixo|Custo fixo","Investimento|Investimento"],
+        valor: (l?.natureza && l.natureza !== "Receita") ? l.natureza : "Variavel", visivelSe: f => !ehReceita(f) },
+      { nome:"status_saida", rotulo:"Situação", tipo:"select", opcoes:["pago|Já foi pago","pendente|Ainda vou pagar"], valor: l?.status || "pago", visivelSe: f => !ehReceita(f) },
+      { nome:"status_entrada", rotulo:"Situação", tipo:"select", opcoes:["pago|Já recebi","pendente|Ainda vou receber"], valor: l?.status || "pago", visivelSe: f => ehReceita(f) },
+      { nome:"banco", rotulo:"Conta", tipo:"select", opcoes: opcoesContaBancaria(), valor: l?.banco || contaPadrao() },
+      { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(true), valor: equipamentoPadrao(l?.equipamento_id, true) },
+      { nome:"centro_custo_id", rotulo:"Centro de custo (como foi pago)", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(l?.centro_custo_id), visivelSe: f => !ehReceita(f) },
       ...campoServico(l?.servico_id),
     ],
     async aposSalvar(salvo) {
@@ -1193,18 +1206,19 @@ function abrirModalLancamento(id, tipoNovo) {
     montar(f) {
       const v = numDeMoeda(f._valor);
       if (!v || v <= 0) throw "Informe um valor maior que zero.";
+      const ent = ehReceita(f);
       return {
         data: f.data,
         banco: f.banco,
-        status: f.status,
+        status: ent ? f.status_entrada : f.status_saida,
         equipamento_id: f.equipamento_id ? Number(f.equipamento_id) : null,
-        grupo: f._tipo === "entrada" ? "Recebimentos" : f.grupo,
+        grupo: ent ? "Recebimentos" : f.grupo,
         subgrupo: "",
-        entrada: f._tipo === "entrada" ? v : 0,
-        saida:   f._tipo === "saida"   ? v : 0,
+        entrada: ent ? v : 0,
+        saida:   ent ? 0 : v,
         descricao: f.descricao.trim(),
-        natureza: f._tipo === "entrada" ? "Receita" : f.natureza,
-        centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
+        natureza: ent ? "Receita" : f.natureza,
+        centro_custo_id: ent ? (l?.centro_custo_id ?? null) : (f.centro_custo_id ? Number(f.centro_custo_id) : null),
         ...servicoDoForm(f),
       };
     }
@@ -1219,6 +1233,7 @@ function renderRecebimentos() {
     const c = r.cliente;
     if (!porCliente[c]) porCliente[c] = { horas:0, faturado:0, recebido:0 };
     porCliente[c].horas    += r.horas;
+    if (r.servico_id) continue; // cobrado pelo serviço, não por hora avulsa
     porCliente[c].faturado += r.valor_total;
     // só conta como recebido o que está marcado como "Recebido?" — é a
     // mesma regra que decide o que entra no Extrato, então os cards batem
@@ -1243,9 +1258,12 @@ function renderRecebimentos() {
     .slice().reverse();
 
   $("rec-corpo").innerHTML = filtrado.map(r => {
-    const statusHtml = r.recebido
-      ? `<span class="chip chip-status chip-pago">Recebido</span>`
-      : `<span class="chip chip-status chip-pendente">A receber</span>`;
+    const svR = r.servico_id ? dados.servicos.find(x => x.id === r.servico_id) : null;
+    const statusHtml = svR
+      ? `<span class="chip chip-status chip-servico">Serviço: ${escHtml(svR.nome)}</span>`
+      : r.recebido
+        ? `<span class="chip chip-status chip-pago">Recebido</span>`
+        : `<span class="chip chip-status chip-pendente">A receber</span>`;
     return `<tr class="linha-clicavel" role="button" tabindex="0" title="Editar registro"
       onclick="aoClicarLinha(() => abrirModalRecebimento(${r.id}))" onkeydown="teclaLinha(event)">
     <td class="td-data">${fData(r.data)}</td>
@@ -1270,25 +1288,24 @@ function filtrarCliente(c) {
 function abrirModalRecebimento(id) {
   const r = id ? dados.rec.find(x => x.id === id) : null;
   const semDinheiro = !vejoFinanceiro; // operador: só cliente, operador e horímetro
+  let bancoHoras = null;
   abrirModal({
     titulo: r ? "Editar serviço" : "Horas trabalhadas",
     tabela: "recebimentos", id,
     tituloExclusao: r ? `o registro de ${r.cliente} (${fData(r.data)})` : null,
     avisoExcluir: r && (r.lancamento_id || r.lancamento_pendente_id || r.agenda_id)
-      ? "Isso também remove o(s) lançamento(s) vinculado(s) no Extrato" + (r.agenda_id ? " e o compromisso pendente na Agenda." : ".")
+      ? "Isso também remove o(s) lançamento(s) vinculado(s) no Extrato" + (r.agenda_id ? " e a conta a receber em Contas." : ".")
       : null,
     campos: [
       { nome:"data", rotulo:"Data", tipo:"date", valor: r?.data || hoje() },
       { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(r?.equipamento_id, false), obrigatorio: true },
       ...campoServico(r?.servico_id, (id) => {
-        // horas de um serviço: o serviço é quem cobra (sem lançamento próprio)
         const sv = dados.servicos.find(x => x.id === Number(id));
         const cmp = (n) => document.querySelector(`#modal-campos [data-campo="${n}"]`);
         if (sv) {
           if (cmp("cliente") && !cmp("cliente").value && sv.cliente) cmp("cliente").value = sv.cliente;
           if (cmp("valor_hora") && sv.valor_hora) cmp("valor_hora").value = moedaMascara(sv.valor_hora);
         }
-        ["valor_pago", "recebido"].forEach(n => cmp(n)?.closest("label")?.classList.toggle("oculto", !!sv || semDinheiro));
       }),
       { nome:"cliente", rotulo:"Cliente", tipo:"texto", valor: r?.cliente || "", lista: nomesAtivos(dados.clientes), obrigatorio: true,
         aoMudar(nome) {
@@ -1299,34 +1316,39 @@ function abrirModalRecebimento(id) {
           }
         } },
       { nome:"operador", rotulo:"Operador", tipo:"texto", valor: r?.operador || "", lista: nomesAtivos(dados.operadores) },
-      { nome:"obra", rotulo:"Obra / contrato", tipo:"texto", valor: r?.obra || "", lista: nomesAtivos(dados.obras) },
-      { nome:"hora_inicial", rotulo:"Horímetro inicial", tipo:"numero", valor: r?.hora_inicial ?? "" },
-      { nome:"hora_final", rotulo:"Horímetro final", tipo:"numero", valor: r?.hora_final ?? "" },
+      // "Obra / contrato" virou Serviço; o campo antigo só aparece em registros que já tinham obra
+      { nome:"obra", rotulo:"Obra / contrato", tipo:"texto", valor: r?.obra || "", lista: nomesAtivos(dados.obras), oculto: dados.temServicos && !r?.obra },
+      { nome:"hora_inicial", rotulo:"Horímetro inicial", tipo:"numero", valor: r?.hora_inicial ?? "", obrigatorio: true },
+      { nome:"hora_final", rotulo:"Horímetro final", tipo:"numero", valor: r?.hora_final ?? "", obrigatorio: true },
       { nome:"_sep_fin", rotulo:"Cobrança", tipo:"separador", oculto: semDinheiro },
-      { nome:"valor_hora", rotulo:"Valor da hora (R$)", tipo:"moeda", valor: r?.valor_hora ?? (dados.clientes.find(c => c.nome === r?.cliente)?.valor_hora_padrao || 350), oculto: semDinheiro },
-      { nome:"valor_pago", rotulo:"Valor pago (R$)", tipo:"moeda", valor: r?.valor_pago ?? 0, oculto: semDinheiro || !!r?.servico_id },
-      { nome:"recebido", rotulo:"Já recebido", tipo:"checkbox", valor: r?.recebido ?? false, oculto: semDinheiro || !!r?.servico_id },
-      { nome:"centro_custo_id", rotulo:"Centro de custo (onde o dinheiro entrou)", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(r?.centro_custo_id), oculto: semDinheiro },
-      { nome:"tipo_recebimento_id", rotulo:"Tipo de recebimento", tipo:"select", opcoes: opcoesTipoRecebimento(true), valor: r?.tipo_recebimento_id != null ? String(r.tipo_recebimento_id) : "", oculto: semDinheiro },
+      { nome:"valor_hora", rotulo:"Valor da hora (R$)", tipo:"moeda", valor: r?.valor_hora ?? (dados.clientes.find(c => c.nome === r?.cliente)?.valor_hora_padrao || ""), oculto: semDinheiro },
+      { nome:"recebido", rotulo:"Já recebi por estas horas", tipo:"checkbox", largo:true, valor: r?.recebido ?? false, oculto: semDinheiro, visivelSe: f => !semDinheiro && !f.servico_id },
+      { nome:"valor_pago", rotulo:"Valor recebido (se diferente do total)", tipo:"moeda", valor: r?.valor_pago || "", oculto: semDinheiro, visivelSe: f => !semDinheiro && !f.servico_id && f.recebido },
+      { nome:"_banco", rotulo:"Conta onde entrou", tipo:"select", opcoes: opcoesContaBancaria(), valor: contaDoLancamento(r?.lancamento_id), oculto: semDinheiro, visivelSe: f => !semDinheiro && !f.servico_id && f.recebido },
+      { nome:"tipo_recebimento_id", rotulo:"Tipo de receita", tipo:"select", opcoes: opcoesTipoRecebimento(true), valor: r?.tipo_recebimento_id != null ? String(r.tipo_recebimento_id) : "", oculto: semDinheiro, visivelSe: f => !semDinheiro && opcoesTipoRecebimento(false).length > 0 },
+      { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: r?.centro_custo_id != null ? String(r.centro_custo_id) : "", oculto: true },
     ],
     montar(f) {
       if (!f.cliente.trim()) throw "Informe o cliente.";
       if (!f.equipamento_id) throw "Selecione o equipamento.";
       const hi = f.hora_inicial === "" ? null : Number(f.hora_inicial);
       const hf = f.hora_final === "" ? null : Number(f.hora_final);
+      if (hi != null && hf != null && hf <= hi) throw "O horímetro final precisa ser maior que o inicial.";
       const horas = (hi != null && hf != null) ? Math.max(0, hf - hi) : 0;
       const vh = numDeMoeda(f.valor_hora);
       const valor_total = horas * vh;
       // se marcou "Recebido?" e não preencheu o valor pago, assume o valor
       // total (evita ter que digitar o mesmo número duas vezes)
-      let valor_pago = numDeMoeda(f.valor_pago);
-      if (f.recebido && !valor_pago) valor_pago = valor_total;
+      const vinculado = !!f.servico_id;
+      let valor_pago = vinculado || !f.recebido ? 0 : numDeMoeda(f.valor_pago);
+      if (f.recebido && !vinculado && !valor_pago) valor_pago = valor_total;
+      bancoHoras = f._banco || contaPadrao();
       return {
         data: f.data, equipamento_id: Number(f.equipamento_id), cliente: f.cliente.trim(),
         operador: f.operador.trim(), obra: f.obra.trim(),
         hora_inicial: hi, hora_final: hf, horas,
         valor_hora: vh, valor_total,
-        valor_pago, recebido: !!f.recebido,
+        valor_pago, recebido: !vinculado && !!f.recebido,
         centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
         tipo_recebimento_id: f.tipo_recebimento_id ? Number(f.tipo_recebimento_id) : null,
         ...servicoDoForm(f),
@@ -1347,7 +1369,7 @@ function abrirModalRecebimento(id) {
         // garante que não sobra nenhum compromisso pendente na Agenda
         await sincronizarLancamento({
           origemId: salvo.id, tabelaOrigem: "recebimentos", lancamentoId: r?.lancamento_id ?? salvo.lancamento_id,
-          valor: salvo.valor_pago || salvo.valor_total, tipo: "entrada", data: salvo.data, status: "pago",
+          valor: salvo.valor_pago || salvo.valor_total, tipo: "entrada", data: salvo.data, status: "pago", banco: bancoHoras,
           grupo: "Recebimentos", descricao: "Recebimento - " + salvo.cliente,
           centroCustoId: salvo.centro_custo_id, equipamentoId: salvo.equipamento_id,
         });
@@ -1594,6 +1616,7 @@ function abrirModalDiesel(id) {
   const equipInicial = Number(equipamentoPadrao(d?.equipamento_id, false)) || null;
   const tipoEquip = tipoEquipamento(equipInicial);
   let carroApoioForm = null; // captura os dados do carro de apoio no montar(), lido no aposSalvar
+  bancoDieselForm = null;
   let anexosForm = {};       // arquivos escolhidos no formulário, enviados no aposSalvar
   let chaveNota = null;      // chave de 44 dígitos lida do QR da nota anexada
   let notaTrocada = false;   // escolheu outro arquivo de nota nesta edição
@@ -1872,7 +1895,8 @@ function abrirModalDiesel(id) {
   campos.push(
     { tipo:"separador", rotulo:"④ Pagamento" },
     { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar (fiado)"], valor: d?.status || "pago" },
-    { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: d?.vencimento || "", obrigatorio: (f) => f.status === "pendente" },
+    { nome:"vencimento", rotulo:"Vence em", tipo:"date", valor: d?.vencimento || "", obrigatorio: (f) => f.status === "pendente", visivelSe: f => f.status === "pendente" },
+    { nome:"_banco", rotulo:"Conta de onde saiu", tipo:"select", opcoes: opcoesContaBancaria(), valor: contaDoLancamento(d?.lancamento_id), visivelSe: f => f.status === "pago" },
     { tipo:"separador", rotulo:"Classificação" },
     { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel" },
     { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(d?.centro_custo_id) },
@@ -1885,7 +1909,7 @@ function abrirModalDiesel(id) {
     tituloExclusao: d ? `o abastecimento de ${fData(d.data)}` : null,
     avisoExcluir: [
       d && (d.lancamento_id || d.agenda_id)
-        ? "Isso também remove o lançamento vinculado no Extrato" + (d.agenda_id ? " e o compromisso pendente na Agenda." : ".") : null,
+        ? "Isso também remove o lançamento vinculado no Extrato" + (d.agenda_id ? " e a conta a receber em Contas." : ".") : null,
       parGrupo ? `Nota conjunta: o abastecimento ${nomeEquipamento(parGrupo.equipamento_id)} · ${parGrupo.combustivel} (${brl(parGrupo.valor_total)}) e o lançamento dele no Extrato também serão excluídos.` : null,
     ].filter(Boolean).join(" ") || null,
     campos,
@@ -1905,7 +1929,8 @@ function abrirModalDiesel(id) {
       const precoBruto = bruto > 0 ? bruto : vu;
       const desconto = litros > 0 && bruto > 0 ? arred(litros * bruto - total, 2) : 0;
       if (!f.equipamento_id) throw "Selecione o equipamento.";
-      if (f.status === "pendente" && !f.vencimento) throw "Informe o vencimento para abastecimentos a pagar.";
+      if (f.status === "pendente" && !f.vencimento) throw "Informe quando vence o pagamento.";
+      bancoDieselForm = f._banco || contaPadrao();
 
       carroApoioForm = null;
       if (f.tem_carro_apoio) {
@@ -1951,7 +1976,7 @@ function abrirModalDiesel(id) {
       // "a pagar" entra como pendente (não conta no saldo até dar baixa).
       await sincronizarLancamento({
         origemId: salvo.id, tabelaOrigem: "diesel", lancamentoId: d?.lancamento_id ?? salvo.lancamento_id,
-        valor: salvo.valor_total, tipo: "saida", data: salvo.data, status: salvo.status,
+        valor: salvo.valor_total, tipo: "saida", data: salvo.data, status: salvo.status, banco: bancoDieselForm,
         grupo: "Combustível", descricao: "Abastecimento" + (salvo.local ? " - " + salvo.local : ""),
         natureza: salvo.natureza, centroCustoId: salvo.centro_custo_id, equipamentoId: salvo.equipamento_id,
         servicoId: salvo.servico_id ?? null,
@@ -2122,6 +2147,7 @@ async function salvarAnexosAbastecimento(salvo, anterior, arq) {
   if (falhas.length) avisoAposSalvar = "Abastecimento salvo, mas não consegui enviar " + falhas.join(" e ") + ". Edite e tente de novo.";
 }
 
+let bancoDieselForm = null; // conta escolhida no último formulário de abastecimento
 async function criarAbastecimentoCarroApoio(salvoPrincipal, carro) {
   const registro = {
     data: salvoPrincipal.data, equipamento_id: carro.equipamento_id, combustivel: carro.combustivel,
@@ -2141,7 +2167,7 @@ async function criarAbastecimentoCarroApoio(salvoPrincipal, carro) {
 
   await sincronizarLancamento({
     origemId: novo.id, tabelaOrigem: "diesel", lancamentoId: null,
-    valor: novo.valor_total, tipo: "saida", data: novo.data, status: novo.status,
+    valor: novo.valor_total, tipo: "saida", data: novo.data, status: novo.status, banco: bancoDieselForm,
     grupo: "Combustível", descricao: "Abastecimento" + (novo.local ? " - " + novo.local : "") + " (carro de apoio)",
     natureza: novo.natureza, centroCustoId: novo.centro_custo_id, equipamentoId: novo.equipamento_id,
     servicoId: novo.servico_id ?? null,
@@ -2185,11 +2211,10 @@ function renderManutencao() {
 
   $("man-proximas").innerHTML = proximas.length
     ? proximas.map(m => `
-      <div class="man-proxima-linha">
+      <div class="man-proxima-linha linha-clicavel" role="button" tabindex="0" onclick="aoClicarLinha(() => abrirModalManutencao(${m.id}))" onkeydown="teclaLinha(event)">
         <span class="chip" style="border-color:${COR_TIPO_MAN[m.tipo]};color:${COR_TIPO_MAN[m.tipo]}">${ROTULO_TIPO_MAN[m.tipo]}</span>
         <span class="man-proxima-desc">${escHtml(m.descricao || "—")}${contexto.equipamentoId == null ? " · " + escHtml(nomeEquipamento(m.equipamento_id)) : ""}</span>
         <span class="man-proxima-data">${fData(m.proxima_data || m.data)}${m.proxima_horimetro ? " · " + num(m.proxima_horimetro,0) + "h" : ""}</span>
-        <button class="btn-editar" onclick="abrirModalManutencao(${m.id})" title="Editar">${icone("pencil", "icone-sm")}</button>
       </div>`).join("")
     : '<div class="vazio">Nenhuma manutenção agendada.</div>';
 
@@ -2225,28 +2250,30 @@ function renderManutencao() {
 
 function abrirModalManutencao(id) {
   const m = id ? dados.man.find(x => x.id === id) : null;
+  let bancoManutencao = null;
   abrirModal({
     titulo: m ? "Editar manutenção" : "Nova manutenção",
     tabela: "manutencoes", id,
     tituloExclusao: m ? `a manutenção de ${fData(m.data)}` : null,
     avisoExcluir: m && (m.lancamento_id || m.agenda_id)
-      ? "Isso também remove o lançamento vinculado no Extrato" + (m.agenda_id ? " e o compromisso pendente na Agenda." : ".")
+      ? "Isso também remove o lançamento vinculado no Extrato" + (m.agenda_id ? " e a conta a receber em Contas." : ".")
       : null,
     campos: [
       { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(m?.equipamento_id, false), obrigatorio: true },
       { nome:"tipo", rotulo:"Tipo", tipo:"select", opcoes:["preventiva|Preventiva","preditiva|Preditiva","corretiva|Corretiva"], valor: m?.tipo || "preventiva" },
-      { nome:"data", rotulo:"Data (realizada ou prevista)", tipo:"date", valor: m?.data || hoje() },
-      { nome:"realizada", rotulo:"Já foi realizada", tipo:"checkbox", valor: m?.realizada ?? true },
+      { nome:"realizada", rotulo:"Já foi feita (desmarque para agendar)", tipo:"checkbox", largo:true, valor: m?.realizada ?? true },
+      { nome:"data", rotulo:"Data", tipo:"date", valor: m?.data || hoje(), obrigatorio: true },
       { nome:"horimetro", rotulo:"Horímetro", tipo:"numero", valor: m?.horimetro ?? "" },
-      { nome:"descricao", rotulo:"Serviço realizado", tipo:"texto", largo:true, valor: m?.descricao || "" },
-      { nome:"pecas", rotulo:"Peças trocadas/compradas", tipo:"texto", largo:true, valor: m?.pecas || "" },
+      { nome:"descricao", rotulo:"O que foi / será feito", tipo:"texto", largo:true, valor: m?.descricao || "" },
+      { nome:"pecas", rotulo:"Peças trocadas/compradas", tipo:"texto", largo:true, valor: m?.pecas || "", visivelSe: f => f.realizada },
       { nome:"fornecedor", rotulo:"Oficina / fornecedor", tipo:"texto", valor: m?.fornecedor || "", lista: nomesAtivos(dados.fornecedores) },
       { nome:"valor_pecas", rotulo:"Valor peças (R$)", tipo:"moeda", valor: m?.valor_pecas ?? "" },
       { nome:"valor_mao_obra", rotulo:"Valor mão de obra (R$)", tipo:"moeda", valor: m?.valor_mao_obra ?? "" },
       { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: m?.natureza || "Variavel" },
       { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(m?.centro_custo_id) },
-      { nome:"status_pagamento", rotulo:"Situação do pagamento", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar"], valor: m?.status_pagamento || "pago" },
-      { nome:"vencimento", rotulo:"Vencimento (se a pagar)", tipo:"date", valor: m?.vencimento || "", obrigatorio: (f) => f.status_pagamento === "pendente" },
+      { nome:"status_pagamento", rotulo:"Pagamento", tipo:"select", opcoes:["pago|Já foi pago","pendente|Ainda vou pagar"], valor: m?.status_pagamento || "pago", visivelSe: f => f.realizada },
+      { nome:"vencimento", rotulo:"Vence em", tipo:"date", valor: m?.vencimento || "", obrigatorio: (f) => f.realizada && f.status_pagamento === "pendente", visivelSe: f => f.realizada && f.status_pagamento === "pendente" },
+      { nome:"_banco", rotulo:"Conta de onde saiu", tipo:"select", opcoes: opcoesContaBancaria(), valor: contaDoLancamento(m?.lancamento_id), visivelSe: f => f.realizada && f.status_pagamento === "pago" },
       { nome:"proxima_data", rotulo:"Próxima revisão (data)", tipo:"date", valor: m?.proxima_data || "" },
       { nome:"proxima_horimetro", rotulo:"Próxima revisão (horímetro)", tipo:"numero", valor: m?.proxima_horimetro ?? "" },
       ...campoServico(m?.servico_id),
@@ -2254,7 +2281,8 @@ function abrirModalManutencao(id) {
     montar(f) {
       if (!f.equipamento_id) throw "Selecione o equipamento.";
       if (!f.descricao.trim() && !f.pecas.trim()) throw "Descreva o serviço ou as peças.";
-      if (f.status_pagamento === "pendente" && !f.vencimento) throw "Informe o vencimento para manutenções a pagar.";
+      if (f.realizada && f.status_pagamento === "pendente" && !f.vencimento) throw "Informe quando vence o pagamento.";
+      bancoManutencao = f._banco || contaPadrao();
       const vp = numDeMoeda(f.valor_pecas);
       const vm = numDeMoeda(f.valor_mao_obra);
       return {
@@ -2264,7 +2292,7 @@ function abrirModalManutencao(id) {
         valor_pecas: vp, valor_mao_obra: vm, valor_total: vp + vm,
         natureza: f.natureza, centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
         status_pagamento: f.realizada ? f.status_pagamento : "pendente",
-        vencimento: f.status_pagamento === "pendente" ? f.vencimento : null,
+        vencimento: f.realizada && f.status_pagamento === "pendente" ? f.vencimento : null,
         proxima_data: f.proxima_data || null,
         proxima_horimetro: f.proxima_horimetro === "" ? null : Number(f.proxima_horimetro),
         ...servicoDoForm(f),
@@ -2278,7 +2306,7 @@ function abrirModalManutencao(id) {
       await sincronizarLancamento({
         origemId: salvo.id, tabelaOrigem: "manutencoes", lancamentoId: m?.lancamento_id ?? salvo.lancamento_id,
         valor: salvo.valor_total, tipo: "saida", data: salvo.data, grupo: "Manutenção",
-        status: pendente ? "pendente" : "pago",
+        status: pendente ? "pendente" : "pago", banco: bancoManutencao,
         descricao: "Manutenção" + (salvo.fornecedor ? " - " + salvo.fornecedor : ""),
         natureza: salvo.natureza, centroCustoId: salvo.centro_custo_id, equipamentoId: salvo.equipamento_id,
         servicoId: salvo.servico_id ?? null,
@@ -2353,137 +2381,231 @@ const CADASTROS_ADMIN = [
     nota:"cartões de crédito, financiamentos, contas — o que financia cada gasto. Desative em vez de excluir se já tiver lançamentos.",
     abrir:"abrirModalCentroCusto" },
   { chave:"clientes",       tabela:"clientes",         titulo:"Clientes",
-    nota:"telefone e valor de hora padrão preenchem sozinhos ao escolher o cliente em Recebimentos.",
+    nota:"telefone e valor de hora padrão preenchem sozinhos ao escolher o cliente em Horas e Serviços.",
     abrir:"abrirModalCliente" },
   { chave:"fornecedores",   tabela:"fornecedores",     titulo:"Fornecedores / Oficinas",
-    nota:"postos de combustível, oficinas — sugestão automática no Diesel e na Manutenção.",
+    nota:"postos de combustível, oficinas — sugestão automática no Abastecimento e na Manutenção.",
     abrir:"abrirModalFornecedor" },
   { chave:"gruposDespesa",  tabela:"grupos_despesa",   titulo:"Grupos de despesa",
-    nota:"categorias usadas no Extrato e na Agenda.",
+    nota:"categorias de despesa usadas no Extrato e em Contas.",
     abrir:"abrirModalGrupoDespesa" },
   { chave:"contasBancarias",tabela:"contas_bancarias", titulo:"Contas bancárias",
     nota:"contas usadas no Extrato.",
     abrir:"abrirModalContaBancaria" },
   { chave:"operadores",     tabela:"operadores",       titulo:"Operadores",
-    nota:"quem opera a máquina — sugestão automática em Recebimentos.",
+    nota:"quem opera a máquina — sugestão automática em Horas trabalhadas.",
     abrir:"abrirModalOperador" },
   { chave:"obras",          tabela:"obras",            titulo:"Obras / Contratos",
-    nota:"pra separar rentabilidade por obra, além do cliente — sugestão automática em Recebimentos.",
+    nota:"pra separar rentabilidade por obra, além do cliente — sugestão automática em Horas trabalhadas.",
     abrir:"abrirModalObra" },
-  { chave:"tiposRecebimento", tabela:"tipos_recebimento", titulo:"Tipos de recebimento",
-    nota:"classifica a origem da receita (locação, frete, serviço avulso) — usado em Recebimentos.",
+  { chave:"tiposRecebimento", tabela:"tipos_recebimento", titulo:"Tipos de receita",
+    nota:"classifica a origem da receita (locação, frete, serviço avulso) — usado em Horas trabalhadas.",
     abrir:"abrirModalTipoRecebimento" },
 ];
 
 const SECOES_ADMIN = [
-  ...CADASTROS_ADMIN.map(c => ({ chave: c.chave, titulo: c.titulo, tipo: "cadastro", config: c })),
-  { chave: "feriados", titulo: "Feriados", tipo: "feriados" },
-  { chave: "usuarios", titulo: "Usuários", tipo: "usuarios" },
-  { chave: "auditoria", titulo: "Atividade recente", tipo: "auditoria" },
+  { chave: "empresa", titulo: "Empresa", tipo: "empresa", grupo: "Geral", icone: "inicio", sub: "nome e conta padrão" },
+  ...CADASTROS_ADMIN.filter(c => c.chave !== "obras").map(c => ({ chave: c.chave, titulo: c.titulo, tipo: "cadastro", config: c, grupo: "Cadastros", icone: c.chave === "equipamentos" ? "tractor" : c.chave === "contasBancarias" ? "banco" : c.chave === "clientes" ? "usuario" : "extrato" })),
+  { chave: "feriados", titulo: "Feriados", tipo: "feriados", grupo: "Cadastros", icone: "agenda" },
+  { chave: "usuarios", titulo: "Usuários e acessos", tipo: "usuarios", grupo: "Pessoas", icone: "usuario" },
+  { chave: "auditoria", titulo: "Histórico de alterações", tipo: "auditoria", grupo: "Pessoas", icone: "relogio", sub: "quem fez o quê" },
 ];
 let adminSecaoAtiva = null;
+let filtroHistorico = "todos";
 
 function mudarSecaoAdmin(chave) {
   adminSecaoAtiva = chave;
   renderAdministracao();
+  window.scrollTo(0, 0);
 }
+const qtdSecaoAdmin = (s) => s.tipo === "cadastro" ? (dados[s.config.chave] || []).length
+  : s.tipo === "feriados" ? dados.feriados.length : s.tipo === "usuarios" ? dados.perfis.length : null;
 
 function renderAdministracao() {
-  if (!adminSecaoAtiva || !SECOES_ADMIN.some(s => s.chave === adminSecaoAtiva)) {
-    adminSecaoAtiva = SECOES_ADMIN[0].chave;
-  }
+  const celular = !telaCombina("(min-width: 1024px)");
+  if (!celular && (!adminSecaoAtiva || !SECOES_ADMIN.some(s => s.chave === adminSecaoAtiva))) adminSecaoAtiva = SECOES_ADMIN[0].chave;
+  if (adminSecaoAtiva && !SECOES_ADMIN.some(s => s.chave === adminSecaoAtiva)) adminSecaoAtiva = null;
 
-  $("admin-sidebar").innerHTML = SECOES_ADMIN.map(s => `
-    <button type="button" class="admin-sidebar-item ${s.chave === adminSecaoAtiva ? "ativo" : ""}" onclick="mudarSecaoAdmin('${s.chave}')">${s.titulo}</button>
-  `).join("");
+  // menu: lateral no computador; no celular, uma lista de seções (tela própria)
+  const grupos = [...new Set(SECOES_ADMIN.map(s => s.grupo))];
+  const menu = grupos.map(g => `
+    <h3 class="grupo-titulo">${g}</h3>
+    <div class="mais-lista">${SECOES_ADMIN.filter(s => s.grupo === g).map(s => {
+      const q = qtdSecaoAdmin(s);
+      return `<button type="button" class="mais-item ${s.chave === adminSecaoAtiva ? "ativo" : ""}" onclick="mudarSecaoAdmin('${s.chave}')">${icone(s.icone)}<span><b>${s.titulo}</b>${s.sub ? `<small>${s.sub}</small>` : q != null ? `<small>${q} cadastrado${q === 1 ? "" : "s"}</small>` : ""}</span>${icone("chevron-right", "icone-sm mais-seta")}</button>`;
+    }).join("")}</div>`).join("");
+  $("admin-sidebar").innerHTML = menu;
+  $("admin-sidebar").classList.toggle("oculto", celular && !!adminSecaoAtiva);
+  const conteudo = $("admin-conteudo");
+  conteudo.classList.toggle("oculto", celular && !adminSecaoAtiva);
+  if (!adminSecaoAtiva) { conteudo.innerHTML = ""; return; }
 
   const secao = SECOES_ADMIN.find(s => s.chave === adminSecaoAtiva);
-  const conteudo = $("admin-conteudo");
+  const voltar = celular ? `<button type="button" class="btn-voltar" onclick="mudarSecaoAdmin(null)">${icone("chevron-right", "icone-sm")} Configurações</button>` : "";
+  const cabeca = (titulo, nota, botao) => `${voltar}
+    <div class="admin-cabeca"><h2 class="titulo-risco"><span>${titulo}</span></h2>${botao || ""}</div>
+    ${nota ? `<p class="cartao-nota">${nota}</p>` : ""}`;
+  const linha = (onclick, principal, extra = "", lead = "") => `
+    <button type="button" class="admin-linha" onclick="${onclick}">${lead}<span class="admin-linha-nome">${principal}</span>${extra}${icone("chevron-right", "icone-sm mais-seta")}</button>`;
+
+  if (secao.tipo === "empresa") {
+    const cfgNome = document.querySelector("[data-empresa-nome]")?.textContent || "";
+    conteudo.innerHTML = cabeca("Empresa", "aparece no topo do aplicativo e é usada nos lançamentos automáticos.") + `
+      <div class="lista-cartao">
+        ${linha("abrirModalEmpresa()", `<b>Nome da empresa</b><small>${escHtml(cfgNome)}</small>`)}
+        ${linha("abrirModalEmpresa()", `<b>Conta padrão</b><small>${escHtml(contaPadrao())} — onde entram abastecimentos, manutenções e recebimentos quando você não escolhe outra</small>`)}
+      </div>`;
+    return;
+  }
 
   if (secao.tipo === "cadastro") {
     const c = secao.config;
-    const lista = dados[c.chave] || [];
-    const linhas = lista.length
-      ? lista.map(item => `
-        <div class="admin-linha">
-          <span class="admin-linha-nome">${escHtml(item.nome)}</span>
-          ${item.ativo === false ? `<span class="chip chip-status chip-pendente">Inativo</span>` : ""}
-          <button class="btn-editar" onclick="${c.abrir}(${item.id})" title="Editar">${icone("pencil", "icone-sm")}</button>
-        </div>`).join("")
-      : '<div class="vazio">Nenhum registro cadastrado.</div>';
-    conteudo.innerHTML = `<div class="cartao">
-      <div class="cartao-cabeca">
-        <h2 class="titulo-risco"><span>${c.titulo}</span></h2>
-        <button class="btn-primario" onclick="${c.abrir}(null)">+ Novo</button>
-      </div>
-      <p class="cartao-nota">${c.nota}</p>
-      <div>${linhas}</div>
-    </div>`;
+    const lista = (dados[c.chave] || []).slice().sort((a, b) => (a.ativo === false) - (b.ativo === false) || String(a.nome).localeCompare(String(b.nome), "pt"));
+    conteudo.innerHTML = cabeca(c.titulo, c.nota, meuPapel === "admin" ? `<button class="btn-primario" onclick="${c.abrir}(null)">+ Novo</button>` : "") + `
+      <div class="lista-cartao">${lista.length
+        ? lista.map(item => linha(`${c.abrir}(${item.id})`, `<b>${escHtml(item.nome)}</b>${item.telefone ? `<small>${escHtml(item.telefone)}</small>` : item.tipo ? `<small>${item.tipo === "Veiculo" ? "veículo de apoio" : "máquina"}</small>` : ""}`,
+            item.ativo === false ? `<span class="chip chip-status">Inativo</span>` : "")).join("")
+        : '<div class="vazio">Nenhum cadastrado ainda.</div>'}</div>`;
     return;
   }
 
   if (secao.tipo === "feriados") {
-    const fer = dados.feriados.slice().sort((a,b) => a.data.localeCompare(b.data));
-    conteudo.innerHTML = `<div class="cartao">
-      <div class="cartao-cabeca">
-        <h2 class="titulo-risco"><span>Feriados</span></h2>
-        <button class="btn-primario" onclick="abrirModalFeriado(null)">+ Novo feriado</button>
-      </div>
-      <p class="cartao-nota">usados no alerta de dia não útil da Agenda, além de sábado/domingo. Feriados móveis (Carnaval, Páscoa) precisam ser adicionados manualmente ano a ano.</p>
-      <div>${fer.length
-        ? fer.map(f => `
-          <div class="admin-linha">
-            <span class="admin-linha-nome">${fData(f.data)} — ${escHtml(f.descricao || "Feriado")}</span>
-            <button class="btn-editar" onclick="abrirModalFeriado(${f.id})" title="Editar">${icone("pencil", "icone-sm")}</button>
-          </div>`).join("")
-        : '<div class="vazio">Nenhum feriado cadastrado.</div>'}</div>
-    </div>`;
+    const fer = dados.feriados.slice().sort((a,b) => b.data.localeCompare(a.data));
+    conteudo.innerHTML = cabeca("Feriados", "usados para avisar quando um vencimento cai em dia sem expediente. Feriados móveis (Carnaval, Páscoa) entram ano a ano.", `<button class="btn-primario" onclick="abrirModalFeriado(null)">+ Novo</button>`) + `
+      <div class="lista-cartao">${fer.length
+        ? fer.map(f => linha(`abrirModalFeriado(${f.id})`, `<b>${escHtml(f.descricao || "Feriado")}</b><small>${fData(f.data)}</small>`)).join("")
+        : '<div class="vazio">Nenhum feriado cadastrado.</div>'}</div>`;
     return;
   }
 
   if (secao.tipo === "usuarios") {
-    const ROTULO_PAPEL = { admin:"Administrador", operacional:"Operacional", leitura:"Leitura" };
+    const ROTULO_PAPEL = { admin:"Administrador", operacional:"Operacional", leitura:"Só leitura" };
     const CLASSE_PAPEL = { admin:"chip-pago", operacional:"chip-pendente", leitura:"" };
-    conteudo.innerHTML = `<div class="cartao">
-      <div class="cartao-cabeca">
-        <h2 class="titulo-risco"><span>Usuários</span></h2>
-      </div>
-      <p class="cartao-nota">Pra adicionar alguém: Supabase → Authentication → Users → Add user (e-mail + senha). O perfil aparece aqui sozinho como "Leitura" — edite o nível de acesso depois.</p>
-      <div>${dados.perfis.length
-        ? dados.perfis.map(p => `
-          <div class="admin-linha">
-            ${avatarHtml(p.nome, p.avatar_url)}
-            <span class="admin-linha-nome">${escHtml(p.nome || "(sem nome)")}</span>
-            <span class="chip chip-status ${CLASSE_PAPEL[p.papel] || ""}">${ROTULO_PAPEL[p.papel] || p.papel}</span>
-            ${p.ativo === false ? `<span class="chip chip-status chip-vencido">Inativo</span>` : ""}
-            <button class="btn-editar" onclick="abrirModalPerfil('${p.id}')" title="Editar">${icone("pencil", "icone-sm")}</button>
-          </div>`).join("")
-        : '<div class="vazio">Nenhum usuário. Rode a migração correcoes_v19.sql no Supabase.</div>'}</div>
-    </div>`;
+    conteudo.innerHTML = cabeca("Usuários e acessos", "Toque em uma pessoa para definir o que ela pode ver e fazer. Para dar acesso a alguém novo, crie o login dela no Supabase (Authentication → Add user): ela aparece aqui como \"Só leitura\" até você liberar.") + `
+      <div class="lista-cartao">${dados.perfis.length
+        ? dados.perfis.map(p => linha(`abrirModalPerfil('${p.id}')`,
+            `<b>${escHtml(p.nome || "Sem nome")}</b><small>${p.papel === "admin" ? "acesso total" : (p.ve_financeiro === false ? "sem acesso ao dinheiro" : "vê o financeiro")}</small>`,
+            `<span class="chip chip-status ${CLASSE_PAPEL[p.papel] || ""}">${ROTULO_PAPEL[p.papel] || p.papel}</span>${p.ativo === false ? `<span class="chip chip-status chip-vencido">Bloqueado</span>` : ""}`,
+            avatarHtml(p.nome, p.avatar_url))).join("")
+        : '<div class="vazio">Nenhum usuário. Rode a migração correcoes_v19.sql no Supabase.</div>'}</div>`;
     return;
   }
 
   if (secao.tipo === "auditoria") {
-    const NOME_TABELA_LOG = { lancamentos:"Extrato", recebimentos:"Recebimentos", diesel:"Abastecimento", manutencoes:"Manutenção", agenda:"Agenda" };
-    const NOME_ACAO = { criar:"criou", editar:"editou", excluir:"excluiu" };
-    conteudo.innerHTML = `<div class="cartao">
-      <div class="cartao-cabeca">
-        <h2 class="titulo-risco"><span>Atividade recente</span></h2>
-      </div>
-      <p class="cartao-nota">últimas 100 alterações em Extrato, Recebimentos, Abastecimento, Manutenção e Agenda.</p>
-      <div>${dados.logAtividade.length
-        ? dados.logAtividade.map(l => {
-            const autor = dados.perfis.find(p => p.id === l.usuario_id);
-            const quando = new Date(l.criado_em);
-            const dataHora = fData(isoLocal(quando)) + " " + String(quando.getHours()).padStart(2,"0") + ":" + String(quando.getMinutes()).padStart(2,"0");
-            return `<div class="admin-linha">
-              <span class="admin-linha-nome">${escHtml(autor?.nome || "Alguém")} ${NOME_ACAO[l.acao] || l.acao} um registro em ${escHtml(NOME_TABELA_LOG[l.tabela] || l.tabela)}</span>
-              <span class="td-mudo">${dataHora}</span>
-            </div>`;
-          }).join("")
-        : '<div class="vazio">Sem atividade registrada ainda (ou você não é administrador — o log só aparece pra admins).</div>'}</div>
-    </div>`;
+    const pessoas = dados.perfis.filter(p => dados.logAtividade.some(l => l.usuario_id === p.id));
+    const itens = agruparHistorico(dados.logAtividade.filter(l => filtroHistorico === "todos" || l.usuario_id === filtroHistorico));
+    let diaAtual = "";
+    const html = itens.map(it => {
+      const dia = isoLocal(new Date(it.quando));
+      const titDia = dia !== diaAtual ? `<h3 class="grupo-titulo">${dia === hoje() ? "Hoje" : dia === somarDias(hoje(), -1) ? "Ontem" : fData(dia)}</h3>` : "";
+      diaAtual = dia;
+      const hora = new Date(it.quando).toTimeString().slice(0, 5);
+      return titDia + `<div class="hist-item">
+        ${it.sistema ? `<span class="avatar-fallback hist-sistema">${icone("atualizar", "icone-sm")}</span>` : avatarHtml(it.nome, it.avatar)}
+        <div class="hist-texto">
+          <div><b>${escHtml(it.nome)}</b> ${it.frase}</div>
+          ${it.detalhe ? `<small>${it.detalhe}</small>` : ""}
+          ${it.extra ? `<small class="hist-extra">${it.extra}</small>` : ""}
+        </div>
+        <span class="hist-hora">${hora}</span>
+      </div>`;
+    }).join("");
+    conteudo.innerHTML = cabeca("Histórico de alterações", "o que cada pessoa criou, alterou ou excluiu (últimas 300 alterações).") + `
+      ${pessoas.length > 1 ? `<div class="filtros"><select onchange="filtroHistorico = this.value; renderAdministracao()">
+        <option value="todos">Todas as pessoas</option>
+        ${pessoas.map(p => `<option value="${p.id}" ${filtroHistorico === p.id ? "selected" : ""}>${escHtml(p.nome || "Sem nome")}</option>`).join("")}
+      </select></div>` : ""}
+      <div class="lista-cartao hist-lista">${html || '<div class="vazio">Nenhuma alteração registrada ainda.</div>'}</div>`;
   }
+}
+
+/* ── Histórico: transforma o log técnico em frases ── */
+const NOME_TABELA_HIST = { lancamentos: "o Extrato", recebimentos: "Horas", diesel: "Abastecimento", manutencoes: "Manutenção", agenda: "Contas", servicos: "Serviços" };
+const ROTULO_CAMPO_HIST = {
+  data: "data", valor_total: "valor", entrada: "valor", saida: "valor", valor: "valor", litros: "litros", valor_unit: "preço do litro",
+  valor_unit_bruto: "preço da bomba", desconto: "desconto", status: "situação", status_pagamento: "situação", vencimento: "vencimento",
+  descricao: "descrição", item: "descrição", grupo: "categoria", natureza: "tipo de custo", banco: "conta", local: "posto",
+  combustivel: "combustível", equipamento_id: "equipamento", centro_custo_id: "centro de custo", cliente: "cliente", operador: "operador",
+  hora_inicial: "horímetro", hora_final: "horímetro", horas: "horas", valor_hora: "valor da hora", valor_pago: "valor recebido",
+  recebido: "recebido", servico_id: "serviço", nome: "nome", data_fim: "fim", data_inicio: "início", valor_fechado: "valor fechado",
+  cobranca: "cobrança", pecas: "peças", fornecedor: "oficina", valor_pecas: "peças", valor_mao_obra: "mão de obra", realizada: "realizada",
+  data_pagamento: "data do pagamento", mes: "vencimento", dia: "vencimento", ano: "vencimento", tipo: "tipo",
+  proxima_data: "próxima revisão", proxima_horimetro: "próxima revisão", comprovante_pagamento_path: "comprovante", nota_fiscal_path: "nota fiscal",
+};
+function registroDoLog(l) {
+  if (l.dados) return normNum(l.dados, l.tabela);
+  const fonte = { lancamentos: dados.lanc, recebimentos: dados.rec, diesel: dados.die, manutencoes: dados.man, agenda: dados.age, servicos: dados.servicos }[l.tabela];
+  return (fonte || []).find(x => x.id === l.registro_id) || null;
+}
+function descreverRegistroHist(tabela, r) {
+  if (!r) return { oque: { lancamentos: "um lançamento", recebimentos: "um registro de horas", diesel: "um abastecimento", manutencoes: "uma manutenção", agenda: "uma conta", servicos: "um serviço" }[tabela] || "um registro", detalhe: "" };
+  const eq = r.equipamento_id ? nomeEquipamento(r.equipamento_id) : "";
+  const j = (...p) => p.filter(Boolean).map(escHtml).join(" · ");
+  switch (tabela) {
+    case "lancamentos": return { oque: r.entrada > 0 ? "uma receita" : "uma despesa", detalhe: j(r.descricao || r.grupo, brl(r.entrada || r.saida), r.banco, fData(r.data)) };
+    case "diesel": return { oque: "um abastecimento", detalhe: j(`${num(r.litros || 0, 0)} L de ${r.combustivel || "Diesel"}`, brl(r.valor_total), eq, r.local, fData(r.data)) };
+    case "recebimentos": return { oque: "horas trabalhadas", detalhe: j(`${num(r.horas || 0)} h`, r.cliente, eq, fData(r.data)) };
+    case "manutencoes": return { oque: "uma manutenção", detalhe: j(r.descricao, r.valor_total ? brl(r.valor_total) : "", eq, fData(r.data)) };
+    case "agenda": return { oque: r.valor < 0 ? "uma conta a receber" : "uma conta a pagar", detalhe: j(r.item, brl(Math.abs(r.valor || 0)), r.ano ? `vence ${String(r.dia).padStart(2, "0")}/${String(r.mes).padStart(2, "0")}/${r.ano}` : "") };
+    case "servicos": return { oque: "um serviço", detalhe: j(r.nome, r.cliente) };
+    default: return { oque: "um registro", detalhe: "" };
+  }
+}
+// Junta o que a mesma pessoa fez no mesmo instante (ex.: salvar um abastecimento
+// também cria o lançamento no Extrato) numa linha só, e as alterações feitas
+// direto no banco (sem usuário) numa linha "Sistema" por dia.
+function agruparHistorico(logs) {
+  const grupos = [];
+  for (const l of logs) {
+    const t = new Date(l.criado_em).getTime();
+    const ult = grupos[grupos.length - 1];
+    const mesmo = ult && ult.usuario_id === l.usuario_id && (l.usuario_id
+      ? Math.abs(ult.t - t) <= 15000
+      : isoLocal(new Date(ult.t)) === isoLocal(new Date(t)));
+    if (mesmo) { ult.itens.push(l); ult.t = Math.min(ult.t, t); }
+    else grupos.push({ usuario_id: l.usuario_id, t, itens: [l] });
+  }
+  const VERBO = { criar: "criou", editar: "alterou", excluir: "excluiu" };
+  return grupos.map(g => {
+    if (!g.usuario_id) return { sistema: true, nome: "Sistema", quando: g.itens[0].criado_em, frase: `fez ${g.itens.length} ajuste${g.itens.length > 1 ? "s" : ""} automático${g.itens.length > 1 ? "s" : ""} no banco`, detalhe: "migrações e correções feitas direto no banco de dados" };
+    const p = dados.perfis.find(x => x.id === g.usuario_id);
+    // ação principal: o que a pessoa mexeu de fato (o lançamento/conta gerados vêm junto)
+    const principal = g.itens.find(x => x.tabela !== "lancamentos" && x.tabela !== "agenda") || g.itens.find(x => x.tabela !== "agenda") || g.itens[0];
+    const reg = registroDoLog(principal);
+    const d = descreverRegistroHist(principal.tabela, reg);
+    const campos = principal.acao === "editar" && principal.campos ? [...new Set(principal.campos.map(c => ROTULO_CAMPO_HIST[c] || c.replace(/_/g, " ")))] : [];
+    const outros = g.itens.filter(x => x !== principal);
+    const resumoOutros = outros.length ? [...new Set(outros.map(x => (x.tabela === "lancamentos" ? "lançamento no Extrato" : x.tabela === "agenda" ? "conta em Contas" : NOME_TABELA_HIST[x.tabela] || x.tabela)))] : [];
+    return {
+      nome: p?.nome || "Usuário sem nome", avatar: p?.avatar_url, quando: g.itens[0].criado_em,
+      frase: `${VERBO[principal.acao] || principal.acao} ${d.oque}${principal.tabela !== "lancamentos" ? " em " + NOME_TABELA_HIST[principal.tabela] : ""}`,
+      detalhe: d.detalhe,
+      extra: [campos.length ? "mudou: " + campos.join(", ") : "", resumoOutros.length ? "junto: " + resumoOutros.join(", ") : ""].filter(Boolean).join(" · "),
+    };
+  });
+}
+
+// Empresa: nome exibido e conta padrão (tabela config)
+function abrirModalEmpresa() {
+  abrirModal({
+    titulo: "Empresa",
+    tabela: "_empresa",
+    campos: [
+      { nome: "empresa_nome", rotulo: "Nome da empresa", tipo: "texto", largo: true, valor: document.querySelector("[data-empresa-nome]")?.textContent || "", obrigatorio: true },
+      { nome: "conta_padrao", rotulo: "Conta padrão dos lançamentos automáticos", tipo: "select", largo: true, opcoes: opcoesContaBancaria(), valor: contaPadrao() },
+    ],
+    montar(f) {
+      if (!f.empresa_nome.trim()) throw "Informe o nome da empresa.";
+      return { empresa_nome: f.empresa_nome.trim(), conta_padrao: f.conta_padrao };
+    },
+    async aoSalvar(reg) {
+      const { error } = await sb.from("config").upsert([{ chave: "empresa_nome", valor: reg.empresa_nome }, { chave: "conta_padrao", valor: reg.conta_padrao }]);
+      if (error) { $("modal-erro").textContent = "Não foi possível salvar: " + error.message; $("modal-erro").classList.remove("oculto"); return; }
+      fecharModal();
+      toast("Dados da empresa salvos.");
+      await carregarTudo();
+    },
+  });
 }
 
 // Fábrica: cria a função abrirModalXxx(id) para um cadastro simples
@@ -2543,7 +2665,7 @@ function abrirModalFeriado(id) {
   });
 }
 
-const NOME_MODULO = { extrato:"Extrato", recebimentos:"Recebimentos", diesel:"Abastecimento", manutencao:"Manutenção", agenda:"Agenda" };
+const NOME_MODULO = { extrato:"Extrato", recebimentos:"Horas trabalhadas", diesel:"Abastecimento", manutencao:"Manutenção", agenda:"Contas a pagar/receber" };
 
 function abrirModalPerfil(id) {
   const p = dados.perfis.find(x => x.id === id);
@@ -2557,19 +2679,22 @@ function abrirModalPerfil(id) {
     tabela: "perfis", id,
     semExcluir: true,
     campos: [
-      { nome:"nome", rotulo:"Nome", tipo:"texto", largo:true, valor: p.nome || "" },
-      { nome:"papel", rotulo:"Nível de acesso", tipo:"select",
-        opcoes:["leitura|Leitura (só visualizar)","operacional|Operacional (lança e edita)","admin|Administrador (acesso total)"],
+      { nome:"nome", rotulo:"Nome", tipo:"texto", largo:true, valor: p.nome || "", obrigatorio: true },
+      { nome:"papel", rotulo:"O que pode fazer", tipo:"select", largo:true,
+        opcoes:["leitura|Só consultar (não lança nada)","operacional|Lançar e editar (não exclui)","admin|Administrador (tudo, inclusive excluir e configurar)"],
         valor: p.papel || "leitura" },
-      { nome:"ativo", rotulo:"Ativo (acesso liberado)", tipo:"checkbox", valor: p.ativo ?? true },
-      { nome:"ve_financeiro", rotulo:"Vê o Painel e o saldo em caixa", tipo:"checkbox", largo:true, valor: p.ve_financeiro ?? true },
-      // módulos — só valem pra quem é "operacional" (admin sempre vê tudo)
-      ...Object.entries(NOME_MODULO).map(([chave, rotulo]) => ({
-        nome: "mod_" + chave, rotulo: "Módulo: " + rotulo, tipo:"checkbox", valor: modulos[chave] ?? true,
+      { nome:"ativo", rotulo:"Acesso liberado (desmarque para bloquear)", tipo:"checkbox", largo:true, valor: p.ativo ?? true },
+      { nome:"_sep_ver", rotulo:"O que pode ver", tipo:"separador", visivelSe: f => f.papel !== "admin" },
+      { nome:"ve_financeiro", rotulo:"Dinheiro: saldo, Extrato, Contas e lucro dos Serviços", tipo:"checkbox", largo:true, valor: p.ve_financeiro ?? true, visivelSe: f => f.papel !== "admin" },
+      ...Object.entries(NOME_MODULO).filter(([chave]) => !["extrato", "agenda"].includes(chave)).map(([chave, rotulo]) => ({
+        nome: "mod_" + chave, rotulo, tipo:"checkbox", valor: modulos[chave] ?? true, visivelSe: f => f.papel !== "admin",
       })),
-      // equipamentos liberados — em branco (nenhum marcado) = sem restrição, vê todos
+      ...Object.entries(NOME_MODULO).filter(([chave]) => ["extrato", "agenda"].includes(chave)).map(([chave, rotulo]) => ({
+        nome: "mod_" + chave, rotulo, tipo:"checkbox", valor: modulos[chave] ?? true, visivelSe: f => f.papel !== "admin" && f.ve_financeiro,
+      })),
+      { nome:"_sep_eq", rotulo:"Equipamentos (nenhum marcado = todos)", tipo:"separador", visivelSe: f => f.papel !== "admin" },
       ...dados.equipamentos.map(e => ({
-        nome: "equip_" + e.id, rotulo: "Equipamento: " + e.nome, tipo:"checkbox", valor: equipLiberados.has(e.id),
+        nome: "equip_" + e.id, rotulo: e.nome, tipo:"checkbox", valor: equipLiberados.has(e.id), visivelSe: f => f.papel !== "admin",
       })),
     ],
     montar(f) {
@@ -2682,7 +2807,7 @@ function linhaConta(a, compacta) {
     <span class="conta-data ${atraso ? "neg" : ""}">${atraso ? icone("alerta", "icone-sm") + " " : ""}${quando}</span>
     <span class="conta-desc"><b>${escHtml(a.item)}</b>${!compacta ? `<small>${escHtml([ROTULO_ORIGEM[a.origem_tabela] ? "via " + ROTULO_ORIGEM[a.origem_tabela] : a.grupo, contexto.equipamentoId == null && a.equipamento_id ? nomeEquipamento(a.equipamento_id) : ""].filter(Boolean).join(" · "))}</small>` : ""}</span>
     <span class="conta-valor ${receber ? "pos" : ""}">${receber ? "+ " : ""}${brl(Math.abs(a.valor))}</span>
-    ${podePagar ? `<button type="button" class="btn-pagar" onclick="event.stopPropagation(); abrirModalBaixaAgenda(${a.id})">Pagar</button>` : `<span class="btn-pagar-vazio"></span>`}
+    ${podePagar ? `<button type="button" class="btn-pagar" onclick="event.stopPropagation(); abrirModalBaixaAgenda(${a.id})">${receber ? "Receber" : "Pagar"}</button>` : `<span class="btn-pagar-vazio"></span>`}
   </div>`;
 }
 
@@ -2885,14 +3010,15 @@ function abrirModalEscolhaAcaoAgenda(id) {
   const a = dados.age.find(x => x.id === id);
   if (!a) return;
   const jaPago = a.status_pagamento === "pago";
+  const receber = a.valor < 0;
   const html = `<div class="acao-botoes">
     <button type="button" class="acao-botao acao-destaque" onclick="fecharModal(); abrirModalBaixaAgenda(${id})">
-      <span class="acao-titulo">${jaPago ? "Estornar baixa" : "Dar baixa"}</span>
-      <span class="acao-sub">${jaPago ? "voltar para em aberto" : "marcar como pago"}</span>
+      <span class="acao-titulo">${jaPago ? "Desfazer" : receber ? "Confirmar recebimento" : "Pagar"}</span>
+      <span class="acao-sub">${jaPago ? "volta para em aberto e tira do Extrato" : receber ? "o dinheiro entrou" : "o dinheiro saiu"}</span>
     </button>
     <button type="button" class="acao-botao" onclick="fecharModal(); abrirModalAgenda(${id})">
       <span class="acao-titulo">Editar</span>
-      <span class="acao-sub">dados do compromisso</span>
+      <span class="acao-sub">valor, vencimento, descrição</span>
     </button>
   </div>`;
   abrirModal({
@@ -2909,12 +3035,14 @@ function abrirModalBaixaAgenda(id) {
   const a = dados.age.find(x => x.id === id);
   if (!a) return;
   const jaPago = a.status_pagamento === "pago";
+  const receber = a.valor < 0;
   abrirModal({
-    titulo: (jaPago ? "Estornar baixa: " : "Dar baixa: ") + a.item,
+    titulo: (jaPago ? "Desfazer: " : receber ? "Receber: " : "Pagar: ") + a.item,
     tabela: "_baixa_agenda",
-    rotuloSalvar: jaPago ? "Estornar baixa" : "Confirmar baixa",
-    campos: jaPago ? [] : [
-      { nome:"data_pagamento", rotulo:"Data do pagamento", tipo:"date", valor: hoje() },
+    rotuloSalvar: jaPago ? "Voltar para em aberto" : receber ? "Confirmar recebimento" : "Confirmar pagamento",
+    campos: jaPago ? [{ tipo:"info", texto:`O lançamento de ${brl(Math.abs(a.valor))} sai do Extrato e a conta volta a ficar em aberto.` }] : [
+      { tipo:"info", texto:`${receber ? "Valor a receber" : "Valor a pagar"}: ${brl(Math.abs(a.valor))}` },
+      { nome:"data_pagamento", rotulo: receber ? "Data do recebimento" : "Data do pagamento", tipo:"date", valor: hoje() },
     ],
     montar(f) {
       const base = {
@@ -2931,47 +3059,47 @@ function abrirModalBaixaAgenda(id) {
   });
 }
 
-function abrirModalAgenda(id) {
+function abrirModalAgenda(id, tipoNovo) {
   const a = id ? dados.age.find(x => x.id === id) : null;
+  const tipo = a ? (a.valor < 0 ? "receber" : "pagar") : (tipoNovo || "pagar");
+  const ehPagar = (f) => f._tipo === "pagar";
+  const grupos = opcoesGrupoDespesa();
   const campos = [
-    { nome:"item", rotulo:"Compromisso", tipo:"texto", largo:true, valor: a?.item || "" },
+    { nome:"_tipo", rotulo:"É uma conta…", tipo:"select", largo:true, opcoes:["pagar|A pagar (vai sair dinheiro)","receber|A receber (vai entrar dinheiro)"], valor: tipo },
+    { nome:"item", rotulo:"Descrição", tipo:"texto", largo:true, valor: a?.item || "", obrigatorio:true },
+    { nome:"valor", rotulo:"Valor (R$)", tipo:"moeda", valor: a ? Math.abs(a.valor) : "", obrigatorio:true },
+    { nome:"vencimento", rotulo:"Vencimento", tipo:"date", valor: a ? vencimentoAgenda(a) : hoje(), obrigatorio:true },
+    { nome:"grupo", rotulo:"Categoria (vai para o Extrato)", tipo:"select", opcoes: grupos, valor: a?.grupo && a.grupo !== "Recebimentos" ? a.grupo : (grupos.includes("Outras despesas") ? "Outras despesas" : grupos[0]), visivelSe: ehPagar },
+    { nome:"natureza", rotulo:"Tipo de custo", tipo:"select", opcoes:["Fixo|Custo fixo","Variavel|Custo variável","Investimento|Investimento"], valor: a?.natureza && a.natureza !== "Receita" ? a.natureza : "Fixo", visivelSe: ehPagar },
     { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(true), valor: equipamentoPadrao(a?.equipamento_id, true) },
-    { nome:"grupo", rotulo:"Grupo (no extrato, quando der baixa)", tipo:"select", opcoes: opcoesGrupoDespesa(), valor: a?.grupo || "Outras despesas" },
-    { nome:"ano", rotulo:"Ano", tipo:"numero", valor: a?.ano || anoAgenda },
-    { nome:"dia", rotulo:"Dia do vencimento", tipo:"texto", valor: a?.dia || "" },
-    { nome:"mes", rotulo:"Mês", tipo:"select",
-      opcoes: MESES.map((m,i) => `${i+1}|${m}`), valor: String(a?.mes || (new Date().getMonth()+1)) },
-    { nome:"valor", rotulo:"Valor (R$) — use negativo para estorno", tipo:"moeda", negativo: true, valor: a?.valor ?? "" },
-    { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Fixo|Custo fixo","Variavel|Custo variável","Investimento|Investimento"], valor: a?.natureza || "Fixo" },
-    { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(a?.centro_custo_id) },
-    { nome:"status_pagamento", rotulo:"Situação", tipo:"select", opcoes:["pendente|Em aberto","pago|Dar baixa (pago)"], valor: a?.status_pagamento || "pendente" },
-    { nome:"data_pagamento", rotulo:"Data do pagamento (se deu baixa)", tipo:"date", valor: a?.data_pagamento || hoje() },
+    { nome:"centro_custo_id", rotulo:"Centro de custo (como será pago)", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(a?.centro_custo_id), visivelSe: ehPagar },
+    { nome:"status_pagamento", rotulo:"Situação", tipo:"select", opcoes:["pendente|Em aberto","pago|Já foi paga / recebida"], valor: a?.status_pagamento || "pendente" },
+    { nome:"data_pagamento", rotulo:"Data do pagamento", tipo:"date", valor: a?.data_pagamento || hoje(), visivelSe: f => f.status_pagamento === "pago" },
   ];
   if (!id) {
-    campos.push({ nome:"replicarMeses", rotulo:"Repetir por mais quantos meses (0 = só este)", tipo:"numero", valor: 0 });
+    campos.push({ nome:"replicarMeses", rotulo:"Repete todo mês? Quantos meses a mais (0 = não repete)", tipo:"numero", largo:true, valor: 0 });
   }
 
   abrirModal({
-    titulo: a ? "Editar compromisso" : "Novo compromisso",
+    titulo: a ? "Editar conta" : tipo === "receber" ? "Nova conta a receber" : "Nova conta a pagar",
     tabela: "agenda", id,
-    tituloExclusao: a ? `o compromisso "${a.item}"` : null,
-    avisoExcluir: a && a.lancamento_id
-      ? "Isso também remove o lançamento vinculado no Extrato."
-      : null,
+    tituloExclusao: a ? `a conta "${a.item}"` : null,
+    avisoExcluir: a && a.lancamento_id ? "Isso também remove o lançamento vinculado no Extrato." : null,
     campos,
     montar(f) {
-      if (!f.item.trim()) throw "Informe o nome do compromisso.";
+      if (!f.item.trim()) throw "Informe a descrição da conta.";
       const v = numDeMoeda(f.valor);
-      if (!v) throw "Informe um valor diferente de zero.";
-      const anoNum = Number(f.ano);
-      if (!anoNum || anoNum < 2000) throw "Informe um ano válido.";
+      if (!v || v <= 0) throw "Informe um valor maior que zero.";
+      if (!f.vencimento) throw "Informe o vencimento.";
       if (f.status_pagamento === "pago" && !f.data_pagamento) throw "Informe a data do pagamento.";
+      const [ano, mes, dia] = f.vencimento.split("-").map(Number);
+      const pagar = ehPagar(f);
       return {
         item: f.item.trim(), equipamento_id: f.equipamento_id ? Number(f.equipamento_id) : null,
-        grupo: f.grupo, ano: anoNum, dia: f.dia.trim(), mes: Number(f.mes), valor: v,
-        natureza: f.natureza, centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
+        grupo: pagar ? f.grupo : "Recebimentos", ano, dia: String(dia), mes, valor: pagar ? v : -v,
+        natureza: pagar ? f.natureza : "Receita", centro_custo_id: pagar && f.centro_custo_id ? Number(f.centro_custo_id) : null,
         status_pagamento: f.status_pagamento, data_pagamento: f.status_pagamento === "pago" ? f.data_pagamento : null,
-        _replicarMeses: id ? 0 : (Number(f.replicarMeses) || 0),
+        _replicarMeses: id ? 0 : Math.max(0, Math.min(60, Number(f.replicarMeses) || 0)),
       };
     },
     async aoSalvar(reg) {
@@ -3124,7 +3252,7 @@ function abrirModal(ctx) {
     const largo = (c.largo ? "form-larga " : "") + (c.oculto ? "oculto " : "");
     const dataGrupo = c.grupoCondicional ? `data-grupo-cond="${c.grupoCondicional}"` : "";
     if (c.tipo === "separador") {
-      return `<div class="form-separador form-larga ${c.oculto ? "oculto" : ""}" ${dataGrupo}>${c.rotulo}</div>`;
+      return `<div class="form-separador form-larga ${c.oculto ? "oculto" : ""}" ${dataGrupo} data-sep="${escHtml(c.nome || "")}">${c.rotulo}</div>`;
     }
     if (c.tipo === "info") {
       return `<div class="form-info form-larga">${escHtml(c.texto)}${c.acaoId
@@ -3234,6 +3362,26 @@ function abrirModal(ctx) {
     chk.addEventListener("change", aplicar);
     aplicar();
   });
+
+  // campos que só aparecem conforme outro campo (ex.: "Categoria" só em despesa,
+  // "Data do pagamento" só se já foi pago) — reavalia a cada mudança no formulário
+  const mc = $("modal-campos");
+  if (mc._visivel) { mc.removeEventListener("input", mc._visivel); mc.removeEventListener("change", mc._visivel); mc._visivel = null; }
+  const condicionais = ctx.campos.filter(c => c.visivelSe);
+  if (condicionais.length) {
+    mc._visivel = () => {
+      const f = lerFormulario();
+      condicionais.forEach(c => {
+        const alvo = c.tipo === "separador"
+          ? mc.querySelector(`[data-sep="${c.nome}"]`)
+          : mc.querySelector(`[data-campo="${c.nome}"]`)?.closest("label, .campo-arquivo");
+        if (alvo) alvo.classList.toggle("oculto", !c.visivelSe(f));
+      });
+    };
+    mc.addEventListener("input", mc._visivel);
+    mc.addEventListener("change", mc._visivel);
+    mc._visivel();
+  }
 
   ctx.campos.forEach(c => {
     if (!c.autocompletar || !c.lista) return;

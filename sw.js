@@ -2,7 +2,7 @@
    Estratégia: arquivos do próprio site = rede primeiro (sempre a versão
    publicada mais nova), com cópia em cache para abrir sem internet.
    Supabase, a API da IA e outros domínios nunca passam pelo cache. */
-const CACHE = "ta-frota-v2.1.0";
+const CACHE = "ta-frota-v2.2.0";
 const ARQUIVOS = [
   "./", "index.html", "style.css", "app.js", "servicos.js", "shell.js", "nota-qr.js", "config.js",
   "vendor/supabase.min.js", "vendor/chart.min.js", "vendor/jsQR.js",

@@ -46,6 +46,15 @@ const paginasDoGrupo = (g) => (g.paginas || []).filter(paginaPermitida);
 /* ── Rotas (#/extrato etc.) — o botão voltar do celular funciona ── */
 function irPara(aba) {
   if (!paginaPermitida(aba)) aba = paginaInicial();
+  if (voltandoHist) { irDepoisDeVoltar = aba; return; }
+  // saindo de uma janela direto para outra página: troca a entrada da janela no
+  // histórico pela página nova (sem o "voltar" automático disputar com a navegação)
+  if (modalNoHistorico && history.state && history.state.modal) {
+    modalNoHistorico = false;
+    history.replaceState(null, "", "#/" + aba);
+    mostrarPagina(aba);
+    return;
+  }
   if (location.hash !== "#/" + aba) location.hash = "#/" + aba;
   else mostrarPagina(aba);
 }
@@ -135,12 +144,15 @@ function opcoesNovoRegistro() {
   if (meusModulos.diesel !== false) op.push({ chave: "abastecimento", titulo: "Abastecimento", sub: "foto da nota preenche sozinho", icone: "abastecimento", cor: "#F5B301", fn: () => abrirModalDiesel(null) });
   if (vejoFinanceiro && dados.temServicos) op.push({ chave: "servico", titulo: "Serviço", sub: "cliente, custos e lucro do trabalho", icone: "servico", cor: "#4EC9D4", fn: () => abrirModalServico(null) });
   if (meusModulos.recebimentos !== false) op.push({ chave: "horas", titulo: "Horas trabalhadas", sub: "horímetro e cliente", icone: "relogio", cor: "#4DA3FF", fn: () => abrirModalRecebimento(null) });
-  if (meusModulos.manutencao !== false) op.push({ chave: "manutencao", titulo: "Manutenção", sub: "serviço, peças e oficina", icone: "manutencao", cor: "#FF8C42", fn: () => abrirModalManutencao(null) });
+  if (meusModulos.manutencao !== false) op.push({ chave: "manutencao", titulo: "Manutenção", sub: "conserto, peças e oficina", icone: "manutencao", cor: "#FF8C42", fn: () => abrirModalManutencao(null) });
   if (vejoFinanceiro && meusModulos.extrato !== false) {
     op.push({ chave: "despesa", titulo: "Despesa", sub: "saiu dinheiro", icone: "saida", cor: "#F0564A", fn: () => abrirModalLancamento(null, "saida") });
     op.push({ chave: "receita", titulo: "Receita", sub: "entrou dinheiro", icone: "entrada", cor: "#3ECF8E", fn: () => abrirModalLancamento(null, "entrada") });
   }
-  if (vejoFinanceiro && meusModulos.agenda !== false) op.push({ chave: "conta", titulo: "Conta a pagar", sub: "boleto, parcela, mensalidade", icone: "agenda", cor: "#A78BFA", fn: () => abrirModalAgenda(null) });
+  if (vejoFinanceiro && meusModulos.agenda !== false) {
+    op.push({ chave: "conta", titulo: "Conta a pagar", sub: "boleto, parcela, mensalidade", icone: "agenda", cor: "#A78BFA", fn: () => abrirModalAgenda(null, "pagar") });
+    op.push({ chave: "conta_receber", titulo: "Conta a receber", sub: "cliente que vai pagar depois", icone: "entrada", cor: "#2FB37A", fn: () => abrirModalAgenda(null, "receber") });
+  }
   return op;
 }
 function tileHtml(o, classe) {
@@ -241,7 +253,7 @@ function renderMais() {
     <div class="mais-lista">
       ${podeInstalar ? linha("baixar", "Instalar o aplicativo", "abre como app, direto da tela inicial", "instalarWebApp()", "mais-destaque") : ""}
       ${linha("usuario", "Meu perfil", "nome, foto e senha", "abrirModalMeuPerfil()")}
-      ${meuPapel === "admin" ? linha("administracao", "Configurações", "equipamentos, clientes, contas, usuários", "irPara('administracao')") : ""}
+      ${meuPapel === "admin" ? linha("administracao", "Configurações", "empresa, cadastros, usuários e histórico", "irPara('administracao'); mudarSecaoAdmin(null)") : ""}
       ${linha("atualizar", "Atualizar dados", "busca de novo no servidor", "carregarTudo().then(() => toast('Dados atualizados.'))")}
     </div>
     ${meuPapel === "admin" ? `
@@ -273,9 +285,11 @@ function renderSelosNav() {
 
 /* ── Modal no histórico: o "voltar" do celular fecha a janela aberta ── */
 let modalNoHistorico = false;
+let voltandoHist = false;   // um history.back() nosso ainda em andamento
+let irDepoisDeVoltar = null;
 function marcarModalNoHistorico() {
   document.body.classList.add("modal-aberto");
-  if (!modalNoHistorico) {
+  if (!modalNoHistorico && !voltandoHist) {
     try { history.pushState({ modal: true }, ""); modalNoHistorico = true; } catch (e) { /* ignora */ }
   }
 }
@@ -285,10 +299,20 @@ function desmarcarModalNoHistorico() {
     // se outra janela abriu logo em seguida (fluxos encadeados), reaproveita a mesma entrada
     if (!modalNoHistorico || !$("modal-fundo").classList.contains("oculto")) return;
     modalNoHistorico = false;
-    if (history.state && history.state.modal) history.back();
+    if (history.state && history.state.modal) { voltandoHist = true; history.back(); }
   }, 0);
 }
 window.addEventListener("popstate", () => {
+  if (voltandoHist) {
+    // fim do nosso próprio "voltar": se nesse meio-tempo abriu outra janela ou
+    // pediram outra página, aplica agora
+    voltandoHist = false;
+    if (!$("modal-fundo").classList.contains("oculto")) {
+      try { history.pushState({ modal: true }, ""); modalNoHistorico = true; } catch (e) { /* ignora */ }
+    }
+    if (irDepoisDeVoltar) { const a = irDepoisDeVoltar; irDepoisDeVoltar = null; irPara(a); }
+    return;
+  }
   if (history.state && history.state.modal) return;
   if (!modalNoHistorico) return;
   modalNoHistorico = false;
@@ -300,7 +324,7 @@ window.addEventListener("popstate", () => {
 });
 
 /* ── Web app instalável (PWA) ── */
-const VERSAO_APP = "2.1.0";
+const VERSAO_APP = "2.2.0";
 function registrarWebApp() {
   window.addEventListener("beforeinstallprompt", (ev) => {
     ev.preventDefault();
