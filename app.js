@@ -8,7 +8,7 @@
 /* ── Estado global ─────────────────────────────────────── */
 let sb = null;                 // cliente Supabase
 const dados = {
-  saldoInicial: 0, lanc: [], rec: [], die: [], age: [], man: [],
+  saldoInicial: 0, saldoConfig: 0, legadoPorBanco: {}, lanc: [], rec: [], die: [], age: [], man: [],
   dieExtra: [],
   equipamentos: [], centrosCusto: [], clientes: [], fornecedores: [],
   gruposDespesa: [], contasBancarias: [], operadores: [], obras: [], feriados: [], tiposRecebimento: [], perfis: [],
@@ -37,7 +37,7 @@ const CORES_GRUPO = {
   "Combustível":"#F5B301","Financiamento":"#F0564A","Investimento":"#7A8CF0",
   "Manutenção":"#FF8C42","Pessoal":"#4EC9D4","Seguro Frota":"#C77DFF",
   "Tarifas":"#8B919C","Taxas fixas":"#6B7280","Outras despesas":"#A3A8B4",
-  "Recebimentos":"#3ECF8E"
+  "Recebimentos":"#3ECF8E","Ajuste de saldo":"#8B919C"
 };
 const CORES_NATUREZA = { "Custo fixo":"#7A8CF0", "Custo variável":"#F5B301", "Investimento":"#C77DFF" };
 const ROTULO_NATUREZA = { Fixo:"Custo fixo", Variavel:"Custo variável", Investimento:"Investimento" };
@@ -562,12 +562,18 @@ async function carregarTudo() {
 
     const si = (cfg.data || []).find(c => c.chave === "saldo_inicial");
     dados.saldoInicial = si ? Number(si.valor) : 0;
+    dados.saldoConfig = dados.saldoInicial;
+    dados.legadoPorBanco = {};
     // Na operação nova o caixa não recomeça do zero: o resultado da base
     // antiga entra como saldo de abertura.
     if (modoBase === "nova") {
-      const { data: leg, error: erroLeg } = await comEquip(sb.from("lancamentos").select("entrada,saida,status")).eq("legado", true);
+      const { data: leg, error: erroLeg } = await comEquip(sb.from("lancamentos").select("entrada,saida,status,banco")).eq("legado", true);
       if (erroLeg) throw erroLeg;
-      dados.saldoInicial += (leg || []).filter(ehRealizado).reduce((t, l) => t + (Number(l.entrada) || 0) - (Number(l.saida) || 0), 0);
+      for (const l of (leg || []).filter(ehRealizado)) {
+        const v = (Number(l.entrada) || 0) - (Number(l.saida) || 0);
+        dados.saldoInicial += v;
+        dados.legadoPorBanco[l.banco] = (dados.legadoPorBanco[l.banco] || 0) + v;
+      }
     }
     dados.lanc = (lanc.data || []).map(o => normNum(o, "lancamentos"));
     dados.rec  = (rec.data  || []).map(o => normNum(o, "recebimentos"));
@@ -748,6 +754,10 @@ function rodarSemTravar(fn, nome) {
 // pendente = compromisso previsto, dinheiro ainda não mudou de mão —
 // não pode contar no saldo em caixa nem nos totais de fluxo realizado.
 const ehRealizado = (l) => l.status !== "pendente";
+// Ajuste de saldo: lançamento que acerta o app com o saldo real da conta. Entra
+// no saldo e no extrato, mas não conta como receita nem despesa nos painéis.
+const GRUPO_AJUSTE = "Ajuste de saldo";
+const ehAjusteSaldo = (l) => l.grupo === GRUPO_AJUSTE;
 
 function saldoAtual() {
   return dados.lanc.filter(ehRealizado).reduce((s, l) => s + l.entrada - l.saida, dados.saldoInicial);
@@ -774,7 +784,7 @@ function noPeriodo(lista) {
 }
 
 function renderPainel() {
-  const periodoLanc = noPeriodo(dados.lanc).filter(ehRealizado);
+  const periodoLanc = noPeriodo(dados.lanc).filter(ehRealizado).filter(l => !ehAjusteSaldo(l));
   const periodoRec  = noPeriodo(dados.rec);
   const periodoDie  = noPeriodo(dados.die);
 
@@ -978,7 +988,107 @@ function prepararFiltrosExtrato() {
     grupos.map(g => `<option ${g===filtroExt.grupo?"selected":""}>${escHtml(g)}</option>`).join("");
 }
 
+/* ── Saldo por conta e ajuste de saldo ────────────────── */
+const ID_SALDO_INICIAL = "__saldo_inicial__";
+
+// Saldo de cada conta = lançamentos realizados dela (+ o resultado da base
+// antiga, quando ela está oculta). O "saldo inicial" do sistema não pertence
+// a nenhuma conta, então aparece numa linha à parte — a soma de tudo é o
+// mesmo "Saldo em caixa" do topo.
+function saldosPorConta() {
+  const mapa = new Map();
+  dados.contasBancarias.filter(c => c.ativo).forEach(c => mapa.set(c.nome, 0));
+  for (const [banco, v] of Object.entries(dados.legadoPorBanco)) mapa.set(banco, (mapa.get(banco) || 0) + v);
+  for (const l of dados.lanc.filter(ehRealizado)) mapa.set(l.banco, (mapa.get(l.banco) || 0) + l.entrada - l.saida);
+  const linhas = [...mapa.entries()].map(([nome, saldo]) => ({ id: nome, nome, saldo }));
+  if (Math.abs(dados.saldoConfig) > 0.004) linhas.push({ id: ID_SALDO_INICIAL, nome: "Saldo inicial (sem conta)", saldo: dados.saldoConfig, semConta: true });
+  return linhas;
+}
+
+function renderSaldosContas() {
+  const el = $("ext-contas");
+  if (!el) return;
+  if (contexto.equipamentoId != null) {
+    el.innerHTML = `<p class="cartao-nota">Para ver e ajustar o saldo das contas, mude para <strong>Total do negócio</strong> (os saldos dependem de todos os lançamentos).</p>`;
+    return;
+  }
+  const linhas = saldosPorConta();
+  const total = linhas.reduce((t, x) => t + x.saldo, 0);
+  el.innerHTML = `
+    <div class="contas-cabecalho"><span>Saldo por conta</span><strong class="${total >= 0 ? "pos" : "neg"}">${brl(total)}</strong></div>
+    <div class="contas-lista">${linhas.map(x => `
+      <div class="conta-linha">
+        <span class="conta-nome">${escHtml(x.nome)}</span>
+        <span class="conta-saldo ${x.saldo >= 0 ? "pos" : "neg"}">${brl(x.saldo)}</span>
+        <button type="button" class="btn-link" data-ajustar-conta="${escHtml(x.id)}">Ajustar saldo</button>
+      </div>`).join("") || '<p class="cartao-nota">Nenhuma conta cadastrada ainda.</p>'}</div>`;
+  el.querySelectorAll("[data-ajustar-conta]").forEach(b => b.addEventListener("click", () => abrirModalAjusteSaldo(b.dataset.ajustarConta)));
+}
+
+// Acerta o saldo de uma conta com o que está no banco, quando você quiser.
+// Cria um lançamento "Ajuste de saldo" com a diferença (fica no histórico, dá
+// pra ver e excluir). O "saldo inicial" não tem lançamento: o valor é trocado.
+function abrirModalAjusteSaldo(idConta) {
+  const linha = saldosPorConta().find(x => x.id === idConta);
+  if (!linha) return;
+  const atual = linha.saldo;
+  const diferenca = (f) => { const novo = numDeMoeda(f); return Math.round((novo - atual) * 100) / 100; };
+  const campo = (n) => document.querySelector(`#modal-campos [data-campo="${n}"]`);
+  const atualizarDif = () => {
+    const raw = campo("novo_saldo").value;
+    const d = diferenca(raw);
+    campo("dif_calc").value = String(raw).trim() === "" ? "—" : d === 0 ? "Sem diferença" : (d > 0 ? "+ " : "− ") + brl(Math.abs(d));
+  };
+  abrirModal({
+    titulo: "Ajustar saldo — " + linha.nome,
+    tabela: "_ajuste_saldo",
+    campos: [
+      { nome:"atual_calc", rotulo:"Saldo no app agora", tipo:"calculado", valor: brl(atual) },
+      { nome:"novo_saldo", rotulo:"Saldo real da conta (R$)", tipo:"moeda", largo:true, valor:"", obrigatorio:true, aoMudar: atualizarDif },
+      { nome:"dif_calc", rotulo:"Diferença a lançar", tipo:"calculado", valor:"—" },
+      ...(linha.semConta ? [] : [
+        { nome:"data", rotulo:"Data do ajuste", tipo:"date", valor: hoje(), obrigatorio:true },
+        { nome:"obs", rotulo:"Observação (opcional)", tipo:"texto", largo:true, valor:"" },
+      ]),
+    ],
+    montar(f) {
+      if (String(f.novo_saldo).trim() === "") throw "Informe o saldo real da conta.";
+      const novo = numDeMoeda(f.novo_saldo);
+      if (diferenca(f.novo_saldo) === 0) throw "O saldo informado é igual ao do app: não há o que ajustar.";
+      return { novo, data: f.data, obs: (f.obs || "").trim() };
+    },
+    async aoSalvar(r) {
+      const erro = $("modal-erro");
+      try {
+        if (linha.semConta) {
+          // valor do config acompanha a mudança desejada no total
+          const { error } = await sb.from("config").upsert({ chave: "saldo_inicial", valor: r.novo });
+          if (error) throw error;
+        } else {
+          const dif = Math.round((r.novo - atual) * 100) / 100;
+          const { error } = await sb.from("lancamentos").insert(marcarBase({
+            data: r.data, banco: linha.nome, grupo: GRUPO_AJUSTE, subgrupo: "",
+            entrada: dif > 0 ? dif : 0, saida: dif < 0 ? -dif : 0,
+            descricao: `Ajuste de saldo — ${linha.nome}: de ${brl(atual)} para ${brl(r.novo)}${r.obs ? " · " + r.obs : ""}`,
+            natureza: dif > 0 ? "Receita" : "Variavel", status: "pago",
+            equipamento_id: null, centro_custo_id: null,
+          }));
+          if (error) throw error;
+        }
+      } catch (e) {
+        erro.textContent = "Não foi possível ajustar: " + (e.message || e);
+        erro.classList.remove("oculto");
+        return;
+      }
+      fecharModal();
+      toast(`Saldo de ${linha.nome} ajustado para ${brl(r.novo)}.`);
+      await carregarTudo();
+    },
+  });
+}
+
 function renderExtrato() {
+  renderSaldosContas();
   // saldo corrido na ordem cronológica — pendentes não entram na conta
   // (o dinheiro ainda não saiu/entrou), mas continuam aparecendo na lista.
   let acc = dados.saldoInicial;
@@ -996,6 +1106,7 @@ function renderExtrato() {
 
   let ent = 0, sai = 0, pendEnt = 0, pendSai = 0;
   for (const l of filtrado) {
+    if (ehAjusteSaldo(l)) continue; // ajuste de saldo não é receita nem despesa
     if (ehRealizado(l)) { ent += l.entrada; sai += l.saida; }
     else { pendEnt += l.entrada; pendSai += l.saida; }
   }
