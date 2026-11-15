@@ -45,6 +45,7 @@ const PALETA_CENTROS = ["#3ECF8E","#7A8CF0","#F5B301","#FF8C42","#4EC9D4","#C77D
 
 /* ── Utilidades ────────────────────────────────────────── */
 const $ = (id) => document.getElementById(id);
+const telaCombina = (q) => !!(window.matchMedia && window.matchMedia(q).matches);
 const brl  = (v) => (v ?? 0).toLocaleString("pt-BR", { style:"currency", currency:"BRL" });
 const brl0 = (v) => (v ?? 0).toLocaleString("pt-BR", { style:"currency", currency:"BRL", maximumFractionDigits:0 });
 const num  = (v, d=1) => (v ?? 0).toLocaleString("pt-BR", { maximumFractionDigits:d });
@@ -124,22 +125,8 @@ function teclaLinha(ev) {
   if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.currentTarget.click(); }
 }
 
-// FAB (mobile): qual ação "criar" cada aba dispara. Painel e Administração
-// não têm ação de criar — ficam de fora do mapa, então o FAB some nelas.
-const ACAO_FAB = {
-  extrato:       () => abrirModalLancamento(null),
-  recebimentos:  () => abrirModalRecebimento(null),
-  diesel:        () => abrirModalDiesel(null),
-  manutencao:    () => abrirModalManutencao(null),
-  agenda:        () => abrirModalAgenda(null),
-};
-function atualizarFab(aba) {
-  const fab = $("fab-acao");
-  if (!fab) return;
-  const acao = ACAO_FAB[aba];
-  fab.classList.toggle("fab-visivel", !!acao);
-  fab.onclick = acao || null;
-}
+// (o antigo FAB por aba deu lugar ao botão + central, que abre "Novo registro")
+function atualizarFab() { /* mantido por compatibilidade */ }
 
 // Liga um grupo de botões "segmentado" (ex.: Barras / Linhas): ao clicar,
 // marca o botão como ativo e chama aoMudar(valor).
@@ -254,6 +241,23 @@ let appIniciado = false;
 let meuUserId = null;
 let meuPapel = "leitura"; // padrão seguro até carregar de verdade
 let primeiraCarga = true;
+let meusModulos = { extrato:true, recebimentos:true, diesel:true, manutencao:true, agenda:true };
+let vejoFinanceiro = true;
+let modoAgenda = "lista"; // Contas: "lista" (por vencimento) ou "ano" (matriz)
+
+// Nome da empresa (config.empresa_nome) — deixa o sistema pronto para outros clientes.
+function aplicarMarca(nome) {
+  const n = (nome && String(nome).trim()) || "TA Transporte";
+  document.querySelectorAll("[data-empresa-nome]").forEach(el => { el.textContent = n; });
+  document.title = n + " — Gestão de Frota";
+}
+// Conta usada nos lançamentos automáticos (abastecimento, manutenção, serviços, contas).
+// Antes era sempre "Bradesco", o que bagunçava o saldo por conta.
+function contaPadrao() {
+  const ativas = opcoesContaBancaria();
+  if (dados.contaPadrao && ativas.includes(dados.contaPadrao)) return dados.contaPadrao;
+  return ativas[0] || "Bradesco";
+}
 
 document.addEventListener("DOMContentLoaded", async () => {
   if (!SUPABASE_URL || SUPABASE_URL.includes("COLE_AQUI")) {
@@ -263,40 +267,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const { data: { session } } = await sb.auth.getSession();
-  if (session) { meuUserId = session.user.id; mostrarSeletorEquipamento(); } else mostrarLogin();
+  if (session) { meuUserId = session.user.id; iniciarSessao(); } else mostrarLogin();
 
   $("form-login").addEventListener("submit", fazerLogin);
-  $("btn-sair").addEventListener("click", async () => {
-    await sb.auth.signOut();
-    location.reload();
-  });
-  $("equip-sair").addEventListener("click", async () => {
-    await sb.auth.signOut();
-    location.reload();
-  });
-  // base de dados: operação nova / base antiga / tudo
-  const selBase = $("select-base");
-  selBase.value = modoBase;
-  const atualizarFaixaBase = () => {
-    $("faixa-base").classList.toggle("oculto", modoBase === "nova");
-    $("faixa-base-texto").textContent = modoBase === "antiga"
-      ? "Você está vendo a BASE ANTIGA (legado). O que for lançado aqui também fica na base antiga."
-      : "Você está vendo TUDO: operação nova + base antiga misturadas.";
-  };
-  atualizarFaixaBase();
-  const trocarBase = (v) => {
-    modoBase = v; selBase.value = v;
-    try { localStorage.setItem("modoBase", v); } catch (e) { /* sem storage */ }
-    atualizarFaixaBase();
-    carregarTudo();
-  };
-  selBase.addEventListener("change", e => trocarBase(e.target.value));
+  $("btn-sair").addEventListener("click", sair);
+  $("chip-contexto").addEventListener("click", abrirSeletorEquipamento);
   $("faixa-base-voltar").addEventListener("click", () => trocarBase("nova"));
-
-  $("chip-contexto").addEventListener("click", () => {
-    $("app").classList.add("oculto");
-    mostrarSeletorEquipamento();
-  });
+  atualizarFaixaBase();
   $("usuario-botao").addEventListener("click", (ev) => {
     ev.stopPropagation();
     $("usuario-dropdown").classList.toggle("oculto");
@@ -307,6 +284,26 @@ document.addEventListener("DOMContentLoaded", async () => {
     abrirModalMeuPerfil();
   });
 });
+
+async function sair() {
+  try { await sb.auth.signOut(); } catch (e) { /* offline: limpa assim mesmo */ }
+  try { localStorage.removeItem("contexto"); } catch (e) { /* sem storage */ }
+  location.reload();
+}
+
+// Base de dados: operação nova / base antiga / tudo (fica em "Mais" → só gestor).
+function atualizarFaixaBase() {
+  $("faixa-base").classList.toggle("oculto", modoBase === "nova");
+  $("faixa-base-texto").textContent = modoBase === "antiga"
+    ? "Você está vendo a BASE ANTIGA (legado). O que for lançado aqui também fica na base antiga."
+    : "Você está vendo TUDO: operação nova + base antiga misturadas.";
+}
+function trocarBase(v) {
+  modoBase = v;
+  try { localStorage.setItem("modoBase", v); } catch (e) { /* sem storage */ }
+  atualizarFaixaBase();
+  carregarTudo();
+}
 
 function mostrarLogin() {
   $("tela-login").classList.remove("oculto");
@@ -329,24 +326,19 @@ async function fazerLogin(ev) {
   }
   meuUserId = data.user.id;
   $("tela-login").classList.add("oculto");
-  mostrarSeletorEquipamento();
+  iniciarSessao();
 }
 
-/* ── Seleção de equipamento (primeira tela após o login) ─── */
-async function mostrarSeletorEquipamento() {
-  $("tela-equipamento").classList.remove("oculto");
-  $("equip-add-form").classList.add("oculto");
-  $("equip-cartoes").innerHTML = '<div class="vazio">Carregando…</div>';
+/* ── Equipamento em foco (contexto) ───────────────────────
+   Antes era uma tela obrigatória a cada entrada. Agora o app abre direto no
+   último contexto usado (ou "Total do negócio") e o chip do topo troca na
+   hora, numa folha rápida. */
+let equipamentosPermitidos = null; // null = sem restrição
 
+async function carregarPermissoesEquipamento() {
   const { data, error } = await sb.from("equipamentos").select("*").eq("ativo", true).order("nome");
-  if (error) {
-    $("equip-cartoes").innerHTML = '<div class="vazio">Não foi possível carregar os equipamentos. (' + escHtml(error.message) + ')</div>';
-    return;
-  }
-
-  // se o usuário tiver equipamentos liberados específicos (Administração →
-  // editar usuário), só mostra esses aqui — admin sempre vê todos.
-  let equipamentosPermitidos = null;
+  if (error) throw error;
+  equipamentosPermitidos = null;
   try {
     const { data: perfilData } = await sb.from("perfis").select("*").eq("id", meuUserId).single();
     if (perfilData) meuPapel = perfilData.ativo === false ? "leitura" : perfilData.papel;
@@ -354,73 +346,67 @@ async function mostrarSeletorEquipamento() {
       const { data: restr } = await sb.from("perfis_equipamentos").select("equipamento_id").eq("perfil_id", meuUserId);
       if (restr && restr.length) equipamentosPermitidos = new Set(restr.map(r => r.equipamento_id));
     }
-  } catch (e) { /* migração v19/v20 ainda não rodada — libera tudo, sem travar ninguém */ }
-
+  } catch (e) { /* migração v19/v20 ainda não rodada — libera tudo */ }
   dados.equipamentos = (data || []).filter(e => !equipamentosPermitidos || equipamentosPermitidos.has(e.id));
-
-  const cartoes = dados.equipamentos.map(e => `
-    <button type="button" class="equip-cartao" data-id="${e.id}" data-nome="${escHtml(e.nome)}">
-      <div class="equip-cartao-icone">${escHtml(e.nome.slice(0,2).toUpperCase())}</div>
-      <div class="equip-cartao-nome">${escHtml(e.nome)}</div>
-    </button>`).join("");
-  const cartaoTotal = `
-    <button type="button" class="equip-cartao equip-cartao-total" data-id="" data-nome="Total do negócio">
-      <div class="equip-cartao-icone">∑</div>
-      <div class="equip-cartao-nome">Total do negócio</div>
-    </button>`;
-  $("equip-cartoes").innerHTML = cartoes + cartaoTotal;
-
-  $("equip-cartoes").querySelectorAll(".equip-cartao").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const id = btn.dataset.id ? Number(btn.dataset.id) : null;
-      escolherContexto(id, btn.dataset.nome);
-    });
-  });
-
-  if (!$("equip-add-abrir")._ligado) {
-    $("equip-add-abrir")._ligado = true;
-    $("equip-add-abrir").addEventListener("click", () => {
-      $("equip-add-form").classList.remove("oculto");
-      $("equip-add-nome").focus();
-    });
-    $("equip-add-cancelar").addEventListener("click", () => $("equip-add-form").classList.add("oculto"));
-    $("equip-add-salvar").addEventListener("click", criarEquipamento);
-  }
 }
 
-async function criarEquipamento() {
-  const nome = $("equip-add-nome").value.trim();
-  if (!nome) { toast("Informe o nome do equipamento."); return; }
-  const { error } = await sb.from("equipamentos").insert({ nome });
-  if (error) { toast("Não foi possível criar: " + error.message); return; }
-  $("equip-add-nome").value = "";
-  await mostrarSeletorEquipamento();
+async function iniciarSessao() {
+  $("tela-login").classList.add("oculto");
+  try {
+    await carregarPermissoesEquipamento();
+  } catch (e) {
+    $("app").classList.remove("oculto");
+    $("carregando").textContent = "Não foi possível conectar ao banco. Confira sua internet e tente de novo. (" + (e.message || e) + ")";
+    return;
+  }
+  // último contexto usado, se ainda for permitido; quem só tem 1 máquina liberada entra direto nela
+  let salvo = null;
+  try { salvo = JSON.parse(localStorage.getItem("contexto") || "null"); } catch (e) { /* sem storage */ }
+  const valido = salvo && (salvo.equipamentoId == null || dados.equipamentos.some(e => e.id === salvo.equipamentoId));
+  if (valido) escolherContexto(salvo.equipamentoId, salvo.equipamentoId == null ? "Total do negócio" : nomeEquipamento(salvo.equipamentoId));
+  else if (equipamentosPermitidos && dados.equipamentos.length === 1) escolherContexto(dados.equipamentos[0].id, dados.equipamentos[0].nome);
+  else escolherContexto(null, "Total do negócio");
+}
+
+// Folha rápida para trocar o equipamento em foco.
+function abrirSeletorEquipamento() {
+  const item = (id, nome, sub, img) => `
+    <button type="button" class="seletor-item ${contexto.equipamentoId === id ? "ativo" : ""}" data-equip="${id ?? ""}">
+      <span class="seletor-icone">${img || icone(id == null ? "painel" : "tractor")}</span>
+      <span class="seletor-texto"><b>${escHtml(nome)}</b><small>${escHtml(sub)}</small></span>
+      ${contexto.equipamentoId === id ? icone("check", "icone-sm seletor-check") : ""}
+    </button>`;
+  const ativos = dados.equipamentos.filter(e => e.ativo !== false);
+  const html = `<div class="seletor-lista">
+    ${item(null, "Total do negócio", "tudo somado: todas as máquinas e despesas gerais")}
+    ${ativos.map(e => item(e.id, e.nome, (e.tipo || "Maquina") === "Veiculo" ? "veículo de apoio" : "máquina",
+      e.imagem_url ? `<img src="${escHtml(e.imagem_url)}" alt="" onerror="this.remove()">` : "")).join("")}
+  </div>
+  ${meuPapel === "admin" ? `<button type="button" class="btn-link seletor-gerenciar" onclick="fecharModal(); irPara('administracao'); mudarSecaoAdmin('equipamentos')">Gerenciar equipamentos</button>` : ""}`;
+  abrirModal({ titulo: "Ver dados de…", tabela: "_seletor_equip", corpoCustom: html, semSalvar: true, folha: true });
+  document.querySelectorAll("#modal-campos [data-equip]").forEach(b => b.addEventListener("click", () => {
+    const id = b.dataset.equip ? Number(b.dataset.equip) : null;
+    fecharModal();
+    if (id !== contexto.equipamentoId) escolherContexto(id, id == null ? "Total do negócio" : nomeEquipamento(id));
+  }));
 }
 
 function escolherContexto(equipamentoId, nome) {
   contexto = { equipamentoId, nome };
-  $("tela-equipamento").classList.add("oculto");
+  try { localStorage.setItem("contexto", JSON.stringify({ equipamentoId })); } catch (e) { /* sem storage */ }
   $("contexto-nome").textContent = nome;
   const equip = equipamentoId != null ? dados.equipamentos.find(e => e.id === equipamentoId) : null;
-  $("equip-icone").outerHTML = equip?.imagem_url
-    ? `<div class="marca-icone" id="equip-icone"><img src="${escHtml(equip.imagem_url)}" alt="" onerror="this.remove()"></div>`
-    : `<div class="marca-icone" id="equip-icone">${icone("tractor", "icone-marca")}</div>`;
-  if (!appIniciado) { iniciarApp(); appIniciado = true; }
-  else { $("app").classList.remove("oculto"); carregarTudo(); }
+  $("equip-icone").innerHTML = equip?.imagem_url
+    ? `<img src="${escHtml(equip.imagem_url)}" alt="" onerror="this.remove()">`
+    : icone(equipamentoId == null ? "painel" : "tractor", "icone-sm");
+  if (!appIniciado) { appIniciado = true; iniciarApp(); }
+  else carregarTudo();
 }
 
 async function iniciarApp() {
   $("app").classList.remove("oculto");
 
-  // navegação por abas
-  $("abas").addEventListener("click", (ev) => {
-    const b = ev.target.closest(".aba");
-    if (!b) return;
-    document.querySelectorAll(".aba").forEach(x => x.classList.toggle("ativa", x === b));
-    document.querySelectorAll(".secao").forEach(s => s.classList.add("oculto"));
-    $("aba-" + b.dataset.aba).classList.remove("oculto");
-    atualizarFab(b.dataset.aba);
-  });
+  iniciarNavegacao(); // shell.js: barra inferior, lateral, rotas e botão +
 
   // botões "novo"
   $("ext-novo").addEventListener("click", () => abrirModalLancamento(null));
@@ -449,7 +435,13 @@ async function iniciarApp() {
   $("rec-exportar").addEventListener("click", exportarRecebimentosCSV);
 
   // filtros e alternadores do painel
-  $("pnl-periodo").addEventListener("change", e => { filtroPainel.periodo = e.target.value; renderPainel(); });
+  ligarSegmentado("pnl-periodo-seg", (v) => { filtroPainel.periodo = v; renderPainel(); });
+  $("ext-btn-filtros").addEventListener("click", () => {
+    const aberto = $("ext-filtros-extra").classList.toggle("aberto");
+    $("ext-btn-filtros").setAttribute("aria-expanded", aberto ? "true" : "false");
+  });
+  ligarSegmentado("age-modo", (v) => { modoAgenda = v; renderAgenda(); });
+  $("topo-saldo").addEventListener("click", () => irPara("extrato"));
   $("pnl-natureza").addEventListener("change", e => { filtroPainel.natureza = e.target.value; renderPainel(); });
   ligarSegmentado("pnl-tipo-fluxo", (v) => { filtroPainel.tipoFluxo = v; renderPainel(); });
   ligarSegmentado("pnl-agrupar", (v) => { filtroPainel.agrupar = v; renderPainel(); });
@@ -494,6 +486,7 @@ async function iniciarApp() {
   });
 
   // modal
+  $("modal-fechar").addEventListener("click", () => fecharModal());
   $("modal-cancelar").addEventListener("click", () => {
     if (modalCtx && modalCtx.aoCancelarClique) { modalCtx.aoCancelarClique(); return; }
     fecharModal();
@@ -540,8 +533,11 @@ async function iniciarApp() {
 
 /* ── Carga de dados ────────────────────────────────────── */
 async function carregarTudo() {
-  $("carregando").textContent = "Carregando dados do banco…";
-  $("carregando").classList.remove("oculto");
+  if (primeiraCarga) {
+    $("carregando").textContent = "Carregando dados…";
+    $("carregando").classList.remove("oculto");
+  }
+  document.body.classList.add("sincronizando");
   try {
     // no modo "Total do negócio" (contexto.equipamentoId === null) não filtra
     // nada — traz tudo, inclusive despesas gerais sem equipamento definido.
@@ -560,6 +556,9 @@ async function carregarTudo() {
     const erro = cfg.error || lanc.error || rec.error || die.error || age.error || man.error || equipTodos.error || centros.error;
     if (erro) throw erro;
 
+    const cfgVal = (k) => { const c = (cfg.data || []).find(x => x.chave === k); return c ? c.valor : null; };
+    aplicarMarca(cfgVal("empresa_nome"));
+    dados.contaPadrao = cfgVal("conta_padrao") || "";
     const si = (cfg.data || []).find(c => c.chave === "saldo_inicial");
     dados.saldoInicial = si ? Number(si.valor) : 0;
     dados.saldoConfig = dados.saldoInicial;
@@ -663,41 +662,17 @@ async function carregarTudo() {
     // módulos liberados e visibilidade financeira — admin sempre vê tudo,
     // independente do que estiver configurado (evita se trancar sozinho)
     const modulosPadrao = { extrato:true, recebimentos:true, diesel:true, manutencao:true, agenda:true };
-    const meusModulos = meuPapel === "admin" ? modulosPadrao : { ...modulosPadrao, ...(meuPerfil?.modulos || {}) };
-    const vejoFinanceiro = meuPapel === "admin" || (meuPerfil?.ve_financeiro ?? true);
-    Object.entries(meusModulos).forEach(([mod, liberado]) => {
-      const btn = document.querySelector(`#abas [data-aba="${mod}"]`);
-      if (btn) btn.classList.toggle("oculto", !liberado);
-    });
+    meusModulos = meuPapel === "admin" ? modulosPadrao : { ...modulosPadrao, ...(meuPerfil?.modulos || {}) };
+    vejoFinanceiro = meuPapel === "admin" || (meuPerfil?.ve_financeiro ?? true);
     document.body.classList.toggle("sem-financeiro", !vejoFinanceiro);
-
-    // só troca de aba visível quando é a primeira carga (mostra a aba
-    // inicial certa) ou quando a aba que estava aberta deixou de ser
-    // permitida — fora isso, NUNCA mexe em qual seção está visível. Era
-    // aqui que morava o bug do Painel "colar" em cima de outra aba toda
-    // vez que os dados recarregavam (ex.: depois de salvar um registro).
-    const abaPermitida = (aba) => {
-      if (aba === "painel") return vejoFinanceiro;
-      if (aba === "administracao") return meuPapel === "admin";
-      return meusModulos[aba] ?? true;
-    };
-    const abaAtual = document.querySelector(".aba.ativa")?.dataset.aba || "painel";
-    if (primeiraCarga || !abaPermitida(abaAtual)) {
-      primeiraCarga = false;
-      const proxima = abaPermitida(abaAtual)
-        ? abaAtual
-        : (vejoFinanceiro ? "painel" : (Object.keys(meusModulos).find(m => meusModulos[m]) || "painel"));
-      document.querySelectorAll(".secao").forEach(s => s.classList.add("oculto"));
-      $("aba-" + proxima).classList.remove("oculto");
-      document.querySelectorAll(".aba").forEach(b => b.classList.toggle("ativa", b.dataset.aba === proxima));
-    }
-    // o FAB acompanha a aba que ficou visível — seja a que já estava
-    // aberta, seja a trocada pela lógica de permissão logo acima.
-    atualizarFab(document.querySelector(".aba.ativa")?.dataset.aba || "painel");
+    aplicarPermissoesNavegacao(); // shell.js: monta a navegação só com o que a pessoa pode ver
+    primeiraCarga = false;
 
     $("carregando").classList.add("oculto");
     renderTudo();
+    document.body.classList.remove("sincronizando");
   } catch (e) {
+    document.body.classList.remove("sincronizando");
     $("carregando").classList.remove("oculto");
     $("carregando").textContent =
       "Não foi possível carregar os dados. Confira se as migrações SQL foram executadas no Supabase e se a URL/anon key do config.js estão corretas. (" + (e.message || e) + ")";
@@ -737,7 +712,9 @@ function renderTudo() {
   rodarSemTravar(renderDiesel, "Diesel");
   rodarSemTravar(renderManutencao, "Manutenção");
   rodarSemTravar(renderAgenda, "Agenda");
-  rodarSemTravar(renderAdministracao, "Administração");
+  rodarSemTravar(renderAdministracao, "Configurações");
+  rodarSemTravar(renderInicio, "Início");
+  rodarSemTravar(renderMais, "Mais");
 }
 
 // Executa uma função de renderização isoladamente: se uma aba falhar
@@ -772,16 +749,17 @@ function renderSaldoTopo() {
 
 /* ═══════════════ PAINEL ═══════════════ */
 
-// Usa os meses do Extrato como referência da linha do tempo (é o dado mais
-// completo) e aplica a mesma janela a qualquer lista que tenha campo "data".
+// Janela de meses de calendário até o mês atual (Mês, 3, 6, 12 meses ou tudo).
 function noPeriodo(lista) {
   if (filtroPainel.periodo === "tudo") return lista;
-  const mesesTodos = [...new Set(dados.lanc.map(l => l.data.slice(0,7)))].sort();
-  if (!mesesTodos.length) return lista;
-  const n = { mes_atual:1, "3m":3, "6m":6, "12m":12 }[filtroPainel.periodo] || mesesTodos.length;
-  const janela = new Set(mesesTodos.slice(-n));
-  return lista.filter(x => janela.has(x.data.slice(0,7)));
+  const n = { mes_atual:1, "3m":3, "6m":6, "12m":12 }[filtroPainel.periodo];
+  if (!n) return lista;
+  const [y, m] = hoje().split("-").map(Number);
+  const d0 = new Date(y, m - n, 1);
+  const de = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}-01`;
+  return lista.filter(x => x.data >= de);
 }
+const ROTULO_PERIODO = { mes_atual:"este mês", "3m":"últimos 3 meses", "6m":"últimos 6 meses", "12m":"últimos 12 meses", tudo:"todo o período" };
 
 function renderPainel() {
   const periodoLanc = noPeriodo(dados.lanc).filter(ehRealizado).filter(l => !ehAjusteSaldo(l));
@@ -805,12 +783,15 @@ function renderPainel() {
   for (const r of dados.rec) { faturadoTotal += r.valor_total; recebidoTotal += r.recebido ? (r.valor_pago || r.valor_total) : 0; }
   const emAberto = faturadoTotal - recebidoTotal;
   const aPagar = dados.lanc.filter(l => l.status === "pendente").reduce((s,l) => s + l.saida, 0);
-  let litros = 0, custoDie = 0, horasMaq = 0;
-  for (const d of periodoDie) {
-    litros += d.litros; custoDie += d.valor_total;
-    if (d.horas) horasMaq += d.horas;
-  }
-  const custoHora = horasMaq > 0 ? custoDie / horasMaq : 0;
+  // combustível por hora trabalhada: mesma conta "tanque a tanque" do painel
+  // de abastecimento (antes usava um campo diesel.horas que nunca era
+  // preenchido — o KPI ficava sempre em R$ 0,00)
+  let litros = 0, custoDie = 0;
+  for (const d of periodoDie) { litros += d.litros; custoDie += d.valor_total; }
+  const datasPer = periodoDie.map(d => d.data).sort();
+  const efic = filtroPainel.periodo === "tudo" ? calcularEficiencia() : calcularEficiencia(datasPer[0] || hoje(), "");
+  const custoHora = efic.horas > 0 ? efic.custo / efic.horas : 0;
+  const lh = efic.horas > 0 ? efic.litros / efic.horas : 0;
   const s = saldoAtual();
   const res = ent - sai;
   // resultado operacional: exclui saídas classificadas como "Investimento"
@@ -821,11 +802,21 @@ function renderPainel() {
   // Posição atual do negócio — sempre totais, não reagem ao filtro de
   // período. Ficam numa grade separada, acima dos filtros, pra não dar a
   // entender que também são do período selecionado.
-  $("kpis-posicao").innerHTML = [
-    kpi("Saldo em caixa", brl(s), "bancos + dinheiro · total do negócio", s >= 0 ? "pos" : "neg", true),
-    kpi("Em aberto a receber", brl0(emAberto), "faturado − recebido · total", emAberto > 0.5 ? "neg" : "pos"),
-    kpi("Contas a pagar", brl0(aPagar), "abastecimento, manutenção, agenda · total", aPagar > 0.5 ? "neg" : "pos"),
-  ].join("");
+  $("kpis-posicao").innerHTML = `
+    <button type="button" class="hero-saldo" onclick="irPara('extrato')">
+      <span class="hero-rotulo">Saldo em caixa</span>
+      <span class="hero-valor ${s >= 0 ? "pos" : "neg"}">${brl(s)}</span>
+      <span class="hero-sub">${escHtml(contexto.equipamentoId == null ? "todas as contas" : contexto.nome)}</span>
+    </button>
+    <button type="button" class="hero-mini" onclick="irPara('recebimentos')">
+      <span class="hero-rotulo">${icone("entrada", "icone-sm")} A receber</span>
+      <span class="hero-mini-valor ${emAberto > 0.5 ? "amarelo" : ""}">${brl0(emAberto)}</span>
+    </button>
+    <button type="button" class="hero-mini" onclick="irPara('agenda')">
+      <span class="hero-rotulo">${icone("saida", "icone-sm")} A pagar</span>
+      <span class="hero-mini-valor ${aPagar > 0.5 ? "neg" : ""}">${brl0(aPagar)}</span>
+    </button>`;
+  renderVencimentosPainel();
 
   // No período selecionado — reagem aos filtros de período/natureza acima.
   $("kpis-painel").innerHTML = [
@@ -834,7 +825,7 @@ function renderPainel() {
     kpi("Resultado", brl0(res), "entradas − saídas", res >= 0 ? "pos" : "neg"),
     kpi("Resultado operacional", brl0(resOperacional), "sem Investimento", resOperacional >= 0 ? "pos" : "neg"),
     kpi("Horas faturadas", num(horas) + " h", brl0(faturado) + " gerados"),
-    kpi("Combustível por hora", brl(custoHora), num(litros,0) + " L · " + brl0(custoDie)),
+    kpi("Combustível por hora", efic.horas > 0 ? brl(custoHora) : "—", efic.horas > 0 ? num(lh, 1) + " L/h · " + num(litros, 0) + " L no período" : "precisa de 2 abastecimentos e horas lançadas"),
   ].join("");
 
   // Fluxo mensal — respeita o período; barras ou linhas conforme o alternador
@@ -1014,14 +1005,15 @@ function renderSaldosContas() {
   }
   const linhas = saldosPorConta();
   const total = linhas.reduce((t, x) => t + x.saldo, 0);
-  el.innerHTML = `
-    <div class="contas-cabecalho"><span>Saldo por conta</span><strong class="${total >= 0 ? "pos" : "neg"}">${brl(total)}</strong></div>
+  const aberto = el.querySelector("details")?.open ?? telaCombina("(min-width: 1024px)");
+  el.innerHTML = `<details ${aberto ? "open" : ""}>
+    <summary class="contas-cabecalho"><span>${icone("banco", "icone-sm")} Saldo por conta</span><strong class="${total >= 0 ? "pos" : "neg"}">${brl(total)}</strong></summary>
     <div class="contas-lista">${linhas.map(x => `
       <div class="conta-linha">
         <span class="conta-nome">${escHtml(x.nome)}</span>
         <span class="conta-saldo ${x.saldo >= 0 ? "pos" : "neg"}">${brl(x.saldo)}</span>
-        <button type="button" class="btn-link" data-ajustar-conta="${escHtml(x.id)}">Ajustar saldo</button>
-      </div>`).join("") || '<p class="cartao-nota">Nenhuma conta cadastrada ainda.</p>'}</div>`;
+        <button type="button" class="btn-link" data-ajustar-conta="${escHtml(x.id)}">Ajustar</button>
+      </div>`).join("") || '<p class="cartao-nota">Nenhuma conta cadastrada ainda.</p>'}</div></details>`;
   el.querySelectorAll("[data-ajustar-conta]").forEach(b => b.addEventListener("click", () => abrirModalAjusteSaldo(b.dataset.ajustarConta)));
 }
 
@@ -1166,11 +1158,11 @@ function origemDoLancamento(id) {
   '<tr><td colspan="7" class="vazio">Nenhum lançamento para este filtro. Ajuste o mês ou o grupo acima.</td></tr>';
 }
 
-function abrirModalLancamento(id) {
+function abrirModalLancamento(id, tipoNovo) {
   const l = id ? dados.lanc.find(x => x.id === id) : null;
-  const tipo = l ? (l.entrada > 0 ? "entrada" : "saida") : "saida";
+  const tipo = l ? (l.entrada > 0 ? "entrada" : "saida") : (tipoNovo || "saida");
   abrirModal({
-    titulo: l ? "Editar lançamento" : "Novo lançamento",
+    titulo: l ? "Editar lançamento" : tipoNovo === "entrada" ? "Nova receita" : tipoNovo === "saida" ? "Nova despesa" : "Novo lançamento",
     tabela: "lancamentos", id,
     campos: [
       { nome:"data", rotulo:"Data", tipo:"date", valor: l?.data || hoje() },
@@ -1264,8 +1256,9 @@ function filtrarCliente(c) {
 
 function abrirModalRecebimento(id) {
   const r = id ? dados.rec.find(x => x.id === id) : null;
+  const semDinheiro = !vejoFinanceiro; // operador: só cliente, operador e horímetro
   abrirModal({
-    titulo: r ? "Editar registro" : "Novo registro",
+    titulo: r ? "Editar serviço" : "Horas trabalhadas",
     tabela: "recebimentos", id,
     tituloExclusao: r ? `o registro de ${r.cliente} (${fData(r.data)})` : null,
     avisoExcluir: r && (r.lancamento_id || r.lancamento_pendente_id || r.agenda_id)
@@ -1286,11 +1279,12 @@ function abrirModalRecebimento(id) {
       { nome:"obra", rotulo:"Obra / contrato", tipo:"texto", valor: r?.obra || "", lista: nomesAtivos(dados.obras) },
       { nome:"hora_inicial", rotulo:"Horímetro inicial", tipo:"numero", valor: r?.hora_inicial ?? "" },
       { nome:"hora_final", rotulo:"Horímetro final", tipo:"numero", valor: r?.hora_final ?? "" },
-      { nome:"valor_hora", rotulo:"Valor da hora (R$)", tipo:"moeda", valor: r?.valor_hora ?? 350 },
-      { nome:"valor_pago", rotulo:"Valor pago (R$)", tipo:"moeda", valor: r?.valor_pago ?? 0 },
-      { nome:"recebido", rotulo:"Recebido?", tipo:"checkbox", valor: r?.recebido ?? true },
-      { nome:"centro_custo_id", rotulo:"Centro de custo (onde o dinheiro entrou)", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(r?.centro_custo_id) },
-      { nome:"tipo_recebimento_id", rotulo:"Tipo de recebimento", tipo:"select", opcoes: opcoesTipoRecebimento(true), valor: r?.tipo_recebimento_id != null ? String(r.tipo_recebimento_id) : "" },
+      { nome:"_sep_fin", rotulo:"Cobrança", tipo:"separador", oculto: semDinheiro },
+      { nome:"valor_hora", rotulo:"Valor da hora (R$)", tipo:"moeda", valor: r?.valor_hora ?? (dados.clientes.find(c => c.nome === r?.cliente)?.valor_hora_padrao || 350), oculto: semDinheiro },
+      { nome:"valor_pago", rotulo:"Valor pago (R$)", tipo:"moeda", valor: r?.valor_pago ?? 0, oculto: semDinheiro },
+      { nome:"recebido", rotulo:"Já recebido", tipo:"checkbox", valor: r?.recebido ?? false, oculto: semDinheiro },
+      { nome:"centro_custo_id", rotulo:"Centro de custo (onde o dinheiro entrou)", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(r?.centro_custo_id), oculto: semDinheiro },
+      { nome:"tipo_recebimento_id", rotulo:"Tipo de recebimento", tipo:"select", opcoes: opcoesTipoRecebimento(true), valor: r?.tipo_recebimento_id != null ? String(r.tipo_recebimento_id) : "", oculto: semDinheiro },
     ],
     montar(f) {
       if (!f.cliente.trim()) throw "Informe o cliente.";
@@ -2622,7 +2616,81 @@ function prepararFiltroAgendaAno() {
   anoAgenda = Number(sel.value);
 }
 
+// Data de vencimento de um item da agenda (dia em texto → data real).
+function vencimentoAgenda(a) {
+  const d = calcularDataAgenda(a.ano, a.mes, a.dia);
+  return d ? isoLocal(d) : `${a.ano}-${String(a.mes).padStart(2, "0")}-01`;
+}
+// Tudo o que está em aberto (manual ou vindo de abastecimento, manutenção e serviços).
+function contasEmAberto() {
+  return dados.age.filter(a => a.status_pagamento !== "pago" && a.valor)
+    .map(a => ({ ...a, venc: vencimentoAgenda(a) }))
+    .sort((x, y) => x.venc.localeCompare(y.venc));
+}
+const ROTULO_ORIGEM = { diesel: "Abastecimento", manutencoes: "Manutenção", recebimentos: "Serviço" };
+function somarDias(iso, n) { const [y, m, d] = iso.split("-").map(Number); return isoLocal(new Date(y, m - 1, d + n)); }
+
+function linhaConta(a, compacta) {
+  const hj = hoje();
+  const receber = a.valor < 0;
+  const atraso = a.venc < hj;
+  const quando = a.venc === hj ? "hoje" : a.venc === somarDias(hj, 1) ? "amanhã" : fData(a.venc);
+  const podePagar = !a.origem_tabela && meuPapel !== "leitura";
+  return `<div class="conta-item ${atraso ? "atrasada" : ""}" role="button" tabindex="0"
+      onclick="aoClicarLinha(() => abrirLinhaDaAgenda(${a.id}))" onkeydown="teclaLinha(event)">
+    <span class="conta-data ${atraso ? "neg" : ""}">${atraso ? icone("alerta", "icone-sm") + " " : ""}${quando}</span>
+    <span class="conta-desc"><b>${escHtml(a.item)}</b>${!compacta ? `<small>${escHtml([ROTULO_ORIGEM[a.origem_tabela] ? "via " + ROTULO_ORIGEM[a.origem_tabela] : a.grupo, contexto.equipamentoId == null && a.equipamento_id ? nomeEquipamento(a.equipamento_id) : ""].filter(Boolean).join(" · "))}</small>` : ""}</span>
+    <span class="conta-valor ${receber ? "pos" : ""}">${receber ? "+ " : ""}${brl(Math.abs(a.valor))}</span>
+    ${podePagar ? `<button type="button" class="btn-pagar" onclick="event.stopPropagation(); abrirModalBaixaAgenda(${a.id})">Pagar</button>` : `<span class="btn-pagar-vazio"></span>`}
+  </div>`;
+}
+
+function renderContasLista() {
+  const hj = hoje(), em7 = somarDias(hj, 7), em30 = somarDias(hj, 30);
+  const contas = contasEmAberto();
+  const grupos = [
+    ["Atrasadas", contas.filter(a => a.venc < hj)],
+    ["Próximos 7 dias", contas.filter(a => a.venc >= hj && a.venc <= em7)],
+    ["Até 30 dias", contas.filter(a => a.venc > em7 && a.venc <= em30)],
+    ["Depois", contas.filter(a => a.venc > em30)],
+  ];
+  const soma = (l, rec) => l.filter(a => rec ? a.valor < 0 : a.valor > 0).reduce((t, a) => t + Math.abs(a.valor), 0);
+  const atras = grupos[0][1], prox = grupos[1][1];
+  $("age-lista").innerHTML = `
+    <div class="resumo-contas">
+      <div class="resumo-contas-item ${soma(atras) ? "neg" : ""}"><span>Atrasado</span><b>${brl0(soma(atras))}</b></div>
+      <div class="resumo-contas-item"><span>Pagar em 7 dias</span><b>${brl0(soma(prox))}</b></div>
+      <div class="resumo-contas-item pos"><span>A receber</span><b>${brl0(soma(contas, true))}</b></div>
+    </div>
+    ${contas.length ? grupos.filter(([, l]) => l.length).map(([t, l]) => `
+      <h3 class="grupo-titulo">${t} <span>${l.length}</span></h3>
+      <div class="lista-cartao">${l.map(a => linhaConta(a)).join("")}</div>`).join("")
+    : `<div class="vazio-bonito">${icone("check")}<b>Nada em aberto</b><span>Todas as contas estão pagas.</span></div>`}`;
+}
+
+// Cartão "Vence em breve" do painel do gestor
+function renderVencimentosPainel() {
+  const el = $("pnl-vencimentos");
+  if (!el) return;
+  const hj = hoje(), em7 = somarDias(hj, 7);
+  const prox = contasEmAberto().filter(a => a.venc <= em7);
+  const atrasadas = prox.filter(a => a.venc < hj).length;
+  el.innerHTML = `
+    <div class="cartao-cabeca">
+      <h2 class="titulo-risco"><span>Vence em breve</span></h2>
+      <button type="button" class="btn-link" onclick="irPara('agenda')">Ver todas</button>
+    </div>
+    <p class="cartao-nota">${prox.length ? `${prox.length} conta${prox.length > 1 ? "s" : ""} até ${fData(em7)}${atrasadas ? ` · <span class="neg">${atrasadas} atrasada${atrasadas > 1 ? "s" : ""}</span>` : ""}` : "nenhuma conta vencendo nos próximos 7 dias"}</p>
+    <div class="lista-cartao lista-compacta">${prox.slice(0, 5).map(a => linhaConta(a, true)).join("")}</div>`;
+}
+
 function renderAgenda() {
+  const anual = modoAgenda === "ano";
+  $("age-lista").classList.toggle("oculto", anual);
+  $("age-anual").classList.toggle("oculto", !anual);
+  $("age-filtro-ano").classList.toggle("oculto", !anual);
+  renderContasLista();
+  if (!anual) return;
   prepararFiltroAgendaAno();
   const doAno = dados.age.filter(a => a.ano === anoAgenda);
   const meses = [...new Set(doAno.map(a => a.mes))].sort((a,b) => a-b);
@@ -3000,6 +3068,8 @@ let modalCtx = null;
 
 function abrirModal(ctx) {
   modalCtx = ctx;
+  $("modal-fundo").classList.toggle("modal-folha", !!ctx.folha || !!ctx.corpoCustom);
+  marcarModalNoHistorico();
   $("modal-titulo").textContent = ctx.titulo;
   $("modal-titulo").classList.toggle("modal-titulo-perigo", !!ctx.tituloPerigo);
   $("modal-erro").classList.add("oculto");
@@ -3086,7 +3156,14 @@ function abrirModal(ctx) {
     if (rot && !rot.querySelector(".req-marca")) {
       const marca = document.createElement("span");
       marca.className = "req-marca"; marca.textContent = " *";
-      rot.insertBefore(marca, el);
+      const texto = [...rot.childNodes].find(n => n.nodeType === 3 && n.textContent.trim());
+      if (texto) {
+        const span = document.createElement("span");
+        span.className = "rotulo-texto";
+        span.textContent = texto.textContent.trim();
+        span.appendChild(marca);
+        rot.replaceChild(span, texto);
+      } else rot.insertBefore(marca, el);
     }
     const limpar = () => limparObrigatorio(el);
     el.addEventListener("input", limpar);
@@ -3148,7 +3225,9 @@ function abrirModal(ctx) {
   btnExcluir.textContent = "Excluir";
   btnExcluir.onclick = ctx.aoExcluirClique ? ctx.aoExcluirClique : () => excluirRegistro();
   $("modal-salvar").classList.toggle("oculto", !!ctx.semSalvar);
-  $("modal-salvar").textContent = ctx.rotuloSalvar || (ctx.id ? "Editar" : "Salvar");
+  $("modal-salvar").textContent = ctx.rotuloSalvar || "Salvar";
+  $("modal-cancelar").classList.toggle("oculto", !!ctx.semSalvar);
+  $("modal-fundo").classList.toggle("modal-sem-acoes", !!ctx.semSalvar && !(ctx.id || ctx.mostrarExcluir));
   $("modal-salvar").onclick = () => salvarRegistro();
   $("modal-fundo").classList.remove("oculto");
 
@@ -3156,6 +3235,8 @@ function abrirModal(ctx) {
   // modais de corpoCustom — escolha de mês/ação da Agenda etc.), pra quem
   // usa teclado não precisar clicar antes de digitar/navegar.
   requestAnimationFrame(() => {
+    // no celular, focar abre o teclado por cima do formulário — só foca no desktop
+    if (telaCombina("(pointer: coarse)")) return;
     const primeiro = $("modal-campos").querySelector(
       'input:not([type="hidden"]):not(:disabled), select:not(:disabled), button:not(:disabled)'
     );
@@ -3166,6 +3247,7 @@ function abrirModal(ctx) {
 function fecharModal() {
   $("modal-fundo").classList.add("oculto");
   modalCtx = null;
+  desmarcarModalNoHistorico();
 }
 
 // Lista de sugestões que desce sob o campo de texto: filtra pelo que foi
@@ -3479,7 +3561,8 @@ async function sincronizarAgendaEspelho({ origemId, origemTabela, agendaId, pend
   }
 }
 
-async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, valor, tipo, data, grupo, descricao, natureza = "Variavel", centroCustoId = null, equipamentoId = null, status = "pago", banco = "Bradesco", campoVinculo = "lancamento_id" }) {
+async function sincronizarLancamento({ origemId, tabelaOrigem, lancamentoId, valor, tipo, data, grupo, descricao, natureza = "Variavel", centroCustoId = null, equipamentoId = null, status = "pago", banco = null, campoVinculo = "lancamento_id" }) {
+  banco = banco || contaPadrao();
   // sem valor: se existia um lançamento vinculado, remove
   if (!valor || valor <= 0) {
     if (lancamentoId) {

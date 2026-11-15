@@ -2,11 +2,21 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Financeiro — Pá Carregadeira | TA Transporte</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>TA Transporte — Gestão de Frota</title>
+  <meta name="description" content="Gestão financeira e operacional de máquinas pesadas: abastecimento, horas, manutenção e caixa.">
+  <meta name="theme-color" content="#16181D">
+  <meta name="color-scheme" content="dark">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="TA Frota">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -57,6 +67,57 @@
         <circle cx="7.5" cy="18" r="2.5"/><circle cx="17.5" cy="18" r="2"/>
         <path d="M10 18h5.5"/>
       </symbol>
+      <symbol id="icone-inicio" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/>
+      </symbol>
+      <symbol id="icone-caixa" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>
+      </symbol>
+      <symbol id="icone-operacao" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 17h2"/><path d="M6 17V8h6l3 5h5a1 1 0 0 1 1 1v3"/><circle cx="8" cy="18" r="2.5"/><circle cx="18" cy="18" r="2"/><path d="M10.5 18H16"/><path d="M12 8V5h-3"/>
+      </symbol>
+      <symbol id="icone-mais" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/>
+      </symbol>
+      <symbol id="icone-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 5v14"/><path d="M5 12h14"/>
+      </symbol>
+      <symbol id="icone-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+      </symbol>
+      <symbol id="icone-relogio" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+      </symbol>
+      <symbol id="icone-entrada" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 19V5"/><path d="m5 12 7 7 7-7"/>
+      </symbol>
+      <symbol id="icone-saida" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 5v14"/><path d="m19 12-7-7-7 7"/>
+      </symbol>
+      <symbol id="icone-filtro" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 5h18l-7 8v6l-4 2v-8Z"/>
+      </symbol>
+      <symbol id="icone-sair" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>
+      </symbol>
+      <symbol id="icone-usuario" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>
+      </symbol>
+      <symbol id="icone-baixar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>
+      </symbol>
+      <symbol id="icone-banco" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>
+      </symbol>
+      <symbol id="icone-atualizar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>
+      </symbol>
+      <symbol id="icone-alerta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+      </symbol>
+      <symbol id="icone-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 6 9 17l-5-5"/>
+      </symbol>
     </defs>
   </svg>
 
@@ -96,116 +157,83 @@
     </div>
   </div>
 
-  <!-- ══════════ SELEÇÃO DE EQUIPAMENTO ══════════ -->
-  <div id="tela-equipamento" class="login-fundo oculto">
-    <div class="login-caixa equip-caixa">
-      <div class="login-marca">
-        <div class="marca-icone"><svg class="icone icone-marca" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-tractor"></use></svg></div>
-        <div>
-          <div class="marca-nome">TA Transporte</div>
-          <div class="marca-sub">Gerenciador Financeiro</div>
-        </div>
-      </div>
-      <h1 class="titulo-risco"><span>Qual equipamento?</span></h1>
-      <p class="texto-config" style="margin-top:0;margin-bottom:14px;">Escolha um equipamento para ver os dados só dele, ou "Total do negócio" para ver tudo somado.</p>
-      <div id="equip-cartoes" class="equip-grade"></div>
-      <button class="btn-fantasma btn-largo" id="equip-add-abrir" style="margin-top:14px;">+ Adicionar equipamento</button>
-      <div id="equip-add-form" class="equip-add-form oculto">
-        <label>Nome do novo equipamento
-          <input type="text" id="equip-add-nome" placeholder="Ex.: Retroescavadeira">
-        </label>
-        <div class="equip-add-acoes">
-          <button class="btn-fantasma" id="equip-add-cancelar">Cancelar</button>
-          <button class="btn-primario" id="equip-add-salvar">Criar</button>
-        </div>
-      </div>
-      <button class="btn-fantasma btn-largo" id="equip-sair" style="margin-top:18px;">Sair</button>
-    </div>
-  </div>
-
   <!-- ══════════ APLICAÇÃO ══════════ -->
   <div id="app" class="oculto">
 
-    <header class="topo">
-      <div class="topo-faixa"></div>
-      <div class="topo-conteudo">
-        <div class="marca">
-          <div class="marca-icone" id="equip-icone"><svg class="icone icone-marca" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-tractor"></use></svg></div>
-          <div>
-            <div class="marca-nome">TA Transporte</div>
-            <button type="button" class="chip-contexto" id="chip-contexto" title="Trocar equipamento">
-              <span id="contexto-nome">—</span>
-              <svg class="icone icone-sm chip-contexto-seta" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-chevron-right"></use></svg>
-            </button>
-          </div>
+    <!-- ── Barra lateral (desktop ≥ 1024px). No celular a navegação fica na
+         barra inferior; os dois são montados pelo mesmo mapa em app.js
+         (NAV_PAGINAS). ── -->
+    <aside class="lateral" id="lateral">
+      <div class="lateral-marca">
+        <div class="marca-icone"><svg class="icone icone-marca" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-tractor"></use></svg></div>
+        <div>
+          <div class="marca-nome" data-empresa-nome>TA Transporte</div>
+          <div class="marca-sub">Gestão de frota</div>
         </div>
-        <div class="topo-direita">
-          <select id="select-base" class="select-base" title="Qual base de dados mostrar">
-            <option value="nova">Operação nova</option>
-            <option value="antiga">Base antiga</option>
-            <option value="tudo">Tudo</option>
-          </select>
-          <div class="topo-saldo">
-            <span class="topo-saldo-rotulo">Saldo em caixa</span>
+      </div>
+      <button type="button" class="btn-primario btn-largo lateral-novo" data-acao-lancar>
+        <svg class="icone" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-plus"></use></svg> Novo registro
+      </button>
+      <nav class="lateral-nav" id="lateral-nav" aria-label="Navegação principal"></nav>
+      <button type="button" class="lateral-usuario" id="usuario-botao">
+        <span class="usuario-avatar" id="usuario-avatar">?</span>
+        <span class="usuario-info">
+          <span class="usuario-nome" id="usuario-nome-topo">—</span>
+          <span id="meu-papel-badge" class="papel-badge"></span>
+        </span>
+      </button>
+      <div class="usuario-dropdown oculto" id="usuario-dropdown">
+        <button type="button" id="btn-meu-perfil">Meu perfil</button>
+        <button type="button" id="btn-sair" class="usuario-sair">Sair</button>
+      </div>
+    </aside>
+
+    <div class="principal">
+      <header class="topo">
+        <div class="topo-conteudo">
+          <button type="button" class="chip-contexto" id="chip-contexto" title="Trocar equipamento">
+            <span class="chip-contexto-icone" id="equip-icone"><svg class="icone icone-sm" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-tractor"></use></svg></span>
+            <span id="contexto-nome">—</span>
+            <svg class="icone icone-sm chip-contexto-seta" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-chevron-right"></use></svg>
+          </button>
+          <h1 class="topo-titulo" id="topo-titulo">Início</h1>
+          <button type="button" class="topo-saldo" id="topo-saldo" title="Ver extrato">
+            <span class="topo-saldo-rotulo">Saldo</span>
             <span class="topo-saldo-valor" id="saldo-topo">—</span>
-          </div>
-          <div class="usuario-menu">
-            <button class="usuario-botao" id="usuario-botao" type="button">
-              <span class="usuario-avatar" id="usuario-avatar">?</span>
-              <span class="usuario-info">
-                <span class="usuario-nome" id="usuario-nome-topo">—</span>
-                <span id="meu-papel-badge" class="papel-badge"></span>
-              </span>
-            </button>
-            <div class="usuario-dropdown oculto" id="usuario-dropdown">
-              <button type="button" id="btn-meu-perfil">Meu perfil</button>
-              <button type="button" id="btn-sair" class="usuario-sair">Sair</button>
-            </div>
-          </div>
+          </button>
         </div>
+        <nav class="subnav oculto" id="subnav" aria-label="Seções"></nav>
+        <div class="barra-sync" aria-hidden="true"></div>
+      </header>
+      <div class="faixa-base oculto" id="faixa-base">
+        <span id="faixa-base-texto"></span>
+        <button type="button" class="btn-link" id="faixa-base-voltar">Voltar para a operação nova</button>
       </div>
-      <div class="abas-wrap">
-        <nav class="abas" id="abas">
-          <button class="aba ativa" data-aba="painel"><svg class="icone" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-painel"></use></svg><span>Painel</span></button>
-          <button class="aba" data-aba="extrato"><svg class="icone" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-extrato"></use></svg><span>Extrato</span></button>
-          <button class="aba" data-aba="recebimentos"><svg class="icone" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-recebimentos"></use></svg><span>Recebimentos</span></button>
-          <button class="aba" data-aba="diesel"><svg class="icone" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-abastecimento"></use></svg><span>Abastecimento</span></button>
-          <button class="aba" data-aba="manutencao"><svg class="icone" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-manutencao"></use></svg><span>Manutenção</span></button>
-          <button class="aba" data-aba="agenda"><svg class="icone" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-agenda"></use></svg><span>Agenda</span></button>
-          <button class="aba" data-aba="administracao"><svg class="icone" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-administracao"></use></svg><span>Administração</span></button>
-        </nav>
-      </div>
-    </header>
-    <div class="faixa-base oculto" id="faixa-base">
-      <span id="faixa-base-texto"></span>
-      <button type="button" class="btn-link" id="faixa-base-voltar">Voltar para a operação nova</button>
-    </div>
 
     <main class="conteudo">
       <div id="carregando" class="vazio">Carregando dados do banco…</div>
 
+      <!-- ─── INÍCIO (usuário comum / operador) ─── -->
+      <section id="aba-inicio" class="secao oculto"></section>
+
+      <!-- ─── MAIS (hub do celular: perfil, configurações, base, instalar) ─── -->
+      <section id="aba-mais" class="secao oculto"></section>
+
       <!-- ─── PAINEL ─── -->
       <section id="aba-painel" class="secao oculto">
-        <div class="painel-posicao">
-          <h2 class="titulo-risco"><span>Posição atual</span></h2>
-          <p class="cartao-nota">saldo, a receber e a pagar do negócio inteiro — não muda com o período abaixo</p>
+        <div class="painel-topo">
           <div class="kpi-grade kpi-grade-posicao" id="kpis-posicao"></div>
+          <div class="cartao cartao-vencimentos" id="pnl-vencimentos"></div>
         </div>
 
-        <div class="filtros">
-          <select id="pnl-periodo">
-            <option value="tudo">Todo o período</option>
-            <option value="mes_atual">Mês atual</option>
-            <option value="3m">Últimos 3 meses</option>
-            <option value="6m">Últimos 6 meses</option>
-            <option value="12m">Últimos 12 meses</option>
-          </select>
-          <select id="pnl-natureza">
-            <option value="todos">Todas as naturezas</option>
-            <option value="Fixo">Só custo fixo</option>
-            <option value="Variavel">Só custo variável</option>
-            <option value="Investimento">Só investimento</option>
-          </select>
+        <div class="filtros filtros-periodo">
+          <div class="segmentado segmentado-rolagem" id="pnl-periodo-seg">
+            <button type="button" data-valor="mes_atual">Mês</button>
+            <button type="button" data-valor="3m">3 meses</button>
+            <button type="button" data-valor="6m">6 meses</button>
+            <button type="button" data-valor="12m">12 meses</button>
+            <button type="button" data-valor="tudo" class="ativo">Tudo</button>
+          </div>
         </div>
 
         <h2 class="titulo-risco titulo-periodo"><span>No período selecionado</span></h2>
@@ -232,13 +260,19 @@
                 <button type="button" data-valor="natureza">Por natureza</button>
                 <button type="button" data-valor="centro">Por centro de custo</button>
               </div>
+              <select id="pnl-natureza" aria-label="Natureza">
+                <option value="todos">Todas as naturezas</option>
+                <option value="Fixo">Só custo fixo</option>
+                <option value="Variavel">Só custo variável</option>
+                <option value="Investimento">Só investimento</option>
+              </select>
               <div class="segmentado" id="pnl-visual">
                 <button type="button" data-valor="lista" class="ativo">Lista</button>
                 <button type="button" data-valor="pizza">Pizza</button>
               </div>
             </div>
           </div>
-          <p class="cartao-nota">saídas no período e na natureza selecionados acima</p>
+          <p class="cartao-nota">saídas no período selecionado</p>
           <div class="grupos" id="grupos-painel"></div>
           <div class="grafico-caixa grafico-baixo oculto" id="composicao-grafico-caixa"><canvas id="graf-composicao"></canvas></div>
         </div>
@@ -247,7 +281,14 @@
       <!-- ─── EXTRATO ─── -->
       <section id="aba-extrato" class="secao oculto">
         <div class="cartao" id="ext-contas"></div>
-        <div class="filtros">
+        <div class="filtros filtros-busca">
+          <input class="busca" type="search" id="ext-busca" placeholder="Buscar lançamento…" enterkeyhint="search">
+          <button class="btn-fantasma btn-filtros" id="ext-btn-filtros" type="button" aria-expanded="false">
+            <svg class="icone icone-sm" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-filtro"></use></svg> Filtros
+          </button>
+          <button class="btn-primario so-desktop" id="ext-novo">+ Lançamento</button>
+        </div>
+        <div class="filtros filtros-extra" id="ext-filtros-extra">
           <div class="segmentado" id="ext-modo-periodo">
             <button type="button" data-valor="mes" class="ativo">Mês</button>
             <button type="button" data-valor="semana">Semana</button>
@@ -261,9 +302,9 @@
             <input type="date" id="ext-filtro-de"> <span class="periodo-ate">até</span> <input type="date" id="ext-filtro-ate">
           </span>
           <select id="ext-filtro-grupo"></select>
-          <input class="busca" type="text" id="ext-busca" placeholder="Buscar descrição…">
-          <button class="btn-fantasma" id="ext-exportar">Exportar CSV</button>
-          <button class="btn-primario" id="ext-novo">+ Lançamento</button>
+          <button class="btn-fantasma" id="ext-exportar">
+            <svg class="icone icone-sm" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-baixar"></use></svg> Exportar CSV
+          </button>
         </div>
         <div class="faixa-resumo" id="ext-resumo"></div>
         <div class="tabela-rolagem">
@@ -285,8 +326,10 @@
           <div class="cliente-grade" id="rec-clientes"></div>
         </div>
         <div class="filtros">
-          <button class="btn-fantasma" id="rec-exportar">Exportar CSV</button>
-          <button class="btn-primario" id="rec-novo">+ Registro de horas / pagamento</button>
+          <button class="btn-fantasma" id="rec-exportar">
+            <svg class="icone icone-sm" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-baixar"></use></svg> Exportar CSV
+          </button>
+          <button class="btn-primario so-desktop" id="rec-novo">+ Horas trabalhadas</button>
         </div>
         <div class="tabela-rolagem">
           <table class="tabela">
@@ -336,7 +379,7 @@
           <span id="die-filtro-periodo-grupo" class="periodo-grupo oculto">
             <input type="date" id="die-filtro-de"> <span class="periodo-ate">até</span> <input type="date" id="die-filtro-ate">
           </span>
-          <button class="btn-primario" id="die-novo">+ Abastecimento</button>
+          <button class="btn-primario so-desktop" id="die-novo">+ Abastecimento</button>
         </div>
         <div class="tabela-rolagem">
           <table class="tabela">
@@ -375,7 +418,7 @@
             <button type="button" data-valor="realizadas">Realizadas</button>
             <button type="button" data-valor="agendadas">Agendadas</button>
           </div>
-          <button class="btn-primario" id="man-novo">+ Manutenção</button>
+          <button class="btn-primario so-desktop" id="man-novo">+ Manutenção</button>
         </div>
         <div class="tabela-rolagem">
           <table class="tabela">
@@ -393,22 +436,29 @@
 
       <!-- ─── AGENDA ─── -->
       <section id="aba-agenda" class="secao oculto">
-        <div class="cartao">
-          <h2 class="titulo-risco"><span>Compromissos por mês</span></h2>
-          <p class="cartao-nota" id="age-total-nota"></p>
-          <div class="grafico-caixa grafico-baixo"><canvas id="graf-agenda"></canvas></div>
-        </div>
         <div class="filtros">
-          <select id="age-filtro-ano"></select>
-          <button class="btn-primario" id="age-novo">+ Compromisso</button>
+          <div class="segmentado" id="age-modo">
+            <button type="button" data-valor="lista" class="ativo">Por vencimento</button>
+            <button type="button" data-valor="ano">Visão anual</button>
+          </div>
+          <select id="age-filtro-ano" class="oculto"></select>
+          <button class="btn-primario so-desktop" id="age-novo">+ Conta a pagar</button>
         </div>
-        <div class="tabela-rolagem">
-          <table class="tabela tabela-agenda">
-            <thead id="age-cabeca"></thead>
-            <tbody id="age-corpo"></tbody>
-          </table>
+        <div id="age-lista"></div>
+        <div id="age-anual" class="oculto">
+          <div class="cartao">
+            <h2 class="titulo-risco"><span>Compromissos por mês</span></h2>
+            <p class="cartao-nota" id="age-total-nota"></p>
+            <div class="grafico-caixa grafico-baixo"><canvas id="graf-agenda"></canvas></div>
+          </div>
+          <div class="tabela-rolagem">
+            <table class="tabela tabela-agenda">
+              <thead id="age-cabeca"></thead>
+              <tbody id="age-corpo"></tbody>
+            </table>
+          </div>
+          <p class="rodape-nota"><span class="legenda-pago"><svg class="icone icone-sm" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-circle"></use></svg> pago</span> · toque num valor para dar baixa ou editar · ao pagar, o lançamento entra no Extrato sozinho.</p>
         </div>
-        <p class="rodape-nota">Valores em reais. Coluna "Dia" indica o vencimento. Clique em um compromisso para editar e dar baixa — ao marcar como "Pago", o sistema cria automaticamente a movimentação correspondente no Extrato. <span class="legenda-pago"><svg class="icone icone-sm" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-circle"></use></svg></span> verde = já pago.</p>
       </section>
 
       <!-- ─── ADMINISTRAÇÃO ─── -->
@@ -419,11 +469,20 @@
         </div>
       </section>
     </main>
+    </div><!-- /.principal -->
 
-    <!-- ─── MODAL GENÉRICO ─── -->
+    <!-- ── Barra inferior (celular) ── -->
+    <nav class="barra-inferior" id="barra-inferior" aria-label="Navegação principal"></nav>
+
+    <!-- ─── MODAL GENÉRICO (no celular vira folha de baixo pra cima) ─── -->
     <div id="modal-fundo" class="modal-fundo oculto">
       <div class="modal">
-        <h3 id="modal-titulo" class="modal-cabeca">—</h3>
+        <div class="modal-topo">
+          <h3 id="modal-titulo" class="modal-cabeca">—</h3>
+          <button type="button" class="modal-fechar" id="modal-fechar" aria-label="Fechar">
+            <svg class="icone" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-x"></use></svg>
+          </button>
+        </div>
         <div class="modal-corpo">
           <div class="form-grade" id="modal-campos"></div>
           <div class="form-erro oculto" id="modal-erro"></div>
@@ -437,19 +496,16 @@
       </div>
     </div>
 
-    <!-- ─── FAB: ação principal no mobile — o próprio JS troca o que ele faz
-         conforme a aba ativa (ver atualizarFab em app.js) ─── -->
-    <button id="fab-acao" class="fab" type="button" aria-label="Adicionar novo registro">+</button>
-
     <div id="toast" class="toast oculto"></div>
   </div>
 
   <!-- Bibliotecas via CDN — mesmo padrão do portal -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="vendor/supabase.min.js"></script>
   <script src="vendor/chart.min.js"></script>
   <script src="vendor/jsQR.js"></script>
   <script src="nota-qr.js"></script>
   <script src="config.js"></script>
   <script src="app.js"></script>
+  <script src="shell.js"></script>
 </body>
 </html>
