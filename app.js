@@ -920,30 +920,54 @@ function renderPainel() {
       <span class="hero-rotulo">${total ? "Resultado" : "Resultado da máquina"} · ${escHtml(rotuloPeriodo(filtroPainel.periodo).toLowerCase())}</span>
       <span class="hero-valor ${res >= 0 ? "pos" : "neg"}">${brl(res)}</span>
       <span class="hero-linha">
-        <button type="button" class="hero-filtro pos" onclick="event.stopPropagation(); abrirExtratoFiltrado({ tipo: 'entrada', periodo: filtroPainel.periodo })">${icone("entrada", "icone-sm")} Entradas ${brl0(ent)}</button>
-        <button type="button" class="hero-filtro neg" onclick="event.stopPropagation(); abrirExtratoFiltrado({ tipo: 'saida', periodo: filtroPainel.periodo })">${icone("saida", "icone-sm")} Saídas ${brl0(sai)}</button>
+        <button type="button" class="hero-filtro pos" onclick="event.stopPropagation(); abrirExtratoFiltrado({ tipo: 'entrada', periodo: filtroPainel.periodo })">${icone("entrada", "icone-sm")} ${brl0(ent)}</button>
+        <button type="button" class="hero-filtro neg" onclick="event.stopPropagation(); abrirExtratoFiltrado({ tipo: 'saida', periodo: filtroPainel.periodo })">${icone("saida", "icone-sm")} ${brl0(sai)}</button>
       </span>
     </div>
-    <button type="button" class="hero-mini" onclick="irPara('receber')">
-      <span class="hero-rotulo">${icone("entrada", "icone-sm")} A receber</span>
-      <span class="hero-mini-valor ${emAberto > 0.5 ? "pos" : ""}">${brl0(emAberto)}</span>
-    </button>
-    <button type="button" class="hero-mini" onclick="irPara('agenda')">
-      <span class="hero-rotulo">${icone("saida", "icone-sm")} A pagar</span>
-      <span class="hero-mini-valor ${aPagar > 0.5 ? "neg" : ""}">${brl0(aPagar)}</span>
-    </button>
-    ${total && vejoFinanceiro ? `<button type="button" class="hero-mini hero-caixa" onclick="irPara('extrato')">
-      <span class="hero-rotulo">${icone("banco", "icone-sm")} Saldo em caixa</span>
-      <span class="hero-mini-valor ${s >= 0 ? "" : "neg"}">${brl(s)}</span>
-    </button>` : ""}`;
+    <div class="caixa-cartao">
+      ${total && vejoFinanceiro ? `<button type="button" class="caixa-saldo" onclick="irPara('extrato')">
+        <span class="caixa-rotulo">Saldo em caixa</span>
+        <span class="caixa-valor-grande ${s >= 0 ? "pos" : "neg"}">${brl(s)}</span>
+      </button>` : ""}
+      <div class="caixa-duo">
+        <button type="button" class="caixa-item" onclick="irPara('receber')">
+          <span class="caixa-rotulo">A receber</span>
+          <span class="caixa-valor ${emAberto > 0.5 ? "pos" : ""}">${brl0(emAberto)}</span>
+        </button>
+        <button type="button" class="caixa-item" onclick="irPara('agenda')">
+          <span class="caixa-rotulo">A pagar</span>
+          <span class="caixa-valor ${aPagar > 0.5 ? "neg" : ""}">${brl0(aPagar)}</span>
+        </button>
+      </div>
+    </div>`;
   renderVencimentosPainel();
 
   // No período selecionado — reagem aos filtros de período/natureza acima.
-  $("kpis-painel").innerHTML = [
-    kpi("Resultado operacional", brl0(resOperacional), "sem Investimento", resOperacional >= 0 ? "pos" : "neg"),
-    kpi("Horas faturadas", num(horas) + " h", brl0(faturado) + " gerados"),
-    kpi("Combustível por hora", efic.horas > 0 ? brl(custoHora) : "—", efic.horas > 0 ? num(lh, 1) + " L/h · " + num(litros, 0) + " L no período" : "precisa de 2 abastecimentos e horas lançadas"),
-  ].join("");
+  // Visíveis: resultado operacional e horas faturadas. O restante fica atrás de
+  // "Mais indicadores" (mesmo mecanismo das listas "Ver mais").
+  const indAberto = listasAbertas.has("painel-indicadores");
+  $("kpis-painel").innerHTML = `
+    <h3 class="secao-titulo">Operação</h3>
+    <div class="cartao cartao-operacao">
+      <div class="op-duo">
+        <div class="op-item">
+          <span class="op-rotulo" title="Exclui saídas classificadas como Investimento">Resultado operacional</span>
+          <b class="op-valor ${resOperacional >= 0 ? "pos" : "neg"}">${brl0(resOperacional)}</b>
+        </div>
+        <div class="op-item">
+          <span class="op-rotulo">Horas faturadas</span>
+          <b class="op-valor">${num(horas)} h</b>
+        </div>
+      </div>
+      <div class="op-extra ver-mais-resto ${indAberto ? "" : "oculto"}" data-resto="painel-indicadores">
+        <div class="op-linha"><span>Faturado no período</span><b>${brl0(faturado)}</b></div>
+        ${efic.horas > 0
+          ? `<div class="op-linha"><span>Combustível por hora</span><b>${brl(custoHora)}</b></div>
+        <div class="op-linha"><span>Consumo</span><b>${num(lh, 1)} L/h · ${num(litros, 0)} L</b></div>`
+          : `<div class="op-linha"><span>Combustível por hora</span><b class="op-nota">— precisa de 2 abastecimentos e horas lançadas</b></div>`}
+      </div>
+      <button type="button" class="btn-ver-mais" data-ver-mais="painel-indicadores" data-rotulo="Mais indicadores">${indAberto ? "Ver menos" : "Mais indicadores"}</button>
+    </div>`;
 
   // Fluxo mensal — respeita o período; barras ou linhas conforme o alternador
   const porMes = {};
@@ -3058,14 +3082,24 @@ function renderVencimentosPainel() {
   if (!el) return;
   const hj = hoje(), em7 = somarDias(hj, 7);
   const prox = contasEmAberto().filter(a => a.venc <= em7);
-  const atrasadas = prox.filter(a => a.venc < hj).length;
+  const lateList = prox.filter(a => a.venc < hj);
+  const atrasadas = lateList.length;
+  // mesma convenção dos grupos da agenda: soma dos valores absolutos
+  const somaAbs = (l) => l.reduce((t, a) => t + Math.abs(a.valor), 0);
+  const aVencer = prox.length - atrasadas;
+  const manchete = atrasadas
+    ? `<b class="neg">${atrasadas} conta${atrasadas > 1 ? "s" : ""} atrasada${atrasadas > 1 ? "s" : ""}</b>`
+    : prox.length ? `<b>${prox.length} conta${prox.length > 1 ? "s" : ""} até ${fData(em7)}</b>` : `<b>Nada vencendo nos próximos 7 dias</b>`;
+  const apoio = atrasadas
+    ? brl0(somaAbs(lateList)) + (aVencer ? ` · mais ${aVencer} até ${fData(em7)}` : "")
+    : prox.length ? brl0(somaAbs(prox)) : "";
+  el.classList.toggle("tem-atraso", atrasadas > 0);
   el.innerHTML = `
-    <div class="cartao-cabeca">
-      <h2 class="titulo-risco"><span>Vence em breve</span></h2>
+    <div class="atencao-topo">
+      <div class="atencao-texto">${manchete}${apoio ? `<small>${apoio}</small>` : ""}</div>
       <button type="button" class="btn-link" onclick="irPara('agenda')">Ver todas</button>
     </div>
-    <p class="cartao-nota">${prox.length ? `${prox.length} conta${prox.length > 1 ? "s" : ""} até ${fData(em7)}${atrasadas ? ` · <span class="neg">${atrasadas} atrasada${atrasadas > 1 ? "s" : ""}</span>` : ""}` : "nenhuma conta vencendo nos próximos 7 dias"}</p>
-    <div class="lista-cartao lista-compacta">${listaComVerMais("vencimentos", prox.map(a => linhaConta(a, true)), 1)}</div>`;
+    ${prox.length ? `<div class="lista-cartao lista-compacta">${listaComVerMais("vencimentos", prox.map(a => linhaConta(a, true)), 1)}</div>` : ""}`;
 }
 
 function renderAgenda() {
