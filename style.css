@@ -1304,7 +1304,7 @@ input[type="search"]:focus { outline: none; border-color: var(--amarelo); }
    (amarelo = ação, verde/vermelho = dinheiro) · 5 sem texto de ajuda.
    ═══════════════════════════════════════════════════════ */
 :root {
-  --fs-heroi: 40px;          /* o único número gigante da tela */
+  --fs-heroi: 44px;          /* o único número gigante da tela */
   --fs-destaque: 28px;       /* segundo nível (saldo) */
   --fs-valor: 17px;          /* números de apoio */
   --fs-rotulo: 13px;         /* rótulos: sem caixa alta */
@@ -1381,3 +1381,36 @@ body[data-pagina="inicio"] .grupo-titulo { text-transform: none; letter-spacing:
 body[data-pagina="inicio"] .acao-grande { border-radius: var(--raio-cartao); min-height: 96px; }
 body[data-pagina="inicio"] .acao-grande .tile-texto small { display: none; }
 body[data-pagina="inicio"] .lista-cartao { border-radius: var(--raio-cartao); }
+
+/* ── Início: chips neutros na barra do topo, números em Inter, ocultar valores ── */
+.topo-periodo, .btn-olho { display: none; }
+body[data-pagina="painel"] .btn-olho {
+  display: inline-flex; align-items: center; justify-content: center; flex: none; margin-left: auto;
+  width: 40px; height: 40px; border-radius: 999px; border: none; background: none; color: var(--texto-mudo); cursor: pointer;
+}
+body[data-pagina="painel"] .btn-olho:active { background: rgba(255,255,255,.08); }
+.btn-olho .olho-fechado, body.valores-ocultos .btn-olho .olho-aberto { display: none; }
+body.valores-ocultos .btn-olho .olho-fechado { display: block; }
+body[data-pagina="painel"] .chip-contexto { background: rgba(255,255,255,.06); border-color: transparent; color: var(--texto); }
+body[data-pagina="painel"] .chip-contexto:hover { background: rgba(255,255,255,.10); border-color: transparent; }
+body[data-pagina="painel"] .topo .btn-periodo,
+body[data-pagina="painel"] .topo .btn-periodo.ativo { background: rgba(255,255,255,.06); border-color: transparent; color: var(--texto-suave); }
+body[data-pagina="painel"] .topo .btn-periodo .icone:first-child { opacity: .6; }
+@media (max-width: 1023px) {
+  body[data-pagina="painel"] .topo-periodo { display: block; min-width: 0; flex: 0 1 auto; }
+  body[data-pagina="painel"] #aba-painel .filtros-periodo { display: none; }
+}
+/* números em Inter (tabulares) só dentro das telas de Início — janelas e demais telas seguem como antes */
+#aba-painel, #aba-inicio { --fonte-mono: 'Inter', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+body[data-pagina="painel"] .hero-valor { font-weight: 700; }
+body.valores-ocultos[data-pagina="painel"] :is(.hero-valor, .hero-filtro, .caixa-valor-grande, .caixa-valor, .op-valor, .op-linha b, .atencao-texto small, .conta-valor) {
+  filter: blur(9px); user-select: none;
+}
+/* topo do Início cabe em 360–390 px: sem ícone de calendário e sem corte do nome do equipamento */
+body[data-pagina="painel"] .topo .btn-periodo .icone:first-child { display: none; }
+body[data-pagina="painel"] .chip-contexto span#contexto-nome { max-width: none; }
+body[data-pagina="painel"] .btn-olho { width: 36px; }
+@media (max-width: 380px) {
+  body[data-pagina="painel"] .chip-contexto-seta, body[data-pagina="painel"] .topo .btn-periodo-seta { display: none; }
+  body[data-pagina="painel"] .topo .btn-periodo { padding: 0 12px; }
+}
