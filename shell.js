@@ -247,29 +247,30 @@ function renderMais() {
     `<button type="button" class="mais-item ${extra}" onclick="${acao}">${icone(iconeNome)}<span><b>${titulo}</b>${sub ? `<small>${sub}</small>` : ""}</span>${icone("chevron-right", "icone-sm mais-seta")}</button>`;
   const podeInstalar = !instalado() && (promptInstalacao || ehIOS());
   const atrasadas = vejoFinanceiro ? contasEmAberto().filter(a => a.venc < hoje() && a.valor > 0).length : 0;
-  // operador: o Início já tem os botões de registrar e os últimos registros — o menu fica só com perfil e sair
+  // operador: o Início já tem os botões de registrar e os últimos registros — o menu fica só com a conta
   const paginasMenu = !vejoFinanceiro ? "" : SECOES_MENU.map(sec => {
     const pags = Object.keys(NAV_PAGINAS).filter(k => NAV_PAGINAS[k].secao === sec && !NAV_PAGINAS[k].semMenu && paginaPermitida(k));
     if (!pags.length) return "";
-    return `<h3 class="grupo-titulo">${sec}</h3><div class="mais-lista">${pags.map(k => `
-      <button type="button" class="mais-item" onclick="irPara('${k}')">${icone(NAV_PAGINAS[k].icone)}<span><b>${NAV_PAGINAS[k].titulo}</b>${NAV_PAGINAS[k].sub ? `<small>${NAV_PAGINAS[k].sub}</small>` : ""}</span>${k === "agenda" && atrasadas ? `<i class="nav-selo selo-inline">${atrasadas}</i>` : ""}${icone("chevron-right", "icone-sm mais-seta")}</button>`).join("")}</div>`;
+    return `<h3 class="mais-secao">${sec}</h3><div class="mais-grade">${pags.map(k => `
+      <button type="button" class="mais-tile" onclick="irPara('${k}')">
+        <span class="mais-tile-icone">${icone(NAV_PAGINAS[k].icone)}${k === "agenda" && atrasadas ? `<i class="mais-tile-selo" aria-label="${atrasadas} em atraso">${atrasadas > 9 ? "9+" : atrasadas}</i>` : ""}</span>
+        <span class="mais-tile-texto"><b>${NAV_PAGINAS[k].titulo}</b>${NAV_PAGINAS[k].sub ? `<small>${NAV_PAGINAS[k].sub}</small>` : ""}</span>
+      </button>`).join("")}</div>`;
   }).join("");
+  const linhasConta = [
+    meuPapel === "admin" ? linha("administracao", "Configurações", "empresa, cadastros, usuários e histórico", "irPara('administracao'); mudarSecaoAdmin(null)") : "",
+    meuPapel !== "admin" ? linha("atualizar", "Atualizar dados", "busca de novo no servidor", "carregarTudo().then(() => toast('Dados atualizados.'))") : "",
+  ].join("");
   el.innerHTML = `
-    ${paginasMenu}
-    <h3 class="grupo-titulo">Conta</h3>
-    <div class="mais-usuario">
+    <button type="button" class="mais-perfil" onclick="abrirModalMeuPerfil()" aria-label="Abrir meu perfil">
       ${avatarHtml(nomeUsuario, perfil?.avatar_url)}
-      <div><b>${escHtml(nomeUsuario)}</b><small>${ROTULO_PAPEL[meuPapel] || ""}</small></div>
-    </div>
-    <div class="mais-lista">
-      ${podeInstalar ? linha("baixar", "Instalar o aplicativo", "abre como app, direto da tela inicial", "instalarWebApp()", "mais-destaque") : ""}
-      ${linha("usuario", "Meu perfil", "nome, foto e senha", "abrirModalMeuPerfil()")}
-      ${meuPapel === "admin" ? linha("administracao", "Configurações", "empresa, cadastros, usuários e histórico", "irPara('administracao'); mudarSecaoAdmin(null)") : ""}
-      ${meuPapel !== "admin" ? linha("atualizar", "Atualizar dados", "busca de novo no servidor", "carregarTudo().then(() => toast('Dados atualizados.'))") : ""}
-    </div>
-    <div class="mais-lista">
-      ${linha("sair", "Sair", "", "sair()", "mais-sair")}
-    </div>
+      <span class="mais-perfil-texto"><b>${escHtml(nomeUsuario)}</b><small>${ROTULO_PAPEL[meuPapel] || ""} · editar perfil</small></span>
+      ${icone("chevron-right", "icone-sm mais-seta")}
+    </button>
+    ${podeInstalar ? `<button type="button" class="mais-instalar" onclick="instalarWebApp()">${icone("baixar")}<span><b>Instalar o aplicativo</b><small>abre direto da tela inicial</small></span></button>` : ""}
+    ${paginasMenu}
+    ${linhasConta ? `<div class="mais-lista mais-lista-conta">${linhasConta}</div>` : ""}
+    <button type="button" class="mais-sair-btn" onclick="sair()">${icone("sair")}<span>Sair da conta</span></button>
     <p class="mais-versao">TA Frota · versão ${VERSAO_APP}</p>`;
 }
 

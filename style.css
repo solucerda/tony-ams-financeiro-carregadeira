@@ -1467,3 +1467,52 @@ body[data-pagina="painel"] .btn-olho { width: 36px; }
 
 /* ── Onda 3: chave "A pagar | A receber" em Contas ── */
 .chave-contas { margin: 0 0 14px; }
+
+/* ── Menu "Mais": cartão de perfil, atalhos em grade, saída discreta ── */
+#aba-mais { display: flex; flex-direction: column; gap: 0; padding-bottom: 24px; }
+.mais-perfil {
+  display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
+  padding: 16px; margin: 4px 0 0; border-radius: var(--raio-cartao, 20px);
+  background: var(--superficie); border: 1px solid var(--borda); color: inherit; cursor: pointer; min-height: 72px;
+}
+.mais-perfil .avatar-fallback, .mais-perfil img { width: 48px; height: 48px; font-size: 17px; flex: none; }
+.mais-perfil-texto { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mais-perfil-texto b { font-size: 17px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mais-perfil-texto small { font-size: 13px; color: var(--texto-mudo); }
+.mais-instalar {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; margin-top: 12px;
+  padding: 14px 16px; border-radius: 16px; cursor: pointer; min-height: 56px;
+  background: rgba(245,179,1,.10); border: 1px solid rgba(245,179,1,.35); color: var(--amarelo);
+}
+.mais-instalar > .icone { width: 22px; height: 22px; flex: none; }
+.mais-instalar span { display: flex; flex-direction: column; gap: 1px; }
+.mais-instalar b { font-size: 14.5px; }
+.mais-instalar small { font-size: 12.5px; color: var(--texto-mudo); }
+.mais-secao { margin: 26px 4px 10px; font-size: 13px; font-weight: 500; color: var(--texto-mudo); letter-spacing: 0; text-transform: none; }
+.mais-grade { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mais-tile {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 12px; text-align: left; cursor: pointer;
+  padding: 14px; min-height: 104px; border-radius: 18px; color: inherit;
+  background: var(--superficie); border: 1px solid var(--borda);
+}
+.mais-tile:active, .mais-perfil:active { background: var(--superficie-2, rgba(255,255,255,.04)); }
+.mais-tile-icone {
+  position: relative; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px;
+  background: rgba(245,179,1,.12); color: var(--amarelo);
+}
+.mais-tile-icone .icone { width: 22px; height: 22px; }
+.mais-tile-selo {
+  position: absolute; top: -6px; right: -8px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px;
+  background: var(--vermelho); color: #fff; font: 700 11px/20px var(--fonte, inherit); text-align: center; font-style: normal;
+}
+.mais-tile-texto { display: flex; flex-direction: column; gap: 2px; }
+.mais-tile-texto b { font-size: 15px; font-weight: 600; }
+.mais-tile-texto small { font-size: 12px; color: var(--texto-mudo); line-height: 1.3; }
+.mais-grade .mais-tile:last-child:nth-child(odd) { grid-column: 1 / -1; flex-direction: row; align-items: center; min-height: 72px; }
+.mais-lista-conta { margin-top: 26px; margin-bottom: 0; }
+.mais-sair-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 48px; margin-top: 26px;
+  background: transparent; border: 1px solid var(--borda); border-radius: 14px; color: var(--vermelho); font-weight: 600; font-size: 14.5px; cursor: pointer;
+}
+.mais-sair-btn .icone { width: 18px; height: 18px; }
+@media (min-width: 1024px) { #aba-mais { max-width: 560px; } }
