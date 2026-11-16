@@ -1468,51 +1468,63 @@ body[data-pagina="painel"] .btn-olho { width: 36px; }
 /* ── Onda 3: chave "A pagar | A receber" em Contas ── */
 .chave-contas { margin: 0 0 14px; }
 
-/* ── Menu "Mais": cartão de perfil, atalhos em grade, saída discreta ── */
-#aba-mais { display: flex; flex-direction: column; gap: 0; padding-bottom: 24px; }
+/* ── Menu "Mais": compacto — perfil, atalhos em grade, Configurações recolhidas ── */
+#aba-mais { padding-bottom: 20px; }
 .mais-perfil {
-  display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
-  padding: 16px; margin: 4px 0 0; border-radius: var(--raio-cartao, 20px);
-  background: var(--superficie); border: 1px solid var(--borda); color: inherit; cursor: pointer; min-height: 72px;
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; min-height: 60px;
+  padding: 10px 14px; border-radius: 16px; background: var(--superficie); border: 1px solid var(--borda); color: inherit; cursor: pointer;
 }
-.mais-perfil .avatar-fallback, .mais-perfil img { width: 48px; height: 48px; font-size: 17px; flex: none; }
-.mais-perfil-texto { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.mais-perfil-texto b { font-size: 17px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mais-perfil-texto small { font-size: 13px; color: var(--texto-mudo); }
+.mais-perfil .avatar-fallback, .mais-perfil img { width: 40px; height: 40px; font-size: 15px; flex: none; }
+.mais-perfil-texto { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.mais-perfil-texto b { font-size: 15.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mais-perfil-texto small { font-size: 12.5px; color: var(--texto-mudo); }
 .mais-instalar {
-  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; margin-top: 12px;
-  padding: 14px 16px; border-radius: 16px; cursor: pointer; min-height: 56px;
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; margin-top: 10px; min-height: 48px;
+  padding: 8px 14px; border-radius: 14px; cursor: pointer;
   background: rgba(245,179,1,.10); border: 1px solid rgba(245,179,1,.35); color: var(--amarelo);
 }
-.mais-instalar > .icone { width: 22px; height: 22px; flex: none; }
-.mais-instalar span { display: flex; flex-direction: column; gap: 1px; }
-.mais-instalar b { font-size: 14.5px; }
-.mais-instalar small { font-size: 12.5px; color: var(--texto-mudo); }
-.mais-secao { margin: 26px 4px 10px; font-size: 13px; font-weight: 500; color: var(--texto-mudo); letter-spacing: 0; text-transform: none; }
-.mais-grade { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mais-instalar > .icone { width: 20px; height: 20px; flex: none; }
+.mais-instalar span { display: flex; flex-direction: column; }
+.mais-instalar b { font-size: 14px; }
+.mais-instalar small { font-size: 12px; color: var(--texto-mudo); }
+.mais-secao { margin: 18px 4px 8px; font-size: 12.5px; font-weight: 500; color: var(--texto-mudo); letter-spacing: 0; text-transform: none; }
+.mais-grade { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .mais-tile {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 12px; text-align: left; cursor: pointer;
-  padding: 14px; min-height: 104px; border-radius: 18px; color: inherit;
-  background: var(--superficie); border: 1px solid var(--borda);
+  display: flex; align-items: center; gap: 10px; text-align: left; cursor: pointer; min-height: 52px;
+  padding: 8px 10px; border-radius: 14px; color: inherit; background: var(--superficie); border: 1px solid var(--borda);
 }
 .mais-tile:active, .mais-perfil:active { background: var(--superficie-2, rgba(255,255,255,.04)); }
+.mais-tile b { font-size: 14px; font-weight: 600; line-height: 1.2; }
 .mais-tile-icone {
-  position: relative; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px;
+  position: relative; display: grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: 10px;
   background: rgba(245,179,1,.12); color: var(--amarelo);
 }
-.mais-tile-icone .icone { width: 22px; height: 22px; }
+.mais-tile-icone .icone { width: 19px; height: 19px; }
 .mais-tile-selo {
-  position: absolute; top: -6px; right: -8px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px;
-  background: var(--vermelho); color: #fff; font: 700 11px/20px var(--fonte, inherit); text-align: center; font-style: normal;
+  position: absolute; top: -6px; right: -7px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+  background: var(--vermelho); color: #fff; font: 700 10.5px/18px var(--fonte, inherit); text-align: center; font-style: normal;
 }
-.mais-tile-texto { display: flex; flex-direction: column; gap: 2px; }
-.mais-tile-texto b { font-size: 15px; font-weight: 600; }
-.mais-tile-texto small { font-size: 12px; color: var(--texto-mudo); line-height: 1.3; }
-.mais-grade .mais-tile:last-child:nth-child(odd) { grid-column: 1 / -1; flex-direction: row; align-items: center; min-height: 72px; }
-.mais-lista-conta { margin-top: 26px; margin-bottom: 0; }
-.mais-sair-btn {
-  display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 48px; margin-top: 26px;
-  background: transparent; border: 1px solid var(--borda); border-radius: 14px; color: var(--vermelho); font-weight: 600; font-size: 14.5px; cursor: pointer;
+.mais-grade .mais-tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
+/* Configurações: uma linha que abre as telas direto, sem outro menu */
+.mais-config { margin-top: 18px; background: var(--superficie); border: 1px solid var(--borda); border-radius: 14px; overflow: hidden; }
+.mais-config > summary {
+  display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 8px 14px; cursor: pointer; list-style: none; font-weight: 600; font-size: 14.5px;
 }
-.mais-sair-btn .icone { width: 18px; height: 18px; }
+.mais-config > summary::-webkit-details-marker, .mais-config-avancado > summary::-webkit-details-marker { display: none; }
+.mais-config > summary > .icone:first-child { width: 20px; height: 20px; color: var(--texto-suave); }
+.mais-config > summary span { flex: 1; }
+.mais-config[open] > summary { border-bottom: 1px solid var(--borda); }
+.mais-config[open] > summary .mais-seta { transform: rotate(90deg); }
+.mais-config-grupo { margin: 12px 14px 4px; font-size: 12px; font-weight: 500; color: var(--texto-mudo); }
+.mais-config .mais-lista { border: 0; border-radius: 0; margin: 0; background: transparent; }
+.mais-config .mais-item { min-height: 46px; padding-top: 8px; padding-bottom: 8px; }
+.mais-config-avancado > summary { margin: 8px 14px; padding: 6px 0; cursor: pointer; font-size: 12px; color: var(--texto-mudo); list-style: none; }
+.mais-config-avancado > summary::after { content: " ▾"; }
+.mais-rodape { display: flex; gap: 8px; margin-top: 18px; }
+.mais-atualizar, .mais-sair-btn {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px;
+  background: transparent; border: 1px solid var(--borda); border-radius: 14px; font-weight: 600; font-size: 14px; cursor: pointer; color: var(--texto-suave);
+}
+.mais-sair-btn { color: var(--vermelho); }
+.mais-atualizar .icone, .mais-sair-btn .icone { width: 17px; height: 17px; }
 @media (min-width: 1024px) { #aba-mais { max-width: 560px; } }

@@ -2764,7 +2764,7 @@ const SECOES_ADMIN = [
   { chave: "usuarios", titulo: "Usuários e acessos", tipo: "usuarios", grupo: "Pessoas", icone: "usuario" },
   { chave: "auditoria", titulo: "Histórico de alterações", tipo: "auditoria", grupo: "Pessoas", icone: "relogio", sub: "quem fez o quê" },
   { chave: "saldos", titulo: "Saldo por conta", tipo: "saldos", grupo: GRUPO_AVANCADO, icone: "banco", sub: "conferir e ajustar o saldo de cada conta" },
-  { chave: "base", titulo: "Registros novos e antigos", tipo: "base", grupo: GRUPO_AVANCADO, icone: "atualizar", sub: "escolher o que aparece e atualizar os dados" },
+  { chave: "base", titulo: "Registros novos e antigos", tipo: "base", grupo: GRUPO_AVANCADO, icone: "atualizar", sub: "escolher o que aparece em todas as telas" },
   secaoCadastro(cadastroPorChave("tiposRecebimento"), GRUPO_AVANCADO),
   secaoCadastro(cadastroPorChave("obras"), GRUPO_AVANCADO),
   { chave: "feriados", titulo: "Feriados", tipo: "feriados", grupo: GRUPO_AVANCADO, icone: "agenda" },
@@ -2773,6 +2773,10 @@ let adminAvancadoAberto = false;
 let adminSecaoAtiva = null;
 let filtroHistorico = "todos";
 
+// abre direto uma tela das Configurações (usado pelo menu Mais)
+function abrirConfig(chave) { irPara("administracao"); mudarSecaoAdmin(chave); }
+// no celular, "voltar" de uma tela das Configurações leva de volta ao menu Mais
+function voltarDaConfig() { adminSecaoAtiva = null; irPara("mais"); }
 function mudarSecaoAdmin(chave) {
   adminSecaoAtiva = chave;
   renderAdministracao();
@@ -2804,7 +2808,7 @@ function renderAdministracao() {
   if (!adminSecaoAtiva) { conteudo.innerHTML = ""; return; }
 
   const secao = SECOES_ADMIN.find(s => s.chave === adminSecaoAtiva);
-  const voltar = celular ? `<button type="button" class="btn-voltar" onclick="mudarSecaoAdmin(null)">${icone("chevron-right", "icone-sm")} Configurações</button>` : "";
+  const voltar = celular ? `<button type="button" class="btn-voltar" onclick="voltarDaConfig()">${icone("chevron-right", "icone-sm")} Menu</button>` : "";
   const cabeca = (titulo, nota, botao) => `${voltar}
     <div class="admin-cabeca"><h2 class="titulo-risco"><span>${titulo}</span></h2>${botao || ""}</div>
     ${nota ? `<p class="cartao-nota">${nota}</p>` : ""}`;
@@ -2847,9 +2851,6 @@ function renderAdministracao() {
           <button type="button" data-valor="tudo" class="${modoBase === "tudo" ? "ativo" : ""}">Todos</button>
         </div>
         <p class="cartao-nota">Os registros antigos guardam o que foi lançado antes da arrumação. Nada é apagado.</p>
-      </div>
-      <div class="mais-lista">
-        <button type="button" class="mais-item" onclick="carregarTudo().then(() => toast('Dados atualizados.'))">${icone("atualizar")}<span><b>Atualizar dados</b><small>busca tudo de novo no servidor</small></span>${icone("chevron-right", "icone-sm mais-seta")}</button>
       </div>`;
     ligarSegmentado("adm-base", (v) => trocarBase(v));
     return;
