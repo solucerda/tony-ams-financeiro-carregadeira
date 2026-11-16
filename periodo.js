@@ -88,24 +88,33 @@ document.addEventListener("click", (ev) => {
   if (alvo) abrirSeletorPeriodo(alvo.obter(), (p) => { alvo.definir(p); pintarBotoesPeriodo(); });
 });
 
+// Seletor enxuto: 5 atalhos + "Outro" (intervalo de datas). Períodos antigos
+// (ex.: "Todo o período", um mês específico) continuam funcionando se já
+// estiverem escolhidos — só não são mais oferecidos como atalho.
+const PERIODOS_ATALHO = [["hoje", "Hoje"], ["ult7", "7 dias"], ["mes", "Este mês"], ["mes_passado", "Mês passado"], ["ano", "Este ano"]];
+
 function abrirSeletorPeriodo(atual, aoEscolher) {
-  const h = _dHoje();
-  const meses = Array.from({ length: 12 }, (_, i) => { const d = new Date(h.getFullYear(), h.getMonth() - i, 1); return [`m:${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, MESES[d.getMonth()] + "/" + String(d.getFullYear()).slice(2)]; });
-  const anos = [0, 1, 2, 3].map(k => [`a:${h.getFullYear() - k}`, String(h.getFullYear() - k)]);
   const chip = ([k, r]) => `<button type="button" class="chip-periodo ${atual.chave === k ? "ativo" : ""}" data-escolher="${k}">${r}</button>`;
-  const html = PERIODOS_FIXOS.map(g => `<h3 class="grupo-titulo">${g.grupo}</h3><div class="chips-periodo">${g.itens.map(chip).join("")}</div>`).join("")
-    + `<h3 class="grupo-titulo">Mês a mês</h3><div class="chips-periodo">${meses.map(chip).join("")}</div>`
-    + `<h3 class="grupo-titulo">Anos</h3><div class="chips-periodo">${anos.map(chip).join("")}</div>`
-    + `<h3 class="grupo-titulo">Personalizado</h3>
-      <div class="periodo-personalizado">
-        <label>De<input type="date" id="per-de" value="${atual.chave === "personalizado" ? escHtml(atual.de || "") : ""}"></label>
-        <label>Até<input type="date" id="per-ate" value="${atual.chave === "personalizado" ? escHtml(atual.ate || "") : ""}"></label>
-        <button type="button" class="btn-primario" id="per-aplicar">Aplicar</button>
-      </div>`;
+  const ehAtalho = PERIODOS_ATALHO.some(([k]) => k === atual.chave);
+  const outroAtivo = !ehAtalho && atual.chave !== "tudo";
+  const cheio = (v) => (atual.chave === "personalizado" ? escHtml(v || "") : "");
+  const html = `<div class="chips-periodo">${PERIODOS_ATALHO.map(chip).join("")}
+      <button type="button" class="chip-periodo ${outroAtivo ? "ativo" : ""}" id="per-outro" aria-expanded="${outroAtivo}">Outro</button></div>
+    <div class="periodo-personalizado ${outroAtivo ? "" : "oculto"}" id="per-form">
+      <label>De<input type="date" id="per-de" value="${cheio(atual.de)}"></label>
+      <label>Até<input type="date" id="per-ate" value="${cheio(atual.ate)}"></label>
+      <button type="button" class="btn-primario" id="per-aplicar">Aplicar</button>
+    </div>`;
   abrirModal({ titulo: "Período", tabela: "_periodo", corpoCustom: html, semSalvar: true, folha: true });
   document.querySelectorAll("#modal-campos [data-escolher]").forEach(b => b.addEventListener("click", () => {
     fecharModal(); aoEscolher({ chave: b.dataset.escolher });
   }));
+  $("per-outro").addEventListener("click", () => {
+    const form = $("per-form");
+    form.classList.toggle("oculto");
+    $("per-outro").setAttribute("aria-expanded", String(!form.classList.contains("oculto")));
+    if (!form.classList.contains("oculto")) $("per-de").focus({ preventScroll: true });
+  });
   $("per-aplicar").addEventListener("click", () => {
     const de = $("per-de").value, ate = $("per-ate").value;
     if (!de && !ate) { mostrarErroForm("Escolha pelo menos uma das datas.", null); return; }

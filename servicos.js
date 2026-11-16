@@ -88,7 +88,7 @@ function renderServicos() {
   const el = $("srv-lista");
   if (!el) return;
   if (!dados.temServicos) {
-    el.innerHTML = `<div class="vazio-bonito">${icone("alerta")}<b>Serviços ainda não ativados</b><span>Rode o arquivo correcoes_v25.sql no Supabase.</span></div>`;
+    el.innerHTML = `<div class="vazio-bonito">${icone("alerta")}<b>Serviços ainda não ativados</b><span>Peça ao suporte para ativar este recurso.</span></div>`;
     $("srv-resumo").innerHTML = "";
     return;
   }

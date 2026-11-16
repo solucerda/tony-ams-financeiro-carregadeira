@@ -1414,3 +1414,53 @@ body[data-pagina="painel"] .btn-olho { width: 36px; }
   body[data-pagina="painel"] .chip-contexto-seta, body[data-pagina="painel"] .topo .btn-periodo-seta { display: none; }
   body[data-pagina="painel"] .topo .btn-periodo { padding: 0 12px; }
 }
+
+/* ═══ Onda 2 — limpeza de UI/UX ═══ */
+
+/* período: atalhos + "Outro" (intervalo de datas) */
+.chips-periodo + .periodo-personalizado { margin-top: 16px; }
+
+/* gráficos do Início: opções avançadas escondidas */
+.grafico-opcoes { margin-top: 12px; border-top: 1px solid var(--borda); padding-top: 4px; }
+.grafico-opcoes > summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px;
+  padding: 10px 2px; font-size: 13px; color: var(--texto-mudo);
+}
+.grafico-opcoes > summary::-webkit-details-marker { display: none; }
+.grafico-opcoes > summary::after {
+  content: ""; width: 7px; height: 7px; border-right: 2px solid var(--texto-mudo); border-bottom: 2px solid var(--texto-mudo);
+  transform: rotate(45deg); transition: transform .15s; margin-left: auto; margin-right: 4px;
+}
+.grafico-opcoes[open] > summary::after { transform: rotate(-135deg); }
+.grafico-opcoes > summary:hover { color: var(--texto); }
+.grafico-opcoes .cartao-controles { padding: 4px 0 8px; }
+#aba-painel .cartao-cabeca + .cartao-nota + .grafico-opcoes { margin-top: 0; border-top: none; }
+
+/* Configurações → Avançado (recolhido) */
+.admin-avancado { margin-top: var(--espaco-secao, 20px); }
+.admin-avancado > summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 4px; margin-bottom: 8px; font-size: 13px; font-weight: 500; color: var(--texto-mudo);
+}
+.admin-avancado > summary::-webkit-details-marker { display: none; }
+.admin-avancado > summary::after {
+  content: ""; width: 8px; height: 8px; border-right: 2px solid var(--texto-mudo); border-bottom: 2px solid var(--texto-mudo);
+  transform: rotate(45deg); transition: transform .15s; margin-right: 6px;
+}
+.admin-avancado[open] > summary::after { transform: rotate(-135deg); }
+.admin-avancado > summary:hover { color: var(--texto); }
+
+/* formulários: "Mais detalhes (opcional)" */
+.form-recolher {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+  min-height: 44px; padding: 0 14px; background: var(--superficie-2); color: var(--texto-suave);
+  border: 1px dashed var(--borda-clara); border-radius: 10px; font-size: 13.5px; cursor: pointer;
+}
+.form-recolher:hover { color: var(--texto); border-color: var(--amarelo); }
+.form-recolher .icone { transform: rotate(90deg); transition: transform .15s; }
+.form-recolher.aberto .icone { transform: rotate(-90deg); }
+#modal-campos:not(.recolher-aberto) .campo-recolhido { display: none !important; }
+.dica-historico { color: var(--amarelo); font-size: 12px; line-height: 1.4; }
+
+/* Abastecimento: botão "Mais indicadores" ocupa a linha toda da grade */
+.kpi-grade > .kpi-ver-mais { grid-column: 1 / -1; border: 1px dashed var(--borda-clara); border-radius: 12px; }
