@@ -1507,6 +1507,7 @@ body[data-pagina="painel"] .btn-olho { width: 36px; }
 .mais-config > summary span { flex: 1; }
 .mais-config[open] > summary { border-bottom: 1px solid var(--borda); }
 .mais-config[open] > summary .mais-seta { transform: rotate(90deg); }
+.mais-config-grupo { margin: 12px 14px 2px; font-size: 12px; font-weight: 500; color: var(--texto-mudo); }
 .mais-config .mais-lista { border: 0; border-radius: 0; margin: 0; background: transparent; }
 .mais-config .mais-item { min-height: 46px; padding-top: 8px; padding-bottom: 8px; }
 .mais-rodape { display: flex; gap: 8px; margin-top: 18px; }
