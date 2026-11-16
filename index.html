@@ -118,6 +118,9 @@
       <symbol id="icone-servico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/><path d="M11 13v2h2v-2"/>
       </symbol>
+      <symbol id="icone-busca" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
+      </symbol>
       <symbol id="icone-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
         <path d="M20 6 9 17l-5-5"/>
       </symbol>
@@ -278,20 +281,20 @@
       <!-- ─── EXTRATO ─── -->
       <section id="aba-extrato" class="secao oculto">
         <div class="cartao" id="ext-contas"></div>
-        <div class="filtros filtros-busca">
-          <input class="busca" type="search" id="ext-busca" placeholder="Buscar…" enterkeyhint="search">
+        <div class="segmentado segmentado-largo ext-tipo" id="ext-tipo">
+          <button type="button" data-valor="todos" class="ativo">Tudo</button>
+          <button type="button" data-valor="entrada">Entradas</button>
+          <button type="button" data-valor="saida">Saídas</button>
+        </div>
+        <div class="barra-filtros">
           <span data-periodo-slot="extrato"></span>
-          <button class="btn-fantasma btn-filtros" id="ext-btn-filtros" type="button" aria-expanded="false" aria-label="Mais filtros">
-            <svg class="icone icone-sm" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-filtro"></use></svg>
+          <button type="button" class="btn-periodo" id="ext-btn-grupo"></button>
+          <button type="button" class="btn-icone-filtro" id="ext-btn-busca" aria-label="Buscar">
+            <svg class="icone icone-sm" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-busca"></use></svg>
           </button>
           <button class="btn-primario so-desktop" id="ext-novo">+ Lançamento</button>
         </div>
-        <div class="filtros filtros-extra" id="ext-filtros-extra">
-          <select id="ext-filtro-grupo"></select>
-          <button class="btn-fantasma" id="ext-exportar">
-            <svg class="icone icone-sm" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-baixar"></use></svg> Exportar CSV
-          </button>
-        </div>
+        <input class="busca ext-busca oculto" type="search" id="ext-busca" placeholder="Buscar pela descrição…" enterkeyhint="search">
         <div class="faixa-resumo" id="ext-resumo"></div>
         <div class="tabela-rolagem">
           <table class="tabela">

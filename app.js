@@ -15,7 +15,7 @@ const dados = {
   gruposDespesa: [], contasBancarias: [], operadores: [], obras: [], feriados: [], tiposRecebimento: [], perfis: [],
   perfisEquipamentos: [], logAtividade: [],
 };
-let filtroExt = { periodo: { chave: "tudo" }, grupo: "todos", busca: "" };
+let filtroExt = { periodo: { chave: "tudo" }, tipo: "todos", grupo: "todos", busca: "" };
 let filtroRecPeriodo = { chave: "tudo" };
 let filtroManPeriodo = { chave: "tudo" };
 let filtroContasPeriodo = { chave: "tudo" };
@@ -528,16 +528,17 @@ async function iniciarApp() {
     resto.forEach(r => r.classList.toggle("oculto", !listasAbertas.has(id)));
     b.textContent = listasAbertas.has(id) ? "Ver menos" : b.dataset.rotulo;
   });
-  $("ext-filtro-grupo").addEventListener("change", e => { filtroExt.grupo = e.target.value; renderExtrato(); });
+  ligarSegmentado("ext-tipo", (v) => { filtroExt.tipo = v; if (filtroExt.grupo !== "todos" && !gruposDoExtrato().includes(filtroExt.grupo)) filtroExt.grupo = "todos"; renderExtrato(); });
+  $("ext-btn-grupo").addEventListener("click", abrirEscolhaCategoriaExtrato);
   $("ext-busca").addEventListener("input", e => { filtroExt.busca = e.target.value; renderExtrato(); });
-  $("ext-exportar").addEventListener("click", exportarExtratoCSV);
+  $("ext-btn-busca").addEventListener("click", () => {
+    const b = $("ext-busca"); b.classList.toggle("oculto");
+    if (!b.classList.contains("oculto")) b.focus(); else if (filtroExt.busca) { b.value = ""; filtroExt.busca = ""; renderExtrato(); }
+  });
   $("rec-exportar").addEventListener("click", exportarRecebimentosCSV);
 
   // alternadores do painel
-  $("ext-btn-filtros").addEventListener("click", () => {
-    const aberto = $("ext-filtros-extra").classList.toggle("aberto");
-    $("ext-btn-filtros").setAttribute("aria-expanded", aberto ? "true" : "false");
-  });
+
   ligarSegmentado("age-modo", (v) => { modoAgenda = v; renderAgenda(); });
   ligarSegmentado("srv-filtro", (v) => { filtroServicos = v; renderServicos(); });
   $("srv-novo").addEventListener("click", () => abrirModalServico(null));
@@ -915,11 +916,14 @@ function renderPainel() {
   // entender que também são do período selecionado.
   const total = contexto.equipamentoId == null;
   $("kpis-posicao").innerHTML = `
-    <button type="button" class="hero-saldo hero-resultado" onclick="irPara('extrato')">
+    <div class="hero-saldo hero-resultado" role="button" tabindex="0" onclick="abrirExtratoFiltrado({ periodo: filtroPainel.periodo })" onkeydown="teclaLinha(event)">
       <span class="hero-rotulo">${total ? "Resultado" : "Resultado da máquina"} · ${escHtml(rotuloPeriodo(filtroPainel.periodo).toLowerCase())}</span>
       <span class="hero-valor ${res >= 0 ? "pos" : "neg"}">${brl(res)}</span>
-      <span class="hero-linha"><span class="pos">${icone("entrada", "icone-sm")} ${brl0(ent)}</span><span class="neg">${icone("saida", "icone-sm")} ${brl0(sai)}</span></span>
-    </button>
+      <span class="hero-linha">
+        <button type="button" class="hero-filtro pos" onclick="event.stopPropagation(); abrirExtratoFiltrado({ tipo: 'entrada', periodo: filtroPainel.periodo })">${icone("entrada", "icone-sm")} Entradas ${brl0(ent)}</button>
+        <button type="button" class="hero-filtro neg" onclick="event.stopPropagation(); abrirExtratoFiltrado({ tipo: 'saida', periodo: filtroPainel.periodo })">${icone("saida", "icone-sm")} Saídas ${brl0(sai)}</button>
+      </span>
+    </div>
     <button type="button" class="hero-mini" onclick="irPara('receber')">
       <span class="hero-rotulo">${icone("entrada", "icone-sm")} A receber</span>
       <span class="hero-mini-valor ${emAberto > 0.5 ? "pos" : ""}">${brl0(emAberto)}</span>
@@ -1003,7 +1007,7 @@ function renderComposicao(periodoLanc) {
   if (!mostrarPizza) {
     const max = lista.length ? lista[0][1] : 1;
     $("grupos-painel").innerHTML = listaComVerMais("composicao", lista.map(([g,v]) => `
-      <div class="grupo-linha">
+      <div class="grupo-linha ${modoAgrupar === "grupo" ? "linha-clicavel" : ""}" ${modoAgrupar === "grupo" ? `role="button" tabindex="0" onclick="abrirExtratoFiltrado({ tipo: 'saida', grupo: ${escHtml(JSON.stringify(g))}, periodo: filtroPainel.periodo })" onkeydown="teclaLinha(event)"` : ""}>
         <span class="grupo-nome">${escHtml(g)}</span>
         <div class="grupo-barra-fundo">
           <div class="grupo-barra" style="width:${(v/max*100).toFixed(1)}%;background:${cores[g]||"#8B919C"}"></div>
@@ -1083,12 +1087,46 @@ function semanaParaIntervalo(semanaISO) {
 // Checagem de período única, usada pelo Extrato em tela e pela exportação
 // CSV — assim os dois nunca ficam dessincronizados.
 function dentroDoPeriodo(dataStr) { return dentroDe(dataStr, filtroExt.periodo); }
+const passaTipoExtrato = (l) => filtroExt.tipo === "todos" || (filtroExt.tipo === "entrada" ? l.entrada > 0 : l.saida > 0);
+function gruposDoExtrato() {
+  return [...new Set(dados.lanc.filter(passaTipoExtrato).map(l => l.grupo))].sort((a, b) => a.localeCompare(b, "pt"));
+}
+// mesmo filtro para a tela e para o CSV
+function filtrarExtrato(lista) {
+  const q = filtroExt.busca.trim().toLowerCase();
+  return lista.filter(l => dentroDoPeriodo(l.data) && passaTipoExtrato(l) &&
+    (filtroExt.grupo === "todos" || l.grupo === filtroExt.grupo) &&
+    (!q || (l.descricao + " " + l.subgrupo + " " + l.grupo).toLowerCase().includes(q)));
+}
+// Escolha simples numa folha (lista de opções com total)
+function abrirEscolha(titulo, opcoes, atual, aoEscolher) {
+  abrirModal({ titulo, tabela: "_escolha", folha: true, semSalvar: true,
+    corpoCustom: `<div class="seletor-lista">${opcoes.map(o => `
+      <button type="button" class="seletor-item ${String(o.valor) === String(atual) ? "ativo" : ""}" data-opcao="${escHtml(o.valor)}">
+        <span class="seletor-texto"><b>${escHtml(o.rotulo)}</b>${o.sub ? `<small>${escHtml(o.sub)}</small>` : ""}</span>
+        ${String(o.valor) === String(atual) ? icone("check", "icone-sm seletor-check") : ""}
+      </button>`).join("")}</div>` });
+  document.querySelectorAll("#modal-campos [data-opcao]").forEach(b => b.addEventListener("click", () => { fecharModal(); aoEscolher(b.dataset.opcao); }));
+}
+function abrirEscolhaCategoriaExtrato() {
+  const base = dados.lanc.filter(l => dentroDoPeriodo(l.data) && passaTipoExtrato(l));
+  const tot = {};
+  base.forEach(l => { tot[l.grupo] = (tot[l.grupo] || 0) + (l.entrada || l.saida); });
+  const opcoes = [{ valor: "todos", rotulo: "Todas as categorias" }].concat(
+    Object.entries(tot).sort((a, b) => b[1] - a[1]).map(([g, v]) => ({ valor: g, rotulo: g, sub: brl(v) + " no período" })));
+  abrirEscolha("Categoria", opcoes, filtroExt.grupo, (v) => { filtroExt.grupo = v; renderExtrato(); });
+}
+// atalho dos painéis: abre o Extrato já filtrado
+function abrirExtratoFiltrado({ tipo = "todos", grupo = "todos", periodo } = {}) {
+  filtroExt.tipo = tipo; filtroExt.grupo = grupo; filtroExt.busca = "";
+  if (periodo) filtroExt.periodo = { ...periodo };
+  $("ext-busca").value = ""; $("ext-busca").classList.add("oculto");
+  irPara("extrato");
+  renderExtrato();
+}
 
 function prepararFiltrosExtrato() {
-  const grupos = [...new Set(dados.lanc.map(l => l.grupo))].sort();
-  $("ext-filtro-grupo").innerHTML =
-    '<option value="todos">Todos os grupos</option>' +
-    grupos.map(g => `<option ${g===filtroExt.grupo?"selected":""}>${escHtml(g)}</option>`).join("");
+  // categoria: botão que abre as opções (ver abrirEscolhaCategoriaExtrato)
 }
 
 /* ── Saldo por conta e ajuste de saldo ────────────────── */
@@ -1200,12 +1238,15 @@ function renderExtrato() {
     return { ...l, saldo: acc };
   });
 
-  const q = filtroExt.busca.trim().toLowerCase();
-  const filtrado = comSaldo.filter(l =>
-    dentroDoPeriodo(l.data) &&
-    (filtroExt.grupo === "todos" || l.grupo === filtroExt.grupo) &&
-    (!q || (l.descricao + " " + l.subgrupo + " " + l.grupo).toLowerCase().includes(q))
-  ).reverse();
+  const filtrado = filtrarExtrato(comSaldo).reverse();
+  // estado dos controles
+  document.querySelectorAll("#ext-tipo button").forEach(b => b.classList.toggle("ativo", b.dataset.valor === filtroExt.tipo));
+  const bg = $("ext-btn-grupo");
+  bg.innerHTML = `${icone("extrato", "icone-sm")}<span>${filtroExt.grupo === "todos" ? "Categoria" : escHtml(filtroExt.grupo)}</span>${icone("chevron-right", "icone-sm btn-periodo-seta")}`;
+  bg.classList.toggle("ativo", filtroExt.grupo !== "todos");
+  $("ext-btn-busca").classList.toggle("ativo", !!filtroExt.busca);
+  pintarBotoesPeriodo();
+  const algumFiltro = filtroExt.tipo !== "todos" || filtroExt.grupo !== "todos" || filtroExt.periodo.chave !== "tudo" || filtroExt.busca;
 
   let ent = 0, sai = 0, pendEnt = 0, pendSai = 0;
   for (const l of filtrado) {
@@ -1214,11 +1255,13 @@ function renderExtrato() {
     else { pendEnt += l.entrada; pendSai += l.saida; }
   }
   $("ext-resumo").innerHTML =
-    `<span>${filtrado.length} lançamentos</span>
-     <span class="pos">Entradas ${brl0(ent)}</span>
-     <span class="neg">Saídas ${brl0(sai)}</span>
-     <span>Líquido ${brl0(ent - sai)}</span>
-     ${(pendEnt || pendSai) ? `<span class="pendente-resumo">Pendente: ${pendSai ? brl0(pendSai) + " a pagar" : ""}${pendEnt && pendSai ? " · " : ""}${pendEnt ? brl0(pendEnt) + " a receber" : ""}</span>` : ""}`;
+    `<span>${filtrado.length} lançamento${filtrado.length === 1 ? "" : "s"}</span>
+     ${filtroExt.tipo !== "saida" ? `<span class="pos">+ ${brl0(ent)}</span>` : ""}
+     ${filtroExt.tipo !== "entrada" ? `<span class="neg">− ${brl0(sai)}</span>` : ""}
+     ${filtroExt.tipo === "todos" ? `<span>= ${brl0(ent - sai)}</span>` : ""}
+     ${(pendEnt || pendSai) ? `<span class="pendente-resumo">pendente ${brl0(pendEnt + pendSai)}</span>` : ""}
+     <span class="resumo-acoes">${algumFiltro ? `<button type="button" class="btn-link" onclick="abrirExtratoFiltrado({ periodo: { chave: 'tudo' } })">Limpar filtros</button>` : ""}
+     <button type="button" class="btn-link" onclick="exportarExtratoCSV()">Exportar</button></span>`;
 
 // Se este lançamento foi criado automaticamente pelo Diesel, Manutenção,
 // Agenda ou Recebimentos, devolve de onde veio — editar tem que ser feito
@@ -3997,12 +4040,7 @@ function exportarExtratoCSV() {
     if (ehRealizado(l)) acc += l.entrada - l.saida;
     return { ...l, saldo: acc };
   });
-  const q = filtroExt.busca.trim().toLowerCase();
-  const filtrado = comSaldo.filter(l =>
-    dentroDoPeriodo(l.data) &&
-    (filtroExt.grupo === "todos" || l.grupo === filtroExt.grupo) &&
-    (!q || (l.descricao + " " + l.subgrupo + " " + l.grupo).toLowerCase().includes(q))
-  );
+  const filtrado = filtrarExtrato(comSaldo);
   const linhas = filtrado.map(l => [
     l.data, l.grupo, l.subgrupo, l.descricao, l.banco,
     (l.entrada || 0).toFixed(2).replace(".", ","),

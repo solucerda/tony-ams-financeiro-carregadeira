@@ -319,7 +319,7 @@ window.addEventListener("popstate", () => {
 });
 
 /* ── Web app instalável (PWA) ── */
-const VERSAO_APP = "2.4.0";
+const VERSAO_APP = "2.5.0";
 function registrarWebApp() {
   window.addEventListener("beforeinstallprompt", (ev) => {
     ev.preventDefault();
