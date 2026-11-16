@@ -211,7 +211,6 @@
             <span class="topo-saldo-valor" id="saldo-topo">—</span>
           </button>
         </div>
-        <nav class="subnav oculto" id="subnav" aria-label="Seções"></nav>
         <div class="barra-sync" aria-hidden="true"></div>
       </header>
       <div class="faixa-base oculto" id="faixa-base">
@@ -447,11 +446,8 @@
           <button type="button" onclick="irPara('receber')">A receber</button>
         </div>
         <div class="filtros">
-          <div class="segmentado" id="age-modo">
-            <button type="button" data-valor="lista" class="ativo">Por vencimento</button>
-            <button type="button" data-valor="ano">Visão anual</button>
-          </div>
           <span data-periodo-slot="pagar" id="age-periodo-slot"></span>
+          <button type="button" class="btn-periodo" id="age-modo" data-valor="lista">Visão anual</button>
           <button type="button" class="btn-periodo oculto" id="age-ano-btn"></button>
           <button class="btn-primario so-desktop" id="age-novo">+ Conta a pagar</button>
         </div>

@@ -262,12 +262,7 @@ function renderMais() {
   const configuracoes = meuPapel !== "admin" || typeof SECOES_ADMIN === "undefined" ? "" : `
     <details class="mais-config">
       <summary>${icone("administracao")}<span>Configurações</span>${icone("chevron-right", "icone-sm mais-seta")}</summary>
-      ${[...new Set(SECOES_ADMIN.map(s => s.grupo))].map(g => {
-        const itens = SECOES_ADMIN.filter(s => s.grupo === g).map(itemConfig).join("");
-        return g === GRUPO_AVANCADO
-          ? `<details class="mais-config-avancado"><summary>${g}</summary><div class="mais-lista">${itens}</div></details>`
-          : `<h4 class="mais-config-grupo">${g}</h4><div class="mais-lista">${itens}</div>`;
-      }).join("")}
+      <div class="mais-lista">${secoesConfigVisiveis().map(itemConfig).join("")}</div>
     </details>`;
   el.innerHTML = `
     <button type="button" class="mais-perfil" onclick="abrirModalMeuPerfil()" aria-label="Abrir meu perfil">

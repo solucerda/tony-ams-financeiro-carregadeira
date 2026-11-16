@@ -572,7 +572,12 @@ async function iniciarApp() {
 
   // alternadores do painel
 
-  ligarSegmentado("age-modo", (v) => { modoAgenda = v; renderAgenda(); });
+  // um botão só: alterna entre a lista por vencimento e a visão anual
+  $("age-modo").addEventListener("click", () => {
+    modoAgenda = modoAgenda === "ano" ? "lista" : "ano";
+    $("age-modo").textContent = modoAgenda === "ano" ? "Por vencimento" : "Visão anual";
+    renderAgenda();
+  });
   ligarSegmentado("srv-filtro", (v) => { filtroServicos = v; renderServicos(); });
   $("srv-novo").addEventListener("click", () => abrirModalServico(null));
   $("topo-saldo").addEventListener("click", () => irPara("extrato"));
@@ -2773,6 +2778,10 @@ let adminAvancadoAberto = false;
 let adminSecaoAtiva = null;
 let filtroHistorico = "todos";
 
+// seções de Configurações para a lista única do menu Mais: cadastros legados (obras, tipos de recebimento) só aparecem se tiverem registros
+function secoesConfigVisiveis() {
+  return SECOES_ADMIN.filter(s => !(s.tipo === "cadastro" && ["obras", "tiposRecebimento"].includes(s.config.chave) && !(dados[s.config.chave] || []).length));
+}
 // abre direto uma tela das Configurações (usado pelo menu Mais)
 function abrirConfig(chave) { irPara("administracao"); mudarSecaoAdmin(chave); }
 // no celular, "voltar" de uma tela das Configurações leva de volta ao menu Mais

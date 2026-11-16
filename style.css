@@ -748,14 +748,6 @@ body.sincronizando .barra-sync::after {
 }
 @keyframes sync { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
 
-/* subnavegação (abas irmãs do grupo: Extrato | Contas …) */
-.subnav { display: flex; gap: 8px; padding: 0 16px 10px; overflow-x: auto; scrollbar-width: none; }
-.subnav::-webkit-scrollbar { display: none; }
-.subnav-item {
-  flex: none; height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--borda-clara);
-  background: transparent; color: var(--texto-suave); font-size: 13px; font-weight: 600; cursor: pointer;
-}
-.subnav-item.ativo { background: var(--amarelo); border-color: var(--amarelo); color: var(--fundo); }
 
 .conteudo { max-width: 1180px; padding: 16px 16px calc(var(--barra-inferior) + 32px + var(--seguro-baixo)); }
 #carregando { padding: 60px 12px; }
@@ -797,7 +789,7 @@ body.sincronizando .barra-sync::after {
     background: var(--superficie-2); border-right: 1px solid var(--borda); padding: 18px 14px;
   }
   .principal { margin-left: var(--lateral); }
-  .barra-inferior, .subnav { display: none !important; }
+  .barra-inferior { display: none !important; }
   .topo-titulo { display: block; }
   .chip-contexto { order: 2; margin-left: 8px; }
   .topo-saldo { order: 3; }
@@ -1510,16 +1502,13 @@ body[data-pagina="painel"] .btn-olho { width: 36px; }
 .mais-config > summary {
   display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 8px 14px; cursor: pointer; list-style: none; font-weight: 600; font-size: 14.5px;
 }
-.mais-config > summary::-webkit-details-marker, .mais-config-avancado > summary::-webkit-details-marker { display: none; }
+.mais-config > summary::-webkit-details-marker { display: none; }
 .mais-config > summary > .icone:first-child { width: 20px; height: 20px; color: var(--texto-suave); }
 .mais-config > summary span { flex: 1; }
 .mais-config[open] > summary { border-bottom: 1px solid var(--borda); }
 .mais-config[open] > summary .mais-seta { transform: rotate(90deg); }
-.mais-config-grupo { margin: 12px 14px 4px; font-size: 12px; font-weight: 500; color: var(--texto-mudo); }
 .mais-config .mais-lista { border: 0; border-radius: 0; margin: 0; background: transparent; }
 .mais-config .mais-item { min-height: 46px; padding-top: 8px; padding-bottom: 8px; }
-.mais-config-avancado > summary { margin: 8px 14px; padding: 6px 0; cursor: pointer; font-size: 12px; color: var(--texto-mudo); list-style: none; }
-.mais-config-avancado > summary::after { content: " ▾"; }
 .mais-rodape { display: flex; gap: 8px; margin-top: 18px; }
 .mais-atualizar, .mais-sair-btn {
   flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px;
