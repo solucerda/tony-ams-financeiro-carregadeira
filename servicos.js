@@ -92,7 +92,9 @@ function renderServicos() {
     $("srv-resumo").innerHTML = "";
     return;
   }
+  const { de: pDe, ate: pAte } = intervaloDe(filtroServicosPeriodo);
   const lista = dados.servicos.filter(sv => filtroServicos === "todos" || sv.status === filtroServicos)
+    .filter(sv => (!pAte || sv.data_inicio <= pAte) && (!pDe || (sv.data_fim || hoje()) >= pDe))
     .filter(sv => contexto.equipamentoId == null || sv.equipamento_id == null || sv.equipamento_id === contexto.equipamentoId);
   const rs = lista.map(sv => ({ sv, r: resumoServico(sv) }));
   const tot = rs.reduce((t, { r }) => ({ receita: t.receita + r.receita, custos: t.custos + r.custos, aReceber: t.aReceber + r.aReceber }), { receita: 0, custos: 0, aReceber: 0 });
@@ -104,7 +106,7 @@ function renderServicos() {
       <div class="resumo-contas-item ${lucroTot >= 0 ? "pos" : "neg"}"><span>Lucro</span><b>${brl0(lucroTot)}</b></div>
     </div>
     ${tot.aReceber > 0.5 ? `<p class="cartao-nota srv-nota-receber">${brl0(tot.aReceber)} ainda a receber nestes serviços</p>` : ""}` : "";
-  el.innerHTML = rs.length ? rs.map(({ sv, r }) => {
+  el.innerHTML = rs.length ? listaComVerMais("servicos", rs.map(({ sv, r }) => {
     const pctCusto = r.receita > 0 ? Math.min(100, r.custos / r.receita * 100) : (r.custos > 0 ? 100 : 0);
     return `<div class="servico-card" role="button" tabindex="0" onclick="abrirDetalheServico(${sv.id})" onkeydown="teclaLinha(event)">
       <div class="servico-topo">
@@ -120,7 +122,7 @@ function renderServicos() {
       <div class="servico-barra" title="custos sobre a receita"><i style="width:${pctCusto.toFixed(1)}%" class="${r.lucro < 0 ? "estourou" : ""}"></i></div>
       <small class="servico-rodape">${num(r.horas)} h · recebido ${brl0(r.recebido)}${r.aReceber > 0.5 ? ` · <span class="amarelo">a receber ${brl0(r.aReceber)}</span>` : ""}</small>
     </div>`;
-  }).join("") : `<div class="vazio-bonito">${icone("servico")}<b>Nenhum serviço ${filtroServicos === "andamento" ? "em andamento" : filtroServicos === "concluido" ? "concluído" : ""}</b><span>Crie um serviço para acompanhar custo e lucro de cada trabalho.</span>${meuPapel !== "leitura" ? `<button type="button" class="btn-primario" onclick="abrirModalServico(null)">+ Novo serviço</button>` : ""}</div>`;
+  }), 1) : `<div class="vazio-bonito">${icone("servico")}<b>Nenhum serviço ${filtroServicos === "andamento" ? "em andamento" : filtroServicos === "concluido" ? "concluído" : ""}</b><span>Crie um serviço para acompanhar custo e lucro de cada trabalho.</span>${meuPapel !== "leitura" ? `<button type="button" class="btn-primario" onclick="abrirModalServico(null)">+ Novo serviço</button>` : ""}</div>`;
 }
 
 /* ── Detalhe do serviço ── */
@@ -151,24 +153,24 @@ function abrirDetalheServico(id) {
       <button type="button" class="btn-fantasma" onclick="novoComServico(${sv.id}, () => abrirModalManutencao(null))">${icone("manutencao", "icone-sm")} Manutenção</button>
       <button type="button" class="btn-fantasma" onclick="fecharModal(); abrirModalServico(${sv.id})">${icone("pencil", "icone-sm")} Editar serviço</button>
     </div>` : ""}
-    ${grupos.length ? `<h3 class="grupo-titulo">Custos por tipo</h3><div class="grupos">${grupos.map(([g, v]) => `
+    ${grupos.length ? `<h3 class="grupo-titulo">Custos por tipo</h3><div class="grupos">${listaComVerMais("srv-grupos", grupos.map(([g, v]) => `
       <div class="grupo-linha"><span class="grupo-nome">${escHtml(g)}</span>
         <div class="grupo-barra-fundo"><div class="grupo-barra" style="width:${(v / maxG * 100).toFixed(1)}%;background:${CORES_GRUPO[g] || "#8B919C"}"></div></div>
-        <span class="grupo-valor">${brl0(v)}</span></div>`).join("")}</div>` : ""}
+        <span class="grupo-valor">${brl0(v)}</span></div>`), 1)}</div>` : ""}
     <h3 class="grupo-titulo">Movimentações <span>${movs.length}</span></h3>
-    <div class="lista-cartao">${movs.length ? movs.map(l => `
+    <div class="lista-cartao">${movs.length ? listaComVerMais("srv-movs", movs.map(l => `
       <div class="registro-item" role="button" tabindex="0" onclick="abrirLancamentoDoServico(${l.id})" onkeydown="teclaLinha(event)">
         <span class="registro-icone" style="--cor-tile:${l.entrada > 0 ? "#3ECF8E" : (CORES_GRUPO[l.grupo] || "#8B919C")}">${icone(l.entrada > 0 ? "entrada" : "saida")}</span>
         <span class="registro-texto"><b>${escHtml(l.descricao || l.grupo)}</b><small>${fData(l.data)} · ${escHtml(l.grupo)}${l.status === "pendente" ? " · pendente" : ""}</small></span>
         <span class="registro-data ${l.entrada > 0 ? "pos" : ""}">${l.entrada > 0 ? "+ " + brl(l.entrada) : brl(l.saida)}</span>
-      </div>`).join("") : `<div class="vazio">Nenhum custo ou recebimento ligado ainda.</div>`}</div>
+      </div>`), 1) : `<div class="vazio">Nenhum custo ou recebimento ligado ainda.</div>`}</div>
     ${r.recs.length ? `<h3 class="grupo-titulo">Horas <span>${r.recs.length}</span></h3>
-    <div class="lista-cartao">${r.recs.slice().reverse().map(x => `
+    <div class="lista-cartao">${listaComVerMais("srv-horas", r.recs.slice().reverse().map(x => `
       <div class="registro-item" role="button" tabindex="0" onclick="fecharModal(); aoClicarLinha(() => abrirModalRecebimento(${x.id}))" onkeydown="teclaLinha(event)">
         <span class="registro-icone" style="--cor-tile:#4DA3FF">${icone("relogio")}</span>
         <span class="registro-texto"><b>${num(x.horas || 0)} h${x.operador ? " · " + escHtml(x.operador) : ""}</b><small>${fData(x.data)}${x.hora_final != null ? " · horímetro " + num(x.hora_inicial) + " → " + num(x.hora_final) : ""}</small></span>
         <span class="registro-data">${nomeEquipamento(x.equipamento_id)}</span>
-      </div>`).join("")}</div>` : ""}
+      </div>`), 1)}</div>` : ""}
     ${sv.observacao ? `<p class="cartao-nota srv-obs">${escHtml(sv.observacao)}</p>` : ""}`;
   abrirModal({ titulo: sv.nome, tabela: "_detalhe_servico", corpoCustom: html, semSalvar: true, folha: true });
 }
@@ -212,10 +214,10 @@ function abrirModalServico(id) {
       { nome: "observacao", rotulo: "Observação", tipo: "texto", largo: true, valor: sv?.observacao || "" },
     ],
     montar(f) {
-      if (!f.nome.trim()) throw "Dê um nome ao serviço.";
-      if (f.data_fim && f.data_fim < f.data_inicio) throw "O fim não pode ser antes do início.";
+      if (!f.nome.trim()) throw erroCampo("nome", "Dê um nome ao serviço.");
+      if (f.data_fim && f.data_fim < f.data_inicio) throw erroCampo("data_fim", "O fim não pode ser antes do início.");
       const vh = numDeMoeda(f.valor_hora), vf = numDeMoeda(f.valor_fechado);
-      if (f.cobranca === "fechado" && !vf) throw "Informe o valor fechado do serviço.";
+      if (f.cobranca === "fechado" && !vf) throw erroCampo("valor_fechado", "Informe o valor fechado do serviço.");
       return {
         nome: f.nome.trim(), cliente: f.cliente.trim() || null,
         equipamento_id: f.equipamento_id ? Number(f.equipamento_id) : null,
@@ -248,7 +250,7 @@ function registrarRecebimentoServico(id) {
     ],
     montar(f) {
       const v = numDeMoeda(f.valor);
-      if (!v || v <= 0) throw "Informe o valor recebido.";
+      if (!v || v <= 0) throw erroCampo("valor", "Informe o valor recebido.");
       return { v, data: f.data, banco: f.banco, concluir: !!f.concluir, obs: f.obs.trim() };
     },
     async aoSalvar(x) {
@@ -269,8 +271,7 @@ function registrarRecebimentoServico(id) {
         await sincronizarRecebivelServico(sv.id);
       } catch (e) {
         btn.disabled = false;
-        erro.textContent = "Não foi possível registrar: " + (e.message || e);
-        erro.classList.remove("oculto");
+        mostrarErroForm(erroBanco(e));
         return;
       }
       btn.disabled = false;

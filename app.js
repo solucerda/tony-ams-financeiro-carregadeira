@@ -15,9 +15,14 @@ const dados = {
   gruposDespesa: [], contasBancarias: [], operadores: [], obras: [], feriados: [], tiposRecebimento: [], perfis: [],
   perfisEquipamentos: [], logAtividade: [],
 };
-let filtroExt = { modo: "mes", mes: "todos", semana: "", dia: "", de: "", ate: "", grupo: "todos", busca: "" };
+let filtroExt = { periodo: { chave: "tudo" }, grupo: "todos", busca: "" };
+let filtroRecPeriodo = { chave: "tudo" };
+let filtroManPeriodo = { chave: "tudo" };
+let filtroContasPeriodo = { chave: "tudo" };
+let filtroReceberPeriodo = { chave: "tudo" };
+let filtroServicosPeriodo = { chave: "tudo" };
 let filtroCliente = "todos";
-let filtroPainel = { periodo: "tudo", natureza: "todos", tipoFluxo: "bar", agrupar: "grupo", visual: "lista" };
+let filtroPainel = { periodo: { chave: "mes" }, natureza: "todos", tipoFluxo: "bar", agrupar: "grupo", visual: "lista" };
 let filtroManutencao = { tipo: "todos", status: "todos" };
 // Base de dados em uso: "nova" (padrão, operação daqui pra frente), "antiga"
 // (legado: o que foi lançado antes da arrumação) ou "tudo". Fica lembrada
@@ -30,7 +35,7 @@ const porBase = (q) => modoBase === "tudo" ? q : q.eq("legado", modoBase === "an
 // registro novo nasce na base que está na tela (assim o que você lança sempre aparece)
 const marcarBase = (obj) => Array.isArray(obj) ? obj.map(marcarBase) : { ...obj, legado: modoBase === "antiga" };
 
-let filtroDiesel = { centro: "todos", combustivel: "todos", periodo: "tudo", de: "", ate: "" };
+let filtroDiesel = { combustivel: "todos", periodo: { chave: "tudo" } };
 const graficos = {};           // instâncias Chart.js
 
 const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
@@ -94,12 +99,69 @@ function numDeMoeda(str) {
   return isNaN(n) ? 0 : n;
 }
 
-function toast(msg) {
+function toast(msg, tipo) {
   const t = $("toast");
   t.textContent = msg;
+  t.classList.toggle("toast-erro", tipo === "erro");
   t.classList.remove("oculto");
   clearTimeout(t._timer);
-  t._timer = setTimeout(() => t.classList.add("oculto"), 3200);
+  t._timer = setTimeout(() => t.classList.add("oculto"), tipo === "erro" ? 6000 : 3200);
+}
+
+/* ── Erros: nunca "não acontece nada" ─────────────────────
+   Quando algo impede de salvar, o campo culpado pisca e a tela rola até
+   ele; e um aviso aparece por cima de tudo dizendo o porquê. */
+function erroCampo(campo, msg) { return { campo, msg }; }
+function alertaErro(msg, titulo) {
+  let el = $("alerta-erro");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "alerta-erro";
+    el.className = "alerta-fundo oculto";
+    el.innerHTML = `<div class="alerta-caixa" role="alertdialog" aria-modal="true" aria-labelledby="alerta-titulo">
+      <div class="alerta-icone">${icone("alerta")}</div>
+      <h3 id="alerta-titulo"></h3><p id="alerta-msg"></p>
+      <button type="button" class="btn-primario btn-largo" id="alerta-ok">Entendi</button></div>`;
+    document.body.appendChild(el);
+    const fechar = () => el.classList.add("oculto");
+    el.querySelector("#alerta-ok").addEventListener("click", fechar);
+    el.addEventListener("click", (ev) => { if (ev.target === el) fechar(); });
+    document.addEventListener("keydown", (ev) => { if (!el.classList.contains("oculto") && (ev.key === "Escape" || ev.key === "Enter")) { ev.preventDefault(); ev.stopPropagation(); fechar(); } }, true);
+  }
+  el.querySelector("#alerta-titulo").textContent = titulo || "Não deu para salvar";
+  el.querySelector("#alerta-msg").textContent = msg;
+  el.classList.remove("oculto");
+  setTimeout(() => el.querySelector("#alerta-ok").focus(), 30);
+}
+// erro dentro de um formulário: destaca o campo (se houver) + aviso na tela
+function mostrarErroForm(erro, campo) {
+  const msg = typeof erro === "string" ? erro : (erro && (erro.msg || erro.message)) || String(erro);
+  campo = campo || (erro && erro.campo);
+  const box = $("modal-erro");
+  box.textContent = msg;
+  box.classList.remove("oculto");
+  const el = campo ? document.querySelector(`#modal-campos [data-campo="${campo}"]`) : null;
+  const rot = el && !escondidoNoForm(el) ? el.closest("label") : null;
+  if (rot) {
+    let m = rot.querySelector(".msg-obrigatorio");
+    if (!m) { m = document.createElement("span"); m.className = "msg-obrigatorio"; rot.appendChild(m); }
+    m.textContent = msg;
+    m.classList.remove("oculto");
+    rot.classList.remove("campo-invalido"); void rot.offsetWidth; rot.classList.add("campo-invalido");
+    if (el.scrollIntoView) el.scrollIntoView({ block: "center", behavior: "smooth" });
+    toast(msg, "erro");
+  } else {
+    alertaErro(msg);
+  }
+}
+// mensagem amigável para falhas do banco/rede
+function erroBanco(e) {
+  const m = String((e && e.message) || e || "");
+  if (/Failed to fetch|NetworkError|network/i.test(m)) return "Sem conexão com a internet. Confira o sinal e tente de novo.";
+  if (/row-level security|permission denied|violates row-level/i.test(m)) return "Seu usuário não tem permissão para isso. Peça para um administrador liberar.";
+  if (/duplicate key/i.test(m)) return "Já existe um registro igual a este.";
+  if (/violates foreign key/i.test(m)) return "Este registro está ligado a outros e não pode ser alterado assim.";
+  return "O servidor recusou: " + m;
 }
 
 // Ícone SVG a partir do sprite definido no <body> do index.html (estilo
@@ -180,6 +242,12 @@ function avatarHtml(nome, url) {
   return `<span class="avatar-fallback" style="background:${cor}">${iniciais(nome)}</span>`;
 }
 
+// Equipamento com resultado próprio aparece como opção de painel; os outros
+// (ex.: carro de apoio) só somam custo no total do negócio.
+function controlaResultado(e) {
+  if (!e) return false;
+  return e.controla_resultado ?? ((e.tipo || "Maquina") !== "Veiculo");
+}
 function nomeEquipamento(id) {
   const e = dados.equipamentos.find(x => x.id === id);
   return e ? e.nome : "";
@@ -367,7 +435,7 @@ async function iniciarSessao() {
   // último contexto usado, se ainda for permitido; quem só tem 1 máquina liberada entra direto nela
   let salvo = null;
   try { salvo = JSON.parse(localStorage.getItem("contexto") || "null"); } catch (e) { /* sem storage */ }
-  const valido = salvo && (salvo.equipamentoId == null || dados.equipamentos.some(e => e.id === salvo.equipamentoId));
+  const valido = salvo && (salvo.equipamentoId == null || dados.equipamentos.some(e => e.id === salvo.equipamentoId && controlaResultado(e)));
   if (valido) escolherContexto(salvo.equipamentoId, salvo.equipamentoId == null ? "Total do negócio" : nomeEquipamento(salvo.equipamentoId));
   else if (equipamentosPermitidos && dados.equipamentos.length === 1) escolherContexto(dados.equipamentos[0].id, dados.equipamentos[0].nome);
   else escolherContexto(null, "Total do negócio");
@@ -381,7 +449,7 @@ function abrirSeletorEquipamento() {
       <span class="seletor-texto"><b>${escHtml(nome)}</b><small>${escHtml(sub)}</small></span>
       ${contexto.equipamentoId === id ? icone("check", "icone-sm seletor-check") : ""}
     </button>`;
-  const ativos = dados.equipamentos.filter(e => e.ativo !== false);
+  const ativos = dados.equipamentos.filter(e => e.ativo !== false && controlaResultado(e));
   const html = `<div class="seletor-lista">
     ${item(null, "Total do negócio", "tudo somado: todas as máquinas e despesas gerais")}
     ${ativos.map(e => item(e.id, e.nome, (e.tipo || "Maquina") === "Veiculo" ? "veículo de apoio" : "máquina",
@@ -417,30 +485,36 @@ async function iniciarApp() {
   $("ext-novo").addEventListener("click", () => abrirModalLancamento(null));
   $("rec-novo").addEventListener("click", () => abrirModalRecebimento(null));
   $("die-novo").addEventListener("click", () => abrirModalDiesel(null));
-  $("age-novo").addEventListener("click", () => abrirModalAgenda(null));
+  $("age-novo").addEventListener("click", () => abrirModalAgenda(null, "pagar"));
   $("man-novo").addEventListener("click", () => abrirModalManutencao(null));
 
-  // filtros do extrato
-  ligarSegmentado("ext-modo-periodo", (v) => {
-    filtroExt.modo = v;
-    $("ext-filtro-mes").classList.toggle("oculto", v !== "mes");
-    $("ext-filtro-semana").classList.toggle("oculto", v !== "semana");
-    $("ext-filtro-dia").classList.toggle("oculto", v !== "dia");
-    $("ext-filtro-periodo-grupo").classList.toggle("oculto", v !== "periodo");
-    renderExtrato();
+  // filtros de período (um botão que abre as opções — periodo.js)
+  registrarPeriodo("painel", () => filtroPainel.periodo, (p) => { filtroPainel.periodo = p; renderPainel(); });
+  registrarPeriodo("extrato", () => filtroExt.periodo, (p) => { filtroExt.periodo = p; renderExtrato(); });
+  registrarPeriodo("diesel", () => filtroDiesel.periodo, (p) => { filtroDiesel.periodo = p; renderDiesel(); });
+  registrarPeriodo("horas", () => filtroRecPeriodo, (p) => { filtroRecPeriodo = p; renderRecebimentos(); });
+  registrarPeriodo("manutencao", () => filtroManPeriodo, (p) => { filtroManPeriodo = p; renderManutencao(); });
+  registrarPeriodo("pagar", () => filtroContasPeriodo, (p) => { filtroContasPeriodo = p; renderContasLista(); });
+  registrarPeriodo("receber", () => filtroReceberPeriodo, (p) => { filtroReceberPeriodo = p; renderReceber(); });
+  registrarPeriodo("servicos", () => filtroServicosPeriodo, (p) => { filtroServicosPeriodo = p; renderServicos(); });
+  $("age-ano-btn").addEventListener("click", abrirSeletorAnoAgenda);
+  $("rcb-novo").addEventListener("click", () => abrirModalAgenda(null, "receber"));
+  document.addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-ver-mais]");
+    if (!b) return;
+    ev.stopPropagation();
+    const id = b.dataset.verMais;
+    if (listasAbertas.has(id)) listasAbertas.delete(id); else listasAbertas.add(id);
+    const resto = document.querySelectorAll(`[data-resto="${id}"]`);
+    resto.forEach(r => r.classList.toggle("oculto", !listasAbertas.has(id)));
+    b.textContent = listasAbertas.has(id) ? "Ver menos" : b.dataset.rotulo;
   });
-  $("ext-filtro-mes").addEventListener("change", e => { filtroExt.mes = e.target.value; renderExtrato(); });
-  $("ext-filtro-semana").addEventListener("change", e => { filtroExt.semana = e.target.value; renderExtrato(); });
-  $("ext-filtro-dia").addEventListener("change", e => { filtroExt.dia = e.target.value; renderExtrato(); });
-  $("ext-filtro-de").addEventListener("change", e => { filtroExt.de = e.target.value; renderExtrato(); });
-  $("ext-filtro-ate").addEventListener("change", e => { filtroExt.ate = e.target.value; renderExtrato(); });
   $("ext-filtro-grupo").addEventListener("change", e => { filtroExt.grupo = e.target.value; renderExtrato(); });
   $("ext-busca").addEventListener("input", e => { filtroExt.busca = e.target.value; renderExtrato(); });
   $("ext-exportar").addEventListener("click", exportarExtratoCSV);
   $("rec-exportar").addEventListener("click", exportarRecebimentosCSV);
 
-  // filtros e alternadores do painel
-  ligarSegmentado("pnl-periodo-seg", (v) => { filtroPainel.periodo = v; renderPainel(); });
+  // alternadores do painel
   $("ext-btn-filtros").addEventListener("click", () => {
     const aberto = $("ext-filtros-extra").classList.toggle("aberto");
     $("ext-btn-filtros").setAttribute("aria-expanded", aberto ? "true" : "false");
@@ -456,21 +530,11 @@ async function iniciarApp() {
 
   // filtros de manutenção
   // filtros do abastecimento
-  $("die-filtro-centro").addEventListener("change", e => { filtroDiesel.centro = e.target.value; renderDiesel(); });
   $("die-filtro-combustivel").addEventListener("change", e => { filtroDiesel.combustivel = e.target.value; renderDiesel(); });
-  $("die-filtro-periodo").addEventListener("change", e => {
-    filtroDiesel.periodo = e.target.value;
-    $("die-filtro-periodo-grupo").classList.toggle("oculto", e.target.value !== "personalizado");
-    renderDiesel();
-  });
-  $("die-filtro-de").addEventListener("change", e => { filtroDiesel.de = e.target.value; renderDiesel(); });
-  $("die-filtro-ate").addEventListener("change", e => { filtroDiesel.ate = e.target.value; renderDiesel(); });
-
   $("man-filtro-tipo").addEventListener("change", e => { filtroManutencao.tipo = e.target.value; renderManutencao(); });
   ligarSegmentado("man-filtro-status", (v) => { filtroManutencao.status = v; renderManutencao(); });
 
-  // ano da agenda
-  $("age-filtro-ano").addEventListener("change", e => { anoAgenda = Number(e.target.value); renderAgenda(); });
+
 
   // cliques delegados (cartões de cliente e linhas da agenda)
   $("rec-clientes").addEventListener("click", (ev) => {
@@ -682,8 +746,8 @@ async function carregarTudo() {
   } catch (e) {
     document.body.classList.remove("sincronizando");
     $("carregando").classList.remove("oculto");
-    $("carregando").textContent =
-      "Não foi possível carregar os dados. Confira se as migrações SQL foram executadas no Supabase e se a URL/anon key do config.js estão corretas. (" + (e.message || e) + ")";
+    $("carregando").textContent = "Não foi possível carregar os dados. " + erroBanco(e);
+    if (!primeiraCarga) alertaErro(erroBanco(e), "Não deu para atualizar os dados");
   }
 }
 
@@ -724,6 +788,8 @@ function renderTudo() {
   rodarSemTravar(renderAgenda, "Agenda");
   rodarSemTravar(renderAdministracao, "Configurações");
   rodarSemTravar(renderInicio, "Início");
+  rodarSemTravar(pintarBotoesPeriodo, "Filtros");
+  rodarSemTravar(aplicarDicas, "Dicas");
   rodarSemTravar(renderMais, "Mais");
 }
 
@@ -733,7 +799,7 @@ function rodarSemTravar(fn, nome) {
   try { fn(); }
   catch (e) {
     console.error("Falha ao renderizar " + nome + ":", e);
-    toast("Não foi possível carregar '" + nome + "' — veja o console (F12) para detalhes.");
+    toast("Não foi possível mostrar '" + nome + "'. Atualize a página; se continuar, avise o suporte.", "erro");
   }
 }
 
@@ -751,6 +817,7 @@ function saldoAtual() {
 }
 
 function renderSaldoTopo() {
+  $("topo-saldo").classList.toggle("oculto", contexto.equipamentoId != null || !vejoFinanceiro);
   const s = saldoAtual();
   const el = $("saldo-topo");
   el.textContent = brl(s);
@@ -759,17 +826,27 @@ function renderSaldoTopo() {
 
 /* ═══════════════ PAINEL ═══════════════ */
 
-// Janela de meses de calendário até o mês atual (Mês, 3, 6, 12 meses ou tudo).
-function noPeriodo(lista) {
-  if (filtroPainel.periodo === "tudo") return lista;
-  const n = { mes_atual:1, "3m":3, "6m":6, "12m":12 }[filtroPainel.periodo];
-  if (!n) return lista;
-  const [y, m] = hoje().split("-").map(Number);
-  const d0 = new Date(y, m - n, 1);
-  const de = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}-01`;
-  return lista.filter(x => x.data >= de);
+function noPeriodo(lista) { return lista.filter(x => dentroDe(x.data, filtroPainel.periodo)); }
+
+/* ── Listas encolhidas: começam com 1 item e "Ver mais" ── */
+const listasAbertas = new Set();
+function listaComVerMais(id, itens, inicial = 1) {
+  if (itens.length <= inicial) return itens.join("");
+  const aberta = listasAbertas.has(id);
+  const rot = `Ver mais (${itens.length - inicial})`;
+  return itens.slice(0, inicial).join("")
+    + `<div class="ver-mais-resto ${aberta ? "" : "oculto"}" data-resto="${id}">${itens.slice(inicial).join("")}</div>`
+    + `<button type="button" class="btn-ver-mais" data-ver-mais="${id}" data-rotulo="${rot}">${aberta ? "Ver menos" : rot}</button>`;
 }
-const ROTULO_PERIODO = { mes_atual:"este mês", "3m":"últimos 3 meses", "6m":"últimos 6 meses", "12m":"últimos 12 meses", tudo:"todo o período" };
+// mesma ideia para tabelas (linhas <tr>)
+function linhasComVerMais(id, linhas, inicial, colunas) {
+  if (linhas.length <= inicial) return linhas.join("");
+  const aberta = listasAbertas.has(id);
+  const rot = `Ver mais (${linhas.length - inicial})`;
+  return linhas.slice(0, inicial).join("")
+    + linhas.slice(inicial).map(l => l.replace(/^\s*<tr /, `<tr data-resto="${id}" class="${aberta ? "" : "oculto"} `)).join("")
+    + `<tr class="linha-ver-mais"><td colspan="${colunas}"><button type="button" class="btn-ver-mais" data-ver-mais="${id}" data-rotulo="${rot}">${aberta ? "Ver menos" : rot}</button></td></tr>`;
+}
 
 function renderPainel() {
   const periodoLanc = noPeriodo(dados.lanc).filter(ehRealizado).filter(l => !ehAjusteSaldo(l));
@@ -795,14 +872,15 @@ function renderPainel() {
   const servAndamento = (dados.servicos || []).filter(sv => sv.status === "andamento" && (contexto.equipamentoId == null || sv.equipamento_id == null || sv.equipamento_id === contexto.equipamentoId))
     .reduce((t, sv) => t + resumoServico(sv).aReceber, 0);
   const emAberto = contasReceber + servAndamento;
-  const aPagar = dados.lanc.filter(l => l.status === "pendente").reduce((s,l) => s + l.saida, 0);
+  const aPagar = contasEmAberto().filter(a => a.valor > 0).reduce((t, a) => t + a.valor, 0);
   // combustível por hora trabalhada: mesma conta "tanque a tanque" do painel
   // de abastecimento (antes usava um campo diesel.horas que nunca era
   // preenchido — o KPI ficava sempre em R$ 0,00)
   let litros = 0, custoDie = 0;
   for (const d of periodoDie) { litros += d.litros; custoDie += d.valor_total; }
   const datasPer = periodoDie.map(d => d.data).sort();
-  const efic = filtroPainel.periodo === "tudo" ? calcularEficiencia() : calcularEficiencia(datasPer[0] || hoje(), "");
+  const perP = intervaloDe(filtroPainel.periodo);
+  const efic = calcularEficiencia(perP.de, perP.ate);
   const custoHora = efic.horas > 0 ? efic.custo / efic.horas : 0;
   const lh = efic.horas > 0 ? efic.litros / efic.horas : 0;
   const s = saldoAtual();
@@ -815,27 +893,29 @@ function renderPainel() {
   // Posição atual do negócio — sempre totais, não reagem ao filtro de
   // período. Ficam numa grade separada, acima dos filtros, pra não dar a
   // entender que também são do período selecionado.
+  const total = contexto.equipamentoId == null;
   $("kpis-posicao").innerHTML = `
-    <button type="button" class="hero-saldo" onclick="irPara('extrato')">
-      <span class="hero-rotulo">Saldo em caixa</span>
-      <span class="hero-valor ${s >= 0 ? "pos" : "neg"}">${brl(s)}</span>
-      <span class="hero-sub">${escHtml(contexto.equipamentoId == null ? "todas as contas" : contexto.nome)}</span>
+    <button type="button" class="hero-saldo hero-resultado" onclick="irPara('extrato')">
+      <span class="hero-rotulo">${total ? "Resultado" : "Resultado da máquina"} · ${escHtml(rotuloPeriodo(filtroPainel.periodo).toLowerCase())}</span>
+      <span class="hero-valor ${res >= 0 ? "pos" : "neg"}">${brl(res)}</span>
+      <span class="hero-linha"><span class="pos">${icone("entrada", "icone-sm")} ${brl0(ent)}</span><span class="neg">${icone("saida", "icone-sm")} ${brl0(sai)}</span></span>
     </button>
-    <button type="button" class="hero-mini" onclick="irPara('recebimentos')">
+    <button type="button" class="hero-mini" onclick="irPara('receber')">
       <span class="hero-rotulo">${icone("entrada", "icone-sm")} A receber</span>
-      <span class="hero-mini-valor ${emAberto > 0.5 ? "amarelo" : ""}">${brl0(emAberto)}</span>
+      <span class="hero-mini-valor ${emAberto > 0.5 ? "pos" : ""}">${brl0(emAberto)}</span>
     </button>
     <button type="button" class="hero-mini" onclick="irPara('agenda')">
       <span class="hero-rotulo">${icone("saida", "icone-sm")} A pagar</span>
       <span class="hero-mini-valor ${aPagar > 0.5 ? "neg" : ""}">${brl0(aPagar)}</span>
-    </button>`;
+    </button>
+    ${total && vejoFinanceiro ? `<button type="button" class="hero-mini hero-caixa" onclick="irPara('extrato')">
+      <span class="hero-rotulo">${icone("banco", "icone-sm")} Saldo em caixa</span>
+      <span class="hero-mini-valor ${s >= 0 ? "" : "neg"}">${brl(s)}</span>
+    </button>` : ""}`;
   renderVencimentosPainel();
 
   // No período selecionado — reagem aos filtros de período/natureza acima.
   $("kpis-painel").innerHTML = [
-    kpi("Entradas", brl0(ent), "realizado", "pos"),
-    kpi("Saídas", brl0(sai), "realizado", "neg"),
-    kpi("Resultado", brl0(res), "entradas − saídas", res >= 0 ? "pos" : "neg"),
     kpi("Resultado operacional", brl0(resOperacional), "sem Investimento", resOperacional >= 0 ? "pos" : "neg"),
     kpi("Horas faturadas", num(horas) + " h", brl0(faturado) + " gerados"),
     kpi("Combustível por hora", efic.horas > 0 ? brl(custoHora) : "—", efic.horas > 0 ? num(lh, 1) + " L/h · " + num(litros, 0) + " L no período" : "precisa de 2 abastecimentos e horas lançadas"),
@@ -888,14 +968,13 @@ function renderComposicao(periodoLanc) {
     if (!l.saida || l.grupo === "Recebimentos") continue;
     if (filtroPainel.natureza !== "todos" && l.natureza !== filtroPainel.natureza) continue;
     const chave = modoAgrupar === "natureza" ? (ROTULO_NATUREZA[l.natureza] || "Custo variável")
-      : modoAgrupar === "centro" ? (nomeCentroCusto(l.centro_custo_id) || "Não classificado")
       : l.grupo;
     bucket[chave] = (bucket[chave] || 0) + l.saida;
   }
   const lista = Object.entries(bucket).sort((a,b) => b[1]-a[1]);
   const coresCentro = {};
   dados.centrosCusto.forEach(c => coresCentro[c.nome] = corCentroCusto(c.id));
-  const cores = modoAgrupar === "natureza" ? CORES_NATUREZA : modoAgrupar === "centro" ? coresCentro : CORES_GRUPO;
+  const cores = modoAgrupar === "natureza" ? CORES_NATUREZA : CORES_GRUPO;
 
   const mostrarPizza = filtroPainel.visual === "pizza" && lista.length > 0;
   $("grupos-painel").classList.toggle("oculto", mostrarPizza);
@@ -903,14 +982,14 @@ function renderComposicao(periodoLanc) {
 
   if (!mostrarPizza) {
     const max = lista.length ? lista[0][1] : 1;
-    $("grupos-painel").innerHTML = lista.map(([g,v]) => `
+    $("grupos-painel").innerHTML = listaComVerMais("composicao", lista.map(([g,v]) => `
       <div class="grupo-linha">
         <span class="grupo-nome">${escHtml(g)}</span>
         <div class="grupo-barra-fundo">
           <div class="grupo-barra" style="width:${(v/max*100).toFixed(1)}%;background:${cores[g]||"#8B919C"}"></div>
         </div>
         <span class="grupo-valor">${brl0(v)}</span>
-      </div>`).join("") || '<div class="vazio">Sem saídas para este filtro.</div>';
+      </div>`), 1) || '<div class="vazio">Sem saídas neste período.</div>';
     return;
   }
 
@@ -932,6 +1011,28 @@ function renderComposicao(periodoLanc) {
     }
   });
 }
+
+// Subtítulos e notas explicativas ficam escondidos: aparecem ao passar o mouse
+// ou tocar no (i) ao lado do título, para não poluir a tela.
+function aplicarDicas(raiz) {
+  (raiz || document).querySelectorAll(".titulo-risco").forEach(t => {
+    if (t.querySelector(".btn-dica")) return;
+    let nota = t.nextElementSibling;
+    if (!nota && t.parentElement.classList.contains("cartao-cabeca")) nota = t.parentElement.nextElementSibling;
+    if (t.parentElement.classList.contains("cartao-cabeca") && (!nota || !nota.classList.contains("cartao-nota"))) nota = t.parentElement.nextElementSibling;
+    if (!nota || !nota.classList.contains("cartao-nota") || !nota.textContent.trim()) return;
+    nota.classList.add("nota-dica");
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "btn-dica"; b.setAttribute("aria-label", "O que é isto?"); b.title = nota.textContent.trim();
+    b.textContent = "i";
+    b.addEventListener("click", (ev) => { ev.stopPropagation(); nota.classList.toggle("mostrar"); });
+    t.querySelector("span")?.after(b);
+  });
+}
+document.addEventListener("click", (ev) => {
+  const k = ev.target.closest(".kpi");
+  if (k && k.querySelector(".kpi-sub")) k.classList.toggle("mostrar-sub");
+});
 
 function kpi(rotulo, valor, sub, cls, grande) {
   return `<div class="kpi ${grande ? "kpi-grande" : ""}">
@@ -961,31 +1062,9 @@ function semanaParaIntervalo(semanaISO) {
 
 // Checagem de período única, usada pelo Extrato em tela e pela exportação
 // CSV — assim os dois nunca ficam dessincronizados.
-function dentroDoPeriodo(dataStr) {
-  switch (filtroExt.modo) {
-    case "mes":
-      return filtroExt.mes === "todos" || dataStr.slice(0,7) === filtroExt.mes;
-    case "dia":
-      return !filtroExt.dia || dataStr === filtroExt.dia;
-    case "semana": {
-      if (!filtroExt.semana) return true;
-      const [ini, fim] = semanaParaIntervalo(filtroExt.semana);
-      return dataStr >= ini && dataStr <= fim;
-    }
-    case "periodo":
-      if (filtroExt.de && dataStr < filtroExt.de) return false;
-      if (filtroExt.ate && dataStr > filtroExt.ate) return false;
-      return true;
-    default:
-      return true;
-  }
-}
+function dentroDoPeriodo(dataStr) { return dentroDe(dataStr, filtroExt.periodo); }
 
 function prepararFiltrosExtrato() {
-  const meses = [...new Set(dados.lanc.map(l => l.data.slice(0,7)))].sort();
-  $("ext-filtro-mes").innerHTML =
-    '<option value="todos">Todos os meses</option>' +
-    meses.map(m => `<option value="${m}" ${m===filtroExt.mes?"selected":""}>${mesLabel(m)}</option>`).join("");
   const grupos = [...new Set(dados.lanc.map(l => l.grupo))].sort();
   $("ext-filtro-grupo").innerHTML =
     '<option value="todos">Todos os grupos</option>' +
@@ -1018,15 +1097,15 @@ function renderSaldosContas() {
   }
   const linhas = saldosPorConta();
   const total = linhas.reduce((t, x) => t + x.saldo, 0);
-  const aberto = el.querySelector("details")?.open ?? telaCombina("(min-width: 1024px)");
-  el.innerHTML = `<details ${aberto ? "open" : ""}>
-    <summary class="contas-cabecalho"><span>${icone("banco", "icone-sm")} Saldo por conta</span><strong class="${total >= 0 ? "pos" : "neg"}">${brl(total)}</strong></summary>
-    <div class="contas-lista">${linhas.map(x => `
+  const linhasConta = linhas.map(x => `
       <div class="conta-linha">
         <span class="conta-nome">${escHtml(x.nome)}</span>
         <span class="conta-saldo ${x.saldo >= 0 ? "pos" : "neg"}">${brl(x.saldo)}</span>
         <button type="button" class="btn-link" data-ajustar-conta="${escHtml(x.id)}">Ajustar</button>
-      </div>`).join("") || '<p class="cartao-nota">Nenhuma conta cadastrada ainda.</p>'}</div></details>`;
+      </div>`);
+  el.innerHTML = `
+    <div class="contas-cabecalho"><span>${icone("banco", "icone-sm")} Saldo por conta</span><strong class="${total >= 0 ? "pos" : "neg"}">${brl(total)}</strong></div>
+    <div class="contas-lista">${linhasConta.length ? listaComVerMais("saldo-contas", linhasConta, 1) : '<p class="cartao-nota">Nenhuma conta cadastrada ainda.</p>'}</div>`;
   el.querySelectorAll("[data-ajustar-conta]").forEach(b => b.addEventListener("click", () => abrirModalAjusteSaldo(b.dataset.ajustarConta)));
 }
 
@@ -1057,9 +1136,9 @@ function abrirModalAjusteSaldo(idConta) {
       ]),
     ],
     montar(f) {
-      if (String(f.novo_saldo).trim() === "") throw "Informe o saldo real da conta.";
+      if (String(f.novo_saldo).trim() === "") throw erroCampo("novo_saldo", "Informe o saldo real da conta.");
       const novo = numDeMoeda(f.novo_saldo);
-      if (diferenca(f.novo_saldo) === 0) throw "O saldo informado é igual ao do app: não há o que ajustar.";
+      if (diferenca(f.novo_saldo) === 0) throw erroCampo("novo_saldo", "O saldo informado é igual ao do app: não há o que ajustar.");
       return { novo, data: f.data, obs: (f.obs || "").trim() };
     },
     async aoSalvar(r) {
@@ -1081,8 +1160,7 @@ function abrirModalAjusteSaldo(idConta) {
           if (error) throw error;
         }
       } catch (e) {
-        erro.textContent = "Não foi possível ajustar: " + (e.message || e);
-        erro.classList.remove("oculto");
+        mostrarErroForm(erroBanco(e));
         return;
       }
       fecharModal();
@@ -1137,11 +1215,11 @@ function origemDoLancamento(id) {
   return null;
 }
 
-  $("ext-corpo").innerHTML = filtrado.map(l => {
+  const linhasExt = filtrado.map(l => {
     const valor = l.entrada > 0 ? l.entrada : -l.saida;
     const natTxt = l.natureza && l.natureza !== "Receita" ? ROTULO_NATUREZA[l.natureza] || l.natureza : "";
     const sv = l.servico_id ? dados.servicos.find(x => x.id === l.servico_id) : null;
-    const subTxt = [sv ? "Serviço: " + sv.nome : "", natTxt, nomeCentroCusto(l.centro_custo_id)].filter(Boolean).join(" · ");
+    const subTxt = [sv ? "Serviço: " + sv.nome : "", natTxt].filter(Boolean).join(" · ");
     const pendente = l.status === "pendente";
     const origem = origemDoLancamento(l.id);
     // linha/cartão inteiro é clicável — edição de sincronizados redireciona
@@ -1168,8 +1246,9 @@ function origemDoLancamento(id) {
       <td class="num td-saldo ${l.saldo < 0 ? "neg" : ""}">${brl0(l.saldo)}</td>
       <td class="td-acao">${indicador}</td>
     </tr>`;
-  }).join("") ||
-  '<tr><td colspan="7" class="vazio">Nenhum lançamento para este filtro. Ajuste o mês ou o grupo acima.</td></tr>';
+  });
+  $("ext-corpo").innerHTML = (linhasExt.length ? linhasComVerMais("extrato", linhasExt, 30, 7) : "") ||
+  '<tr><td colspan="7" class="vazio">Nenhum lançamento neste período. Troque o período acima.</td></tr>';
 }
 
 function abrirModalLancamento(id, tipoNovo) {
@@ -1196,7 +1275,6 @@ function abrirModalLancamento(id, tipoNovo) {
       { nome:"status_entrada", rotulo:"Situação", tipo:"select", opcoes:["pago|Já recebi","pendente|Ainda vou receber"], valor: l?.status || "pago", visivelSe: f => ehReceita(f) },
       { nome:"banco", rotulo:"Conta", tipo:"select", opcoes: opcoesContaBancaria(), valor: l?.banco || contaPadrao() },
       { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(true), valor: equipamentoPadrao(l?.equipamento_id, true) },
-      { nome:"centro_custo_id", rotulo:"Centro de custo (como foi pago)", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(l?.centro_custo_id), visivelSe: f => !ehReceita(f) },
       ...campoServico(l?.servico_id),
     ],
     async aposSalvar(salvo) {
@@ -1205,7 +1283,7 @@ function abrirModalLancamento(id, tipoNovo) {
     },
     montar(f) {
       const v = numDeMoeda(f._valor);
-      if (!v || v <= 0) throw "Informe um valor maior que zero.";
+      if (!v || v <= 0) throw erroCampo("_valor", "Informe um valor maior que zero.");
       const ent = ehReceita(f);
       return {
         data: f.data,
@@ -1218,7 +1296,6 @@ function abrirModalLancamento(id, tipoNovo) {
         saida:   ent ? 0 : v,
         descricao: f.descricao.trim(),
         natureza: ent ? "Receita" : f.natureza,
-        centro_custo_id: ent ? (l?.centro_custo_id ?? null) : (f.centro_custo_id ? Number(f.centro_custo_id) : null),
         ...servicoDoForm(f),
       };
     }
@@ -1229,7 +1306,8 @@ function abrirModalLancamento(id, tipoNovo) {
 function renderRecebimentos() {
   // resumo por cliente
   const porCliente = {};
-  for (const r of dados.rec) {
+  const recPer = dados.rec.filter(r => dentroDe(r.data, filtroRecPeriodo));
+  for (const r of recPer) {
     const c = r.cliente;
     if (!porCliente[c]) porCliente[c] = { horas:0, faturado:0, recebido:0 };
     porCliente[c].horas    += r.horas;
@@ -1240,7 +1318,7 @@ function renderRecebimentos() {
     // com a contabilidade de verdade.
     porCliente[c].recebido += r.recebido ? (r.valor_pago || r.valor_total) : 0;
   }
-  $("rec-clientes").innerHTML = Object.entries(porCliente).map(([c, d]) => {
+  $("rec-clientes").innerHTML = listaComVerMais("clientes", Object.entries(porCliente).sort((a, b) => b[1].faturado - a[1].faturado).map(([c, d]) => {
     const aberto = d.faturado - d.recebido;
     return `<div class="cliente-cartao ${filtroCliente === c ? "ativo" : ""}" data-cliente="${escHtml(c)}">
       <div class="cliente-nome">${escHtml(c)}</div>
@@ -1251,13 +1329,13 @@ function renderRecebimentos() {
         <div><span>Em aberto</span><b class="${aberto > 0.5 ? "neg" : ""}">${brl0(aberto)}</b></div>
       </div>
     </div>`;
-  }).join("");
+  }), 1);
 
-  const filtrado = dados.rec
+  const filtrado = recPer
     .filter(r => filtroCliente === "todos" || r.cliente === filtroCliente)
     .slice().reverse();
 
-  $("rec-corpo").innerHTML = filtrado.map(r => {
+  const linhasRec = filtrado.map(r => {
     const svR = r.servico_id ? dados.servicos.find(x => x.id === r.servico_id) : null;
     const statusHtml = svR
       ? `<span class="chip chip-status chip-servico">Serviço: ${escHtml(svR.nome)}</span>`
@@ -1273,11 +1351,12 @@ function renderRecebimentos() {
     <td class="num td-mudo">${r.valor_hora ? brl0(r.valor_hora) : "—"}</td>
     <td class="num">${r.valor_total ? brl0(r.valor_total) : "—"}</td>
     <td class="num ${r.valor_pago ? "pos" : ""}">${r.valor_pago ? brl0(r.valor_pago) : "—"}</td>
-    <td>${statusHtml}${r.centro_custo_id ? `<div class="td-natureza">${escHtml(nomeCentroCusto(r.centro_custo_id))}</div>` : ""}</td>
+    <td>${statusHtml}</td>
     <td class="td-acao"><span class="indicador-acao" title="Editar registro">${icone("chevron-right", "icone-sm")}</span></td>
   </tr>`;
-  }).join("") ||
-  '<tr><td colspan="9" class="vazio">Nenhum registro. Use o botão acima para lançar horas trabalhadas ou pagamentos.</td></tr>';
+  });
+  $("rec-corpo").innerHTML = linhasRec.length ? linhasComVerMais("horas", linhasRec, 20, 9) :
+  '<tr><td colspan="9" class="vazio">Nenhum registro de horas neste período.</td></tr>';
 }
 
 function filtrarCliente(c) {
@@ -1326,14 +1405,13 @@ function abrirModalRecebimento(id) {
       { nome:"valor_pago", rotulo:"Valor recebido (se diferente do total)", tipo:"moeda", valor: r?.valor_pago || "", oculto: semDinheiro, visivelSe: f => !semDinheiro && !f.servico_id && f.recebido },
       { nome:"_banco", rotulo:"Conta onde entrou", tipo:"select", opcoes: opcoesContaBancaria(), valor: contaDoLancamento(r?.lancamento_id), oculto: semDinheiro, visivelSe: f => !semDinheiro && !f.servico_id && f.recebido },
       { nome:"tipo_recebimento_id", rotulo:"Tipo de receita", tipo:"select", opcoes: opcoesTipoRecebimento(true), valor: r?.tipo_recebimento_id != null ? String(r.tipo_recebimento_id) : "", oculto: semDinheiro, visivelSe: f => !semDinheiro && opcoesTipoRecebimento(false).length > 0 },
-      { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: r?.centro_custo_id != null ? String(r.centro_custo_id) : "", oculto: true },
     ],
     montar(f) {
-      if (!f.cliente.trim()) throw "Informe o cliente.";
-      if (!f.equipamento_id) throw "Selecione o equipamento.";
+      if (!f.cliente.trim()) throw erroCampo("cliente", "Informe o cliente.");
+      if (!f.equipamento_id) throw erroCampo("equipamento_id", "Selecione o equipamento.");
       const hi = f.hora_inicial === "" ? null : Number(f.hora_inicial);
       const hf = f.hora_final === "" ? null : Number(f.hora_final);
-      if (hi != null && hf != null && hf <= hi) throw "O horímetro final precisa ser maior que o inicial.";
+      if (hi != null && hf != null && hf <= hi) throw erroCampo("hora_final", "O horímetro final precisa ser maior que o inicial.");
       const horas = (hi != null && hf != null) ? Math.max(0, hf - hi) : 0;
       const vh = numDeMoeda(f.valor_hora);
       const valor_total = horas * vh;
@@ -1349,7 +1427,6 @@ function abrirModalRecebimento(id) {
         hora_inicial: hi, hora_final: hf, horas,
         valor_hora: vh, valor_total,
         valor_pago, recebido: !vinculado && !!f.recebido,
-        centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
         tipo_recebimento_id: f.tipo_recebimento_id ? Number(f.tipo_recebimento_id) : null,
         ...servicoDoForm(f),
       };
@@ -1412,21 +1489,6 @@ function badgeComb(c) {
 }
 
 // Janela de datas escolhida no filtro de período do abastecimento.
-function intervaloDiesel() {
-  const [y, m] = hoje().split("-").map(Number);
-  const ym = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
-  const ini = (n) => ym(new Date(y, m - 1 - n, 1)) + "-01";
-  switch (filtroDiesel.periodo) {
-    case "mes_atual": return { de: ini(0), ate: "" };
-    case "mes_anterior": { const u = new Date(y, m - 1, 0); return { de: ini(1), ate: `${ym(u)}-${String(u.getDate()).padStart(2, "0")}` }; }
-    case "3m": return { de: ini(2), ate: "" };
-    case "6m": return { de: ini(5), ate: "" };
-    case "12m": return { de: ini(11), ate: "" };
-    case "personalizado": return { de: filtroDiesel.de || "", ate: filtroDiesel.ate || "" };
-    default: return { de: "", ate: "" };
-  }
-}
-
 // Eficiência da máquina: litros de diesel por hora trabalhada, "tanque a
 // tanque". Para cada abastecimento, divide os litros pelas horas faturadas
 // (Recebimentos) entre o abastecimento anterior e este. Assume tanque cheio
@@ -1462,23 +1524,15 @@ const todosAbastecimentos = () => dados.die.concat(dados.dieExtra || []);
 const acharAbastecimento = (id) => todosAbastecimentos().find(x => x.id === id);
 
 function renderDiesel() {
-  // filtro de centro de custo: só lista os que já têm abastecimento
-  const centrosUsados = [...new Set(dados.die.map(d => d.centro_custo_id).filter(x => x != null))];
-  const selCentro = $("die-filtro-centro");
-  const atual = selCentro.value || filtroDiesel.centro;
-  selCentro.innerHTML = '<option value="todos">Todos os centros de custo</option>' +
-    centrosUsados.map(id => `<option value="${id}">${escHtml(nomeCentroCusto(id))}</option>`).join("");
-  selCentro.value = (atual !== "todos" && centrosUsados.includes(Number(atual))) ? atual : "todos";
-  filtroDiesel.centro = selCentro.value;
+  // (filtro por centro de custo removido: o conceito saiu do sistema)
 
   // Vendo uma máquina, só entram os abastecimentos DELA (o carro de apoio
   // fica de fora). Selos de combustível e marca de nota conjunta só
   // aparecem no "Total do negócio", onde todos os equipamentos se misturam.
   const visaoGeral = contexto.equipamentoId == null;
-  const { de, ate } = intervaloDiesel();
+  const { de, ate } = intervaloDe(filtroDiesel.periodo);
   const doFiltro = dados.die.filter(d =>
     (!de || d.data >= de) && (!ate || d.data <= ate) &&
-    (filtroDiesel.centro === "todos" || String(d.centro_custo_id) === filtroDiesel.centro) &&
     (filtroDiesel.combustivel === "todos" || d.combustivel === filtroDiesel.combustivel)
   );
 
@@ -1583,8 +1637,8 @@ function renderDiesel() {
       <td class="td-acao"><span class="indicador-acao" title="Editar abastecimento">${icone("chevron-right", "icone-sm")}</span></td>
     </tr>`);
   }));
-  $("die-corpo").innerHTML = linhas.join("") ||
-  '<tr><td colspan="7" class="vazio">Nenhum abastecimento para este filtro.</td></tr>';
+  $("die-corpo").innerHTML = linhas.length ? linhasComVerMais("diesel", linhas, 20, 7) :
+  '<tr><td colspan="7" class="vazio">Nenhum abastecimento neste período.</td></tr>';
 }
 
 function abrirDetalheAbastecimentoConjunto(ids) {
@@ -1899,7 +1953,6 @@ function abrirModalDiesel(id) {
     { nome:"_banco", rotulo:"Conta de onde saiu", tipo:"select", opcoes: opcoesContaBancaria(), valor: contaDoLancamento(d?.lancamento_id), visivelSe: f => f.status === "pago" },
     { tipo:"separador", rotulo:"Classificação" },
     { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel" },
-    { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(d?.centro_custo_id) },
     ...campoServico(d?.servico_id),
   );
 
@@ -1924,12 +1977,12 @@ function abrirModalDiesel(id) {
       const bruto = numDeMoeda(f.valor_unit_bruto);
       // total pago manda; se não foi preenchido, vale litros × preço do litro
       const total = numDeMoeda(f.valor_total) || arred(litros * bruto, 2);
-      if (!total) throw "Informe o valor total pago (ou os litros e o preço do litro).";
+      if (!total) throw erroCampo("valor_total", "Informe o valor total pago (ou os litros e o preço do litro).");
       const vu = litros > 0 ? arred(total / litros, 4) : bruto;
       const precoBruto = bruto > 0 ? bruto : vu;
       const desconto = litros > 0 && bruto > 0 ? arred(litros * bruto - total, 2) : 0;
-      if (!f.equipamento_id) throw "Selecione o equipamento.";
-      if (f.status === "pendente" && !f.vencimento) throw "Informe quando vence o pagamento.";
+      if (!f.equipamento_id) throw erroCampo("equipamento_id", "Selecione o equipamento.");
+      if (f.status === "pendente" && !f.vencimento) throw erroCampo("vencimento", "Informe quando vence o pagamento.");
       bancoDieselForm = f._banco || contaPadrao();
 
       carroApoioForm = null;
@@ -1937,8 +1990,8 @@ function abrirModalDiesel(id) {
         const carroLitros = Number(f.carro_litros) || 0;
         const carroBruto = numDeMoeda(f.carro_valor_unit_bruto);
         const carroTotal = numDeMoeda(f.carro_valor_total) || arred(carroLitros * carroBruto, 2);
-        if (!f.carro_equipamento_id) throw "Selecione qual foi o carro de apoio.";
-        if (!carroTotal) throw "Informe o valor total pago do carro de apoio (ou os litros e o preço do litro).";
+        if (!f.carro_equipamento_id) throw erroCampo("carro_equipamento_id", "Selecione qual foi o carro de apoio.");
+        if (!carroTotal) throw erroCampo("carro_valor_total", "Informe o valor total pago do carro de apoio (ou os litros e o preço do litro).");
         carroApoioForm = {
           equipamento_id: Number(f.carro_equipamento_id), combustivel: f.carro_combustivel,
           litros: carroLitros,
@@ -1960,7 +2013,7 @@ function abrirModalDiesel(id) {
         data: f.data, equipamento_id: Number(f.equipamento_id), combustivel: f.combustivel,
         local: f.local.trim(), litros, valor_unit: vu, valor_unit_bruto: precoBruto, desconto, valor_total: total,
         status: f.status, vencimento: f.status === "pendente" ? f.vencimento : null,
-        natureza: f.natureza, centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
+        natureza: f.natureza,
         ...servicoDoForm(f),
       };
       // chave da nota (do QR): só mexe quando a nota foi trocada ou removida
@@ -1998,7 +2051,7 @@ function abrirModalDiesel(id) {
           await criarAbastecimentoCarroApoio(salvo, carroApoioForm);
         } catch (e) {
           console.error("Falha ao registrar o carro de apoio:", e);
-          toast("Abastecimento principal salvo, mas o carro de apoio NÃO foi registrado — tente lançá-lo separado.");
+          alertaErro("O abastecimento da máquina foi salvo, mas o do carro de apoio NÃO. Lance o carro de apoio separado.", "Salvo pela metade");
         }
       }
     },
@@ -2210,20 +2263,21 @@ function renderManutencao() {
   ].join("");
 
   $("man-proximas").innerHTML = proximas.length
-    ? proximas.map(m => `
+    ? listaComVerMais("man-proximas", proximas.map(m => `
       <div class="man-proxima-linha linha-clicavel" role="button" tabindex="0" onclick="aoClicarLinha(() => abrirModalManutencao(${m.id}))" onkeydown="teclaLinha(event)">
         <span class="chip" style="border-color:${COR_TIPO_MAN[m.tipo]};color:${COR_TIPO_MAN[m.tipo]}">${ROTULO_TIPO_MAN[m.tipo]}</span>
         <span class="man-proxima-desc">${escHtml(m.descricao || "—")}${contexto.equipamentoId == null ? " · " + escHtml(nomeEquipamento(m.equipamento_id)) : ""}</span>
         <span class="man-proxima-data">${fData(m.proxima_data || m.data)}${m.proxima_horimetro ? " · " + num(m.proxima_horimetro,0) + "h" : ""}</span>
-      </div>`).join("")
+      </div>`), 1)
     : '<div class="vazio">Nenhuma manutenção agendada.</div>';
 
   const filtrado = dados.man.filter(m =>
+    dentroDe(m.data, filtroManPeriodo) &&
     (filtroManutencao.tipo === "todos" || m.tipo === filtroManutencao.tipo) &&
     (filtroManutencao.status === "todos" || (filtroManutencao.status === "realizadas" ? m.realizada : !m.realizada))
   );
 
-  $("man-corpo").innerHTML = filtrado.map(m => {
+  const linhasMan = filtrado.map(m => {
     const venceu = m.status_pagamento === "pendente" && m.vencimento && m.vencimento < hj;
     const statusHtml = !m.realizada
       ? `<span class="chip chip-status chip-pendente">Agendada</span>`
@@ -2244,8 +2298,9 @@ function renderManutencao() {
       <td class="td-mudo">${proxTxt}</td>
       <td class="td-acao"><span class="indicador-acao" title="Editar manutenção">${icone("chevron-right", "icone-sm")}</span></td>
     </tr>`;
-  }).join("") ||
-  '<tr><td colspan="10" class="vazio">Nenhuma manutenção registrada para este filtro.</td></tr>';
+  });
+  $("man-corpo").innerHTML = linhasMan.length ? linhasComVerMais("manutencao", linhasMan, 20, 10) :
+  '<tr><td colspan="10" class="vazio">Nenhuma manutenção neste período.</td></tr>';
 }
 
 function abrirModalManutencao(id) {
@@ -2270,7 +2325,6 @@ function abrirModalManutencao(id) {
       { nome:"valor_pecas", rotulo:"Valor peças (R$)", tipo:"moeda", valor: m?.valor_pecas ?? "" },
       { nome:"valor_mao_obra", rotulo:"Valor mão de obra (R$)", tipo:"moeda", valor: m?.valor_mao_obra ?? "" },
       { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: m?.natureza || "Variavel" },
-      { nome:"centro_custo_id", rotulo:"Centro de custo", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(m?.centro_custo_id) },
       { nome:"status_pagamento", rotulo:"Pagamento", tipo:"select", opcoes:["pago|Já foi pago","pendente|Ainda vou pagar"], valor: m?.status_pagamento || "pago", visivelSe: f => f.realizada },
       { nome:"vencimento", rotulo:"Vence em", tipo:"date", valor: m?.vencimento || "", obrigatorio: (f) => f.realizada && f.status_pagamento === "pendente", visivelSe: f => f.realizada && f.status_pagamento === "pendente" },
       { nome:"_banco", rotulo:"Conta de onde saiu", tipo:"select", opcoes: opcoesContaBancaria(), valor: contaDoLancamento(m?.lancamento_id), visivelSe: f => f.realizada && f.status_pagamento === "pago" },
@@ -2279,9 +2333,9 @@ function abrirModalManutencao(id) {
       ...campoServico(m?.servico_id),
     ],
     montar(f) {
-      if (!f.equipamento_id) throw "Selecione o equipamento.";
-      if (!f.descricao.trim() && !f.pecas.trim()) throw "Descreva o serviço ou as peças.";
-      if (f.realizada && f.status_pagamento === "pendente" && !f.vencimento) throw "Informe quando vence o pagamento.";
+      if (!f.equipamento_id) throw erroCampo("equipamento_id", "Selecione o equipamento.");
+      if (!f.descricao.trim() && !f.pecas.trim()) throw erroCampo("descricao", "Descreva o serviço ou as peças.");
+      if (f.realizada && f.status_pagamento === "pendente" && !f.vencimento) throw erroCampo("vencimento", "Informe quando vence o pagamento.");
       bancoManutencao = f._banco || contaPadrao();
       const vp = numDeMoeda(f.valor_pecas);
       const vm = numDeMoeda(f.valor_mao_obra);
@@ -2290,7 +2344,7 @@ function abrirModalManutencao(id) {
         horimetro: f.horimetro === "" ? null : Number(f.horimetro),
         descricao: f.descricao.trim(), pecas: f.pecas.trim(), fornecedor: f.fornecedor.trim(),
         valor_pecas: vp, valor_mao_obra: vm, valor_total: vp + vm,
-        natureza: f.natureza, centro_custo_id: f.centro_custo_id ? Number(f.centro_custo_id) : null,
+        natureza: f.natureza,
         status_pagamento: f.realizada ? f.status_pagamento : "pendente",
         vencimento: f.realizada && f.status_pagamento === "pendente" ? f.vencimento : null,
         proxima_data: f.proxima_data || null,
@@ -2342,8 +2396,8 @@ async function abrirModalMeuPerfil() {
     ],
     semExcluir: true,
     montar(f) {
-      if (!f.nome.trim()) throw "Informe o nome.";
-      if (f.nova_senha && f.nova_senha.length < 6) throw "A nova senha precisa ter pelo menos 6 caracteres.";
+      if (!f.nome.trim()) throw erroCampo("nome", "Informe o nome.");
+      if (f.nova_senha && f.nova_senha.length < 6) throw erroCampo("nova_senha", "A nova senha precisa ter pelo menos 6 caracteres.");
       return { nome: f.nome.trim(), avatar_url: f.avatar_url.trim() || null, nova_senha: f.nova_senha };
     },
     async aoSalvar(reg) {
@@ -2352,8 +2406,7 @@ async function abrirModalMeuPerfil() {
       const { error } = await sb.from("perfis").update({ nome: reg.nome, avatar_url: reg.avatar_url }).eq("id", meuUserId);
       if (error) {
         btn.disabled = false; btn.textContent = "Salvar";
-        $("modal-erro").textContent = "Não foi possível salvar: " + error.message;
-        $("modal-erro").classList.remove("oculto");
+        mostrarErroForm(erroBanco(error));
         return;
       }
       if (reg.nova_senha) {
@@ -2405,7 +2458,7 @@ const CADASTROS_ADMIN = [
 
 const SECOES_ADMIN = [
   { chave: "empresa", titulo: "Empresa", tipo: "empresa", grupo: "Geral", icone: "inicio", sub: "nome e conta padrão" },
-  ...CADASTROS_ADMIN.filter(c => c.chave !== "obras").map(c => ({ chave: c.chave, titulo: c.titulo, tipo: "cadastro", config: c, grupo: "Cadastros", icone: c.chave === "equipamentos" ? "tractor" : c.chave === "contasBancarias" ? "banco" : c.chave === "clientes" ? "usuario" : "extrato" })),
+  ...CADASTROS_ADMIN.filter(c => c.chave !== "obras" && c.chave !== "centrosCusto").map(c => ({ chave: c.chave, titulo: c.titulo, tipo: "cadastro", config: c, grupo: "Cadastros", icone: c.chave === "equipamentos" ? "tractor" : c.chave === "contasBancarias" ? "banco" : c.chave === "clientes" ? "usuario" : "extrato" })),
   { chave: "feriados", titulo: "Feriados", tipo: "feriados", grupo: "Cadastros", icone: "agenda" },
   { chave: "usuarios", titulo: "Usuários e acessos", tipo: "usuarios", grupo: "Pessoas", icone: "usuario" },
   { chave: "auditoria", titulo: "Histórico de alterações", tipo: "auditoria", grupo: "Pessoas", icone: "relogio", sub: "quem fez o quê" },
@@ -2595,12 +2648,12 @@ function abrirModalEmpresa() {
       { nome: "conta_padrao", rotulo: "Conta padrão dos lançamentos automáticos", tipo: "select", largo: true, opcoes: opcoesContaBancaria(), valor: contaPadrao() },
     ],
     montar(f) {
-      if (!f.empresa_nome.trim()) throw "Informe o nome da empresa.";
+      if (!f.empresa_nome.trim()) throw erroCampo("empresa_nome", "Informe o nome da empresa.");
       return { empresa_nome: f.empresa_nome.trim(), conta_padrao: f.conta_padrao };
     },
     async aoSalvar(reg) {
       const { error } = await sb.from("config").upsert([{ chave: "empresa_nome", valor: reg.empresa_nome }, { chave: "conta_padrao", valor: reg.conta_padrao }]);
-      if (error) { $("modal-erro").textContent = "Não foi possível salvar: " + error.message; $("modal-erro").classList.remove("oculto"); return; }
+      if (error) { mostrarErroForm(erroBanco(error)); return; }
       fecharModal();
       toast("Dados da empresa salvos.");
       await carregarTudo();
@@ -2618,14 +2671,15 @@ function criarModalCadastro(tabela, chaveDados, tituloSingular, camposExtra = []
       tabela, id,
       campos: [
         { nome:"nome", rotulo:"Nome", tipo:"texto", largo:true, valor: item?.nome || "", obrigatorio: true },
-        ...camposExtra.map(c => ({ ...c, valor: item ? (item[c.nome] ?? "") : "" })),
+        ...camposExtra.map(c => ({ ...c, valor: c.padrao ? (item && item[c.nome] != null ? item[c.nome] : c.padrao(item)) : (item ? (item[c.nome] ?? "") : "") })),
         { nome:"ativo", rotulo:"Ativo", tipo:"checkbox", valor: item?.ativo ?? true },
       ],
       montar(f) {
-        if (!f.nome.trim()) throw "Informe o nome.";
+        if (!f.nome.trim()) throw erroCampo("nome", "Informe o nome.");
         const extra = {};
         camposExtra.forEach(c => {
-          extra[c.nome] = c.tipo === "moeda" ? (f[c.nome] ? numDeMoeda(f[c.nome]) : null) : String(f[c.nome] || "").trim();
+          extra[c.nome] = c.tipo === "moeda" ? (f[c.nome] ? numDeMoeda(f[c.nome]) : null)
+            : c.tipo === "checkbox" ? !!f[c.nome] : String(f[c.nome] || "").trim();
         });
         return { nome: f.nome.trim(), ...extra, ativo: !!f.ativo };
       }
@@ -2635,6 +2689,7 @@ function criarModalCadastro(tabela, chaveDados, tituloSingular, camposExtra = []
 
 const abrirModalEquipamentoAdmin = criarModalCadastro("equipamentos", "equipamentos", "equipamento", [
   { nome:"tipo", rotulo:"Tipo", tipo:"select", opcoes:["Maquina|Máquina (controla por horímetro)","Veiculo|Veículo (carro de apoio)"] },
+  { nome:"controla_resultado", rotulo:"Tem resultado próprio (painel só dele). Desmarcado: os gastos entram só no total do negócio", tipo:"checkbox", largo:true, padrao: (item) => controlaResultado(item || { tipo: "Maquina" }) },
   { nome:"imagem_url", rotulo:"Foto (link da imagem, opcional)", tipo:"texto", largo:true },
 ]);
 const abrirModalCentroCusto      = criarModalCadastro("centros_custo", "centrosCusto", "centro de custo");
@@ -2659,7 +2714,7 @@ function abrirModalFeriado(id) {
       { nome:"descricao", rotulo:"Descrição", tipo:"texto", largo:true, valor: f0?.descricao || "" },
     ],
     montar(f) {
-      if (!f.data) throw "Informe a data.";
+      if (!f.data) throw erroCampo("data", "Informe a data.");
       return { data: f.data, descricao: f.descricao.trim() };
     }
   });
@@ -2698,7 +2753,7 @@ function abrirModalPerfil(id) {
       })),
     ],
     montar(f) {
-      if (!f.nome.trim()) throw "Informe o nome.";
+      if (!f.nome.trim()) throw erroCampo("nome", "Informe o nome.");
       if (souEu && (f.papel !== "admin" || !f.ativo)) {
         throw "Você não pode tirar seu próprio acesso de administrador ou se desativar — peça pra outro admin fazer isso.";
       }
@@ -2719,8 +2774,7 @@ function abrirModalPerfil(id) {
       const { error } = await sb.from("perfis").update(reg).eq("id", id);
       if (error) {
         btn.disabled = false; btn.textContent = "Editar";
-        $("modal-erro").textContent = "Não foi possível salvar: " + error.message;
-        $("modal-erro").classList.remove("oculto");
+        mostrarErroForm(erroBanco(error));
         return;
       }
       // regrava do zero as liberações de equipamento (mais simples que diff)
@@ -2771,15 +2825,18 @@ function gerarOcorrenciasAgenda(ano, mesIni, diaTxt, qtdExtra) {
   return ocorrencias;
 }
 
-function prepararFiltroAgendaAno() {
+function anosDaAgenda() {
   const anos = new Set(dados.age.map(a => a.ano));
   anos.add(anoAgenda); anos.add(Number(hoje().slice(0,4)));
-  const lista = [...anos].sort((a,b) => a-b);
-  const sel = $("age-filtro-ano");
-  const atual = sel.value || String(anoAgenda);
-  sel.innerHTML = lista.map(a => `<option value="${a}">${a}</option>`).join("");
-  sel.value = lista.includes(Number(atual)) ? atual : String(anoAgenda);
-  anoAgenda = Number(sel.value);
+  return [...anos].sort((a,b) => b - a);
+}
+function prepararFiltroAgendaAno() {
+  $("age-ano-btn").innerHTML = `${icone("agenda", "icone-sm")}<span>Ano de ${anoAgenda}</span>${icone("chevron-right", "icone-sm btn-periodo-seta")}`;
+}
+function abrirSeletorAnoAgenda() {
+  abrirModal({ titulo: "Ano", tabela: "_ano", folha: true, semSalvar: true,
+    corpoCustom: `<div class="chips-periodo">${anosDaAgenda().map(a => `<button type="button" class="chip-periodo ${a === anoAgenda ? "ativo" : ""}" data-ano="${a}">${a}</button>`).join("")}</div>` });
+  document.querySelectorAll("#modal-campos [data-ano]").forEach(b => b.addEventListener("click", () => { anoAgenda = Number(b.dataset.ano); fecharModal(); renderAgenda(); }));
 }
 
 // Data de vencimento de um item da agenda (dia em texto → data real).
@@ -2811,27 +2868,56 @@ function linhaConta(a, compacta) {
   </div>`;
 }
 
-function renderContasLista() {
+function gruposPorVencimento(contas, prefixo) {
   const hj = hoje(), em7 = somarDias(hj, 7), em30 = somarDias(hj, 30);
-  const contas = contasEmAberto();
   const grupos = [
     ["Atrasadas", contas.filter(a => a.venc < hj)],
     ["Próximos 7 dias", contas.filter(a => a.venc >= hj && a.venc <= em7)],
     ["Até 30 dias", contas.filter(a => a.venc > em7 && a.venc <= em30)],
     ["Depois", contas.filter(a => a.venc > em30)],
   ];
-  const soma = (l, rec) => l.filter(a => rec ? a.valor < 0 : a.valor > 0).reduce((t, a) => t + Math.abs(a.valor), 0);
-  const atras = grupos[0][1], prox = grupos[1][1];
+  return grupos.filter(([, l]) => l.length).map(([t, l], i) => `
+    <h3 class="grupo-titulo">${t} <span>${l.length} · ${brl0(l.reduce((s, a) => s + Math.abs(a.valor), 0))}</span></h3>
+    <div class="lista-cartao">${listaComVerMais(prefixo + i, l.map(a => linhaConta(a)), 1)}</div>`).join("");
+}
+function renderContasLista() {
+  const hj = hoje(), em7 = somarDias(hj, 7);
+  const contas = contasEmAberto().filter(a => a.valor > 0 && dentroDe(a.venc, filtroContasPeriodo));
+  const soma = (l) => l.reduce((t, a) => t + a.valor, 0);
   $("age-lista").innerHTML = `
     <div class="resumo-contas">
-      <div class="resumo-contas-item ${soma(atras) ? "neg" : ""}"><span>Atrasado</span><b>${brl0(soma(atras))}</b></div>
-      <div class="resumo-contas-item"><span>Pagar em 7 dias</span><b>${brl0(soma(prox))}</b></div>
-      <div class="resumo-contas-item pos"><span>A receber</span><b>${brl0(soma(contas, true))}</b></div>
+      <div class="resumo-contas-item ${soma(contas.filter(a => a.venc < hj)) ? "neg" : ""}"><span>Atrasado</span><b>${brl0(soma(contas.filter(a => a.venc < hj)))}</b></div>
+      <div class="resumo-contas-item"><span>Em 7 dias</span><b>${brl0(soma(contas.filter(a => a.venc >= hj && a.venc <= em7)))}</b></div>
+      <div class="resumo-contas-item"><span>Total a pagar</span><b>${brl0(soma(contas))}</b></div>
     </div>
-    ${contas.length ? grupos.filter(([, l]) => l.length).map(([t, l]) => `
-      <h3 class="grupo-titulo">${t} <span>${l.length}</span></h3>
-      <div class="lista-cartao">${l.map(a => linhaConta(a)).join("")}</div>`).join("")
-    : `<div class="vazio-bonito">${icone("check")}<b>Nada em aberto</b><span>Todas as contas estão pagas.</span></div>`}`;
+    ${contas.length ? gruposPorVencimento(contas, "pagar-") : `<div class="vazio-bonito">${icone("check")}<b>Nada a pagar</b><span>Nenhuma conta em aberto neste período.</span></div>`}`;
+}
+
+// A receber: contas a receber em aberto + o que os serviços em andamento vão cobrar
+function renderReceber() {
+  const el = $("rcb-lista");
+  if (!el) return;
+  const hj = hoje();
+  const contas = contasEmAberto().filter(a => a.valor < 0 && dentroDe(a.venc, filtroReceberPeriodo));
+  const servs = (dados.servicos || []).filter(sv => sv.status === "andamento" && (contexto.equipamentoId == null || sv.equipamento_id == null || sv.equipamento_id === contexto.equipamentoId))
+    .map(sv => ({ sv, r: resumoServico(sv) })).filter(x => x.r.aReceber > 0.5);
+  const soma = (l) => l.reduce((t, a) => t + Math.abs(a.valor), 0);
+  const totServ = servs.reduce((t, x) => t + x.r.aReceber, 0);
+  el.innerHTML = `
+    <div class="resumo-contas">
+      <div class="resumo-contas-item ${soma(contas.filter(a => a.venc < hj)) ? "neg" : ""}"><span>Atrasado</span><b>${brl0(soma(contas.filter(a => a.venc < hj)))}</b></div>
+      <div class="resumo-contas-item pos"><span>Contas a receber</span><b>${brl0(soma(contas))}</b></div>
+      <div class="resumo-contas-item"><span>Serviços em andamento</span><b>${brl0(totServ)}</b></div>
+    </div>
+    ${contas.length ? gruposPorVencimento(contas, "receber-") : ""}
+    ${servs.length ? `<h3 class="grupo-titulo">Serviços em andamento <span>${servs.length} · ${brl0(totServ)}</span></h3>
+      <div class="lista-cartao">${listaComVerMais("receber-serv", servs.map(({ sv, r }) => `
+        <div class="registro-item" role="button" tabindex="0" onclick="abrirDetalheServico(${sv.id})" onkeydown="teclaLinha(event)">
+          <span class="registro-icone" style="--cor-tile:#4EC9D4">${icone("servico")}</span>
+          <span class="registro-texto"><b>${escHtml(sv.nome)}</b><small>${escHtml(sv.cliente || "")}</small></span>
+          <span class="registro-data pos">${brl(r.aReceber)}</span>
+        </div>`), 1)}</div>` : ""}
+    ${!contas.length && !servs.length ? `<div class="vazio-bonito">${icone("check")}<b>Nada a receber</b><span>Nenhuma conta a receber neste período.</span></div>` : ""}`;
 }
 
 // Cartão "Vence em breve" do painel do gestor
@@ -2847,14 +2933,16 @@ function renderVencimentosPainel() {
       <button type="button" class="btn-link" onclick="irPara('agenda')">Ver todas</button>
     </div>
     <p class="cartao-nota">${prox.length ? `${prox.length} conta${prox.length > 1 ? "s" : ""} até ${fData(em7)}${atrasadas ? ` · <span class="neg">${atrasadas} atrasada${atrasadas > 1 ? "s" : ""}</span>` : ""}` : "nenhuma conta vencendo nos próximos 7 dias"}</p>
-    <div class="lista-cartao lista-compacta">${prox.slice(0, 5).map(a => linhaConta(a, true)).join("")}</div>`;
+    <div class="lista-cartao lista-compacta">${listaComVerMais("vencimentos", prox.map(a => linhaConta(a, true)), 1)}</div>`;
 }
 
 function renderAgenda() {
   const anual = modoAgenda === "ano";
   $("age-lista").classList.toggle("oculto", anual);
   $("age-anual").classList.toggle("oculto", !anual);
-  $("age-filtro-ano").classList.toggle("oculto", !anual);
+  $("age-periodo-slot").classList.toggle("oculto", anual);
+  $("age-ano-btn").classList.toggle("oculto", !anual);
+  renderReceber();
   renderContasLista();
   if (!anual) return;
   prepararFiltroAgendaAno();
@@ -3072,7 +3160,6 @@ function abrirModalAgenda(id, tipoNovo) {
     { nome:"grupo", rotulo:"Categoria (vai para o Extrato)", tipo:"select", opcoes: grupos, valor: a?.grupo && a.grupo !== "Recebimentos" ? a.grupo : (grupos.includes("Outras despesas") ? "Outras despesas" : grupos[0]), visivelSe: ehPagar },
     { nome:"natureza", rotulo:"Tipo de custo", tipo:"select", opcoes:["Fixo|Custo fixo","Variavel|Custo variável","Investimento|Investimento"], valor: a?.natureza && a.natureza !== "Receita" ? a.natureza : "Fixo", visivelSe: ehPagar },
     { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(true), valor: equipamentoPadrao(a?.equipamento_id, true) },
-    { nome:"centro_custo_id", rotulo:"Centro de custo (como será pago)", tipo:"select", opcoes: opcoesCentroCusto(true), valor: centroCustoPadrao(a?.centro_custo_id), visivelSe: ehPagar },
     { nome:"status_pagamento", rotulo:"Situação", tipo:"select", opcoes:["pendente|Em aberto","pago|Já foi paga / recebida"], valor: a?.status_pagamento || "pendente" },
     { nome:"data_pagamento", rotulo:"Data do pagamento", tipo:"date", valor: a?.data_pagamento || hoje(), visivelSe: f => f.status_pagamento === "pago" },
   ];
@@ -3087,17 +3174,17 @@ function abrirModalAgenda(id, tipoNovo) {
     avisoExcluir: a && a.lancamento_id ? "Isso também remove o lançamento vinculado no Extrato." : null,
     campos,
     montar(f) {
-      if (!f.item.trim()) throw "Informe a descrição da conta.";
+      if (!f.item.trim()) throw erroCampo("item", "Informe a descrição da conta.");
       const v = numDeMoeda(f.valor);
-      if (!v || v <= 0) throw "Informe um valor maior que zero.";
-      if (!f.vencimento) throw "Informe o vencimento.";
-      if (f.status_pagamento === "pago" && !f.data_pagamento) throw "Informe a data do pagamento.";
+      if (!v || v <= 0) throw erroCampo("valor", "Informe um valor maior que zero.");
+      if (!f.vencimento) throw erroCampo("vencimento", "Informe o vencimento.");
+      if (f.status_pagamento === "pago" && !f.data_pagamento) throw erroCampo("data_pagamento", "Informe a data do pagamento.");
       const [ano, mes, dia] = f.vencimento.split("-").map(Number);
       const pagar = ehPagar(f);
       return {
         item: f.item.trim(), equipamento_id: f.equipamento_id ? Number(f.equipamento_id) : null,
         grupo: pagar ? f.grupo : "Recebimentos", ano, dia: String(dia), mes, valor: pagar ? v : -v,
-        natureza: pagar ? f.natureza : "Receita", centro_custo_id: pagar && f.centro_custo_id ? Number(f.centro_custo_id) : null,
+        natureza: pagar ? f.natureza : "Receita", centro_custo_id: a?.centro_custo_id ?? null,
         status_pagamento: f.status_pagamento, data_pagamento: f.status_pagamento === "pago" ? f.data_pagamento : null,
         _replicarMeses: id ? 0 : Math.max(0, Math.min(60, Number(f.replicarMeses) || 0)),
       };
@@ -3204,8 +3291,7 @@ async function salvarAgendaFinal(id, linhas, lancamentoIdExistente = null) {
   }
   btn.disabled = false; btn.textContent = id ? "Editar" : "Salvar";
   if (error) {
-    $("modal-erro").textContent = "Não foi possível salvar: " + error.message;
-    $("modal-erro").classList.remove("oculto");
+    mostrarErroForm(erroBanco(error));
     return;
   }
 
@@ -3436,6 +3522,7 @@ function abrirModal(ctx) {
 
 function fecharModal() {
   $("modal-fundo").classList.add("oculto");
+  const t = $("toast"); if (t.classList.contains("toast-erro")) t.classList.add("oculto");
   modalCtx = null;
   desmarcarModalNoHistorico();
 }
@@ -3513,7 +3600,7 @@ async function abrirAnexo(caminho) {
   if (error || !data) {
     if (aba) aba.close();
     console.error("Falha ao abrir anexo:", error);
-    toast("Não foi possível abrir o anexo.");
+    alertaErro("O arquivo não abriu. Confira a internet e tente de novo.", "Não deu para abrir o anexo");
     return;
   }
   if (aba) aba.location.href = data.signedUrl; else window.open(data.signedUrl, "_blank");
@@ -3572,6 +3659,7 @@ function validarObrigatorios() {
   if (!primeiro) return true;
   if (primeiro.scrollIntoView) primeiro.scrollIntoView({ block: "center", behavior: "smooth" });
   primeiro.focus({ preventScroll: true });
+  toast("Preencha os campos destacados em vermelho.", "erro");
   return false;
 }
 
@@ -3583,13 +3671,13 @@ async function salvarRegistro() {
   if (!validarObrigatorios()) return;
   let reg;
   try { reg = modalCtx.montar(lerFormulario()); }
-  catch (msg) { erro.textContent = msg; erro.classList.remove("oculto"); return; }
+  catch (e) { if (e instanceof Error) console.error(e); mostrarErroForm(e); return; }
   if (modalCtx.antesDeSalvar) {
     btn.disabled = true;
     let barrar = null;
     try { barrar = await modalCtx.antesDeSalvar(reg); } catch (e) { console.error(e); }
     btn.disabled = false;
-    if (barrar) { erro.textContent = barrar; erro.classList.remove("oculto"); return; }
+    if (barrar) { mostrarErroForm(barrar); return; }
   }
 
   if (modalCtx.aoSalvar) { await modalCtx.aoSalvar(reg); return; }
@@ -3601,8 +3689,7 @@ async function salvarRegistro() {
   const { data: salvo, error } = await q;
   if (error) {
     btn.disabled = false; btn.textContent = modalCtx.id ? "Editar" : "Salvar";
-    erro.textContent = "Não foi possível salvar: " + error.message;
-    erro.classList.remove("oculto");
+    mostrarErroForm(erroBanco(error));
     return;
   }
 
@@ -3610,7 +3697,7 @@ async function salvarRegistro() {
     try { await modalCtx.aposSalvar(salvo); }
     catch (e) {
       console.error("Falha ao sincronizar com o extrato:", e);
-      toast("Salvo, mas houve um problema ao sincronizar com o Extrato/Agenda — confira.");
+      alertaErro("O registro foi salvo, mas o lançamento no Extrato ou a conta em aberto não foram atualizados. Abra o registro e salve de novo.", "Salvo pela metade");
     }
   }
 
@@ -3710,8 +3797,7 @@ async function executarExclusao(ctxOriginal) {
   if (error) {
     btn.disabled = false;
     btn.textContent = "Excluir";
-    $("modal-erro").textContent = "Não foi possível excluir: " + error.message;
-    $("modal-erro").classList.remove("oculto");
+    alertaErro(erroBanco(error), "Não deu para excluir");
     return;
   }
   fecharModal();

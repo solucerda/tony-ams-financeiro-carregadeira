@@ -215,6 +215,12 @@
 
     <main class="conteudo">
       <div id="carregando" class="vazio">Carregando dados do banco…</div>
+      <div class="cabeca-pagina oculto" id="cabeca-pagina">
+        <button type="button" class="btn-voltar-pagina" id="btn-voltar-pagina" aria-label="Voltar ao menu">
+          <svg class="icone" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-chevron-right"></use></svg>
+        </button>
+        <h1 id="titulo-pagina">—</h1>
+      </div>
 
       <!-- ─── INÍCIO (usuário comum / operador) ─── -->
       <section id="aba-inicio" class="secao oculto"></section>
@@ -224,22 +230,11 @@
 
       <!-- ─── PAINEL ─── -->
       <section id="aba-painel" class="secao oculto">
+        <div class="filtros filtros-periodo"><span data-periodo-slot="painel"></span></div>
         <div class="painel-topo">
           <div class="kpi-grade kpi-grade-posicao" id="kpis-posicao"></div>
           <div class="cartao cartao-vencimentos" id="pnl-vencimentos"></div>
         </div>
-
-        <div class="filtros filtros-periodo">
-          <div class="segmentado segmentado-rolagem" id="pnl-periodo-seg">
-            <button type="button" data-valor="mes_atual">Mês</button>
-            <button type="button" data-valor="3m">3 meses</button>
-            <button type="button" data-valor="6m">6 meses</button>
-            <button type="button" data-valor="12m">12 meses</button>
-            <button type="button" data-valor="tudo" class="ativo">Tudo</button>
-          </div>
-        </div>
-
-        <h2 class="titulo-risco titulo-periodo"><span>No período selecionado</span></h2>
         <div class="kpi-grade" id="kpis-painel"></div>
 
         <div class="cartao">
@@ -261,7 +256,6 @@
               <div class="segmentado" id="pnl-agrupar">
                 <button type="button" data-valor="grupo" class="ativo">Por grupo</button>
                 <button type="button" data-valor="natureza">Por natureza</button>
-                <button type="button" data-valor="centro">Por centro de custo</button>
               </div>
               <select id="pnl-natureza" aria-label="Natureza">
                 <option value="todos">Todas as naturezas</option>
@@ -285,25 +279,14 @@
       <section id="aba-extrato" class="secao oculto">
         <div class="cartao" id="ext-contas"></div>
         <div class="filtros filtros-busca">
-          <input class="busca" type="search" id="ext-busca" placeholder="Buscar lançamento…" enterkeyhint="search">
-          <button class="btn-fantasma btn-filtros" id="ext-btn-filtros" type="button" aria-expanded="false">
-            <svg class="icone icone-sm" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-filtro"></use></svg> Filtros
+          <input class="busca" type="search" id="ext-busca" placeholder="Buscar…" enterkeyhint="search">
+          <span data-periodo-slot="extrato"></span>
+          <button class="btn-fantasma btn-filtros" id="ext-btn-filtros" type="button" aria-expanded="false" aria-label="Mais filtros">
+            <svg class="icone icone-sm" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-filtro"></use></svg>
           </button>
           <button class="btn-primario so-desktop" id="ext-novo">+ Lançamento</button>
         </div>
         <div class="filtros filtros-extra" id="ext-filtros-extra">
-          <div class="segmentado" id="ext-modo-periodo">
-            <button type="button" data-valor="mes" class="ativo">Mês</button>
-            <button type="button" data-valor="semana">Semana</button>
-            <button type="button" data-valor="dia">Dia</button>
-            <button type="button" data-valor="periodo">Período</button>
-          </div>
-          <select id="ext-filtro-mes"></select>
-          <input type="week" id="ext-filtro-semana" class="oculto">
-          <input type="date" id="ext-filtro-dia" class="oculto">
-          <span id="ext-filtro-periodo-grupo" class="periodo-grupo oculto">
-            <input type="date" id="ext-filtro-de"> <span class="periodo-ate">até</span> <input type="date" id="ext-filtro-ate">
-          </span>
           <select id="ext-filtro-grupo"></select>
           <button class="btn-fantasma" id="ext-exportar">
             <svg class="icone icone-sm" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-baixar"></use></svg> Exportar CSV
@@ -331,6 +314,7 @@
             <button type="button" data-valor="concluido">Concluídos</button>
             <button type="button" data-valor="todos">Todos</button>
           </div>
+          <span data-periodo-slot="servicos"></span>
           <button class="btn-primario so-desktop" id="srv-novo">+ Serviço</button>
         </div>
         <div id="srv-resumo"></div>
@@ -342,7 +326,8 @@
         <div class="filtros">
           <div class="cliente-grade" id="rec-clientes"></div>
         </div>
-        <div class="filtros">
+        <div class="filtros filtros-linha">
+          <span data-periodo-slot="horas"></span>
           <button class="btn-fantasma" id="rec-exportar">
             <svg class="icone icone-sm" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-baixar"></use></svg> Exportar CSV
           </button>
@@ -375,7 +360,6 @@
           <div class="grafico-caixa grafico-baixo"><canvas id="graf-diesel"></canvas></div>
         </div>
         <div class="filtros">
-          <select id="die-filtro-centro"></select>
           <select id="die-filtro-combustivel">
             <option value="todos">Todos os combustíveis</option>
             <option value="Diesel">Diesel</option>
@@ -384,18 +368,7 @@
             <option value="GNV">GNV</option>
             <option value="Flex">Flex</option>
           </select>
-          <select id="die-filtro-periodo">
-            <option value="tudo">Todo o período</option>
-            <option value="mes_atual">Mês atual</option>
-            <option value="mes_anterior">Mês anterior</option>
-            <option value="3m">Últimos 3 meses</option>
-            <option value="6m">Últimos 6 meses</option>
-            <option value="12m">Últimos 12 meses</option>
-            <option value="personalizado">Personalizado…</option>
-          </select>
-          <span id="die-filtro-periodo-grupo" class="periodo-grupo oculto">
-            <input type="date" id="die-filtro-de"> <span class="periodo-ate">até</span> <input type="date" id="die-filtro-ate">
-          </span>
+          <span data-periodo-slot="diesel"></span>
           <button class="btn-primario so-desktop" id="die-novo">+ Abastecimento</button>
         </div>
         <div class="tabela-rolagem">
@@ -424,6 +397,7 @@
         </div>
 
         <div class="filtros">
+          <span data-periodo-slot="manutencao"></span>
           <select id="man-filtro-tipo">
             <option value="todos">Todos os tipos</option>
             <option value="preventiva">Preventiva</option>
@@ -458,7 +432,8 @@
             <button type="button" data-valor="lista" class="ativo">Por vencimento</button>
             <button type="button" data-valor="ano">Visão anual</button>
           </div>
-          <select id="age-filtro-ano" class="oculto"></select>
+          <span data-periodo-slot="pagar" id="age-periodo-slot"></span>
+          <button type="button" class="btn-periodo oculto" id="age-ano-btn"></button>
           <button class="btn-primario so-desktop" id="age-novo">+ Conta a pagar</button>
         </div>
         <div id="age-lista"></div>
@@ -476,6 +451,15 @@
           </div>
           <p class="rodape-nota"><span class="legenda-pago"><svg class="icone icone-sm" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-circle"></use></svg> pago</span> · toque num valor para dar baixa ou editar · ao pagar, o lançamento entra no Extrato sozinho.</p>
         </div>
+      </section>
+
+      <!-- ─── A RECEBER ─── -->
+      <section id="aba-receber" class="secao oculto">
+        <div class="filtros">
+          <span data-periodo-slot="receber"></span>
+          <button class="btn-primario so-desktop" id="rcb-novo">+ Conta a receber</button>
+        </div>
+        <div id="rcb-lista"></div>
       </section>
 
       <!-- ─── ADMINISTRAÇÃO ─── -->
@@ -523,6 +507,7 @@
   <script src="nota-qr.js"></script>
   <script src="config.js"></script>
   <script src="app.js"></script>
+  <script src="periodo.js"></script>
   <script src="servicos.js"></script>
   <script src="shell.js"></script>
 </body>
