@@ -93,7 +93,12 @@ function abrirSeletorPeriodo(atual, aoEscolher) {
   const meses = Array.from({ length: 12 }, (_, i) => { const d = new Date(h.getFullYear(), h.getMonth() - i, 1); return [`m:${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, MESES[d.getMonth()] + "/" + String(d.getFullYear()).slice(2)]; });
   const anos = [0, 1, 2, 3].map(k => [`a:${h.getFullYear() - k}`, String(h.getFullYear() - k)]);
   const chip = ([k, r]) => `<button type="button" class="chip-periodo ${atual.chave === k ? "ativo" : ""}" data-escolher="${k}">${r}</button>`;
-  const html = PERIODOS_FIXOS.map(g => `<h3 class="grupo-titulo">${g.grupo}</h3><div class="chips-periodo">${g.itens.map(chip).join("")}</div>`).join("")
+  const rapidos = [["hoje", "Hoje"], ["ult7", "Últimos 7 dias"], ["mes", "Este mês"], ["mes_passado", "Mês passado"], ["ano", "Este ano"]];
+  const outros = PERIODOS_FIXOS.map(g => ({ grupo: g.grupo, itens: g.itens.filter(([k]) => !rapidos.some(r => r[0] === k)) })).filter(g => g.itens.length);
+  const aberto = atual.chave && !rapidos.some(r => r[0] === atual.chave) ? " open" : "";
+  const html = `<div class="chips-periodo">${rapidos.map(chip).join("")}</div>`
+    + `<details class="periodo-mais"${aberto}><summary>Outros períodos…</summary>`
+    + outros.map(g => `<h3 class="grupo-titulo">${g.grupo}</h3><div class="chips-periodo">${g.itens.map(chip).join("")}</div>`).join("")
     + `<h3 class="grupo-titulo">Mês a mês</h3><div class="chips-periodo">${meses.map(chip).join("")}</div>`
     + `<h3 class="grupo-titulo">Anos</h3><div class="chips-periodo">${anos.map(chip).join("")}</div>`
     + `<h3 class="grupo-titulo">Personalizado</h3>
@@ -101,7 +106,7 @@ function abrirSeletorPeriodo(atual, aoEscolher) {
         <label>De<input type="date" id="per-de" value="${atual.chave === "personalizado" ? escHtml(atual.de || "") : ""}"></label>
         <label>Até<input type="date" id="per-ate" value="${atual.chave === "personalizado" ? escHtml(atual.ate || "") : ""}"></label>
         <button type="button" class="btn-primario" id="per-aplicar">Aplicar</button>
-      </div>`;
+      </div></details>`;
   abrirModal({ titulo: "Período", tabela: "_periodo", corpoCustom: html, semSalvar: true, folha: true });
   document.querySelectorAll("#modal-campos [data-escolher]").forEach(b => b.addEventListener("click", () => {
     fecharModal(); aoEscolher({ chave: b.dataset.escolher });

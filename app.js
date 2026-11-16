@@ -220,6 +220,39 @@ function equipamentoPadrao(valorAtual, incluirGeral) {
   const primeiro = dados.equipamentos.find(e => e.ativo);
   return primeiro ? String(primeiro.id) : "";
 }
+// tipo de custo mais usado numa categoria (olha lançamentos e contas já cadastrados)
+function naturezaDaCategoria(grupo) {
+  if (!grupo) return null;
+  const cont = {};
+  const conta = (g, n) => { if (g === grupo && n && n !== "Receita") cont[n] = (cont[n] || 0) + 1; };
+  dados.lanc.forEach(l => { if (l.saida > 0) conta(l.grupo, l.natureza); });
+  dados.age.forEach(a => { if (a.valor > 0) conta(a.grupo, a.natureza); });
+  const top = Object.entries(cont).sort((a, b) => b[1] - a[1])[0];
+  return top ? top[0] : null;
+}
+// categoria usada da última vez com a mesma descrição / mesmo item
+function categoriaDaDescricao(texto) {
+  const q = semAcento(String(texto || "").trim());
+  if (q.length < 3) return null;
+  const achados = [
+    ...dados.lanc.filter(l => l.saida > 0 && l.grupo && semAcento(String(l.descricao || "").trim()) === q).map(l => ({ d: String(l.data || ""), g: l.grupo })),
+    ...dados.age.filter(a => a.valor > 0 && a.grupo && semAcento(String(a.item || "").trim()) === q).map(a => ({ d: `${a.ano}-${String(a.mes).padStart(2, "0")}`, g: a.grupo })),
+  ].sort((x, y) => y.d.localeCompare(x.d));
+  return achados.length ? achados[0].g : null;
+}
+// aplica as sugestões num formulário aberto (sem mexer em campo que a pessoa já trocou)
+function sugerirCategoria(campoTexto) {
+  const el = (n) => document.querySelector(`#modal-campos [data-campo="${n}"]`);
+  const g = el("grupo"), n = el("natureza");
+  if (!g || !n) return;
+  const opcao = (sel, v) => v && [...sel.options].some(o => o.value === v);
+  if (campoTexto) {
+    const cat = categoriaDaDescricao(el(campoTexto)?.value);
+    if (opcao(g, cat)) g.value = cat;
+  }
+  const nat = naturezaDaCategoria(g.value);
+  if (opcao(n, nat)) n.value = nat;
+}
 // ── Sugestões automáticas para os formulários (só leem o que já está carregado;
 // nunca gravam nada e sempre podem ser trocadas à mão) ──
 // último horímetro conhecido da máquina: o maior entre o final das horas lançadas
@@ -984,7 +1017,7 @@ function renderPainel() {
     <div class="cartao cartao-operacao">
       <div class="op-duo">
         <div class="op-item">
-          <span class="op-rotulo" title="Exclui saídas classificadas como Investimento">Resultado operacional</span>
+          <span class="op-rotulo" title="Não conta investimentos">Resultado operacional</span>
           <b class="op-valor ${resOperacional >= 0 ? "pos" : "neg"}">${brl0(resOperacional)}</b>
         </div>
         <div class="op-item">
@@ -1386,8 +1419,8 @@ function abrirModalLancamento(id, tipoNovo) {
       { nome:"_tipo", rotulo:"É uma…", tipo:"select", opcoes:["saida|Despesa (saiu dinheiro)","entrada|Receita (entrou dinheiro)"], valor: tipo, largo:true, oculto: !!tipoNovo },
       { nome:"_valor", rotulo:"Valor (R$)", tipo:"moeda", valor: l ? (l.entrada > 0 ? l.entrada : l.saida) : "", obrigatorio:true },
       { nome:"data", rotulo:"Data", tipo:"date", valor: l?.data || hoje(), obrigatorio:true },
-      { nome:"descricao", rotulo:"Descrição", tipo:"texto", largo:true, valor: l?.descricao || "" },
-      { nome:"grupo", rotulo:"Categoria", tipo:"select", opcoes: grupos.includes(grupoInicial) ? grupos : grupos.concat(grupoInicial), valor: grupoInicial, visivelSe: f => !ehReceita(f) },
+      { nome:"descricao", rotulo:"Descrição", tipo:"texto", largo:true, valor: l?.descricao || "", aoMudar: () => { if (!l) sugerirCategoria("descricao"); } },
+      { nome:"grupo", rotulo:"Categoria", tipo:"select", opcoes: grupos.includes(grupoInicial) ? grupos : grupos.concat(grupoInicial), valor: grupoInicial, visivelSe: f => !ehReceita(f), aoMudar: () => { if (!l) sugerirCategoria(null); } },
       { nome:"natureza", rotulo:"Tipo de custo", tipo:"select",
         opcoes:["Variavel|Custo variável","Fixo|Custo fixo","Investimento|Investimento"],
         valor: (l?.natureza && l.natureza !== "Receita") ? l.natureza : "Variavel", visivelSe: f => !ehReceita(f) },
@@ -2728,13 +2761,13 @@ function renderAdministracao() {
   if (secao.tipo === "usuarios") {
     const ROTULO_PAPEL = { admin:"Administrador", operacional:"Operacional", leitura:"Só leitura" };
     const CLASSE_PAPEL = { admin:"chip-pago", operacional:"chip-pendente", leitura:"" };
-    conteudo.innerHTML = cabeca("Usuários e acessos", "Toque em uma pessoa para definir o que ela pode ver e fazer. Para dar acesso a alguém novo, crie o login dela no Supabase (Authentication → Add user): ela aparece aqui como \"Só leitura\" até você liberar.") + `
+    conteudo.innerHTML = cabeca("Usuários e acessos", "Toque em uma pessoa para definir o que ela pode ver e fazer. Quem acabou de entrar aparece como \"Só leitura\" até você liberar.") + `
       <div class="lista-cartao">${dados.perfis.length
         ? dados.perfis.map(p => linha(`abrirModalPerfil('${p.id}')`,
             `<b>${escHtml(p.nome || "Sem nome")}</b><small>${p.papel === "admin" ? "acesso total" : (p.ve_financeiro === false ? "sem acesso ao dinheiro" : "vê o financeiro")}</small>`,
             `<span class="chip chip-status ${CLASSE_PAPEL[p.papel] || ""}">${ROTULO_PAPEL[p.papel] || p.papel}</span>${p.ativo === false ? `<span class="chip chip-status chip-vencido">Bloqueado</span>` : ""}`,
             avatarHtml(p.nome, p.avatar_url))).join("")
-        : '<div class="vazio">Nenhum usuário. Rode a migração correcoes_v19.sql no Supabase.</div>'}</div>`;
+        : '<div class="vazio">Nenhum usuário ainda.</div>'}</div>`;
     return;
   }
 
@@ -2757,7 +2790,7 @@ function renderAdministracao() {
         <span class="hist-hora">${hora}</span>
       </div>`;
     }).join("");
-    conteudo.innerHTML = cabeca("Histórico de alterações", "o que cada pessoa criou, alterou ou excluiu (últimas 300 alterações).") + `
+    conteudo.innerHTML = cabeca("Histórico de alterações", "quem criou, alterou ou excluiu o quê (últimas 300).") + `
       ${pessoas.length > 1 ? `<div class="filtros"><select onchange="filtroHistorico = this.value; renderAdministracao()">
         <option value="todos">Todas as pessoas</option>
         ${pessoas.map(p => `<option value="${p.id}" ${filtroHistorico === p.id ? "selected" : ""}>${escHtml(p.nome || "Sem nome")}</option>`).join("")}
@@ -3397,7 +3430,7 @@ function abrirModalAgenda(id, tipoNovo) {
   const grupos = opcoesGrupoDespesa();
   const campos = [
     { nome:"_tipo", rotulo:"É uma conta…", tipo:"select", largo:true, opcoes:["pagar|A pagar (vai sair dinheiro)","receber|A receber (vai entrar dinheiro)"], valor: tipo },
-    { nome:"item", rotulo:"Descrição", tipo:"texto", largo:true, valor: a?.item || "", obrigatorio:true },
+    { nome:"item", rotulo:"Descrição", tipo:"texto", largo:true, valor: a?.item || "", obrigatorio:true, aoMudar: () => { if (!a) sugerirCategoria("item"); } },
     { nome:"valor", rotulo:"Valor (R$)", tipo:"moeda", valor: a ? Math.abs(a.valor) : "", obrigatorio:true },
     { nome:"vencimento", rotulo:"Vencimento", tipo:"date", valor: a ? vencimentoAgenda(a) : hoje(), obrigatorio:true },
     { nome:"grupo", rotulo:"Categoria (vai para o Extrato)", tipo:"select", opcoes: grupos, valor: a?.grupo && a.grupo !== "Recebimentos" ? a.grupo : (grupos.includes("Outras despesas") ? "Outras despesas" : grupos[0]), visivelSe: ehPagar },
@@ -3407,7 +3440,9 @@ function abrirModalAgenda(id, tipoNovo) {
     { nome:"data_pagamento", rotulo:"Data do pagamento", tipo:"date", valor: a?.data_pagamento || hoje(), visivelSe: f => f.status_pagamento === "pago" },
   ];
   if (!id) {
-    campos.push({ nome:"replicarMeses", rotulo:"Repete todo mês? Quantos meses a mais (0 = não repete)", tipo:"numero", largo:true, valor: 0 });
+    campos.push(
+      { nome:"repetir", rotulo:"Repetição", tipo:"select", largo:true, opcoes:["nao|Só desta vez","mensal|Repete todo mês"], valor: "nao" },
+      { nome:"replicarMeses", rotulo:"Por quantos meses (contando este)", tipo:"numero", largo:true, valor: 12, visivelSe: f => f.repetir === "mensal" });
   }
 
   abrirModal({
@@ -3429,7 +3464,7 @@ function abrirModalAgenda(id, tipoNovo) {
         grupo: pagar ? f.grupo : "Recebimentos", ano, dia: String(dia), mes, valor: pagar ? v : -v,
         natureza: pagar ? f.natureza : "Receita", centro_custo_id: a?.centro_custo_id ?? null,
         status_pagamento: f.status_pagamento, data_pagamento: f.status_pagamento === "pago" ? f.data_pagamento : null,
-        _replicarMeses: id ? 0 : Math.max(0, Math.min(60, Number(f.replicarMeses) || 0)),
+        _replicarMeses: id || f.repetir !== "mensal" ? 0 : Math.max(0, Math.min(60, (Number(f.replicarMeses) || 1) - 1)),
       };
     },
     async aoSalvar(reg) {

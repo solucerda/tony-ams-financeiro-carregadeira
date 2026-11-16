@@ -1414,3 +1414,13 @@ body[data-pagina="painel"] .btn-olho { width: 36px; }
   body[data-pagina="painel"] .chip-contexto-seta, body[data-pagina="painel"] .topo .btn-periodo-seta { display: none; }
   body[data-pagina="painel"] .topo .btn-periodo { padding: 0 12px; }
 }
+
+/* ── Onda 2: blocos recolhidos (período e menu Mais) ── */
+.periodo-mais { margin-top: 14px; }
+.periodo-mais > summary, .mais-avancado > summary {
+  cursor: pointer; list-style: none; padding: 12px 14px; border-radius: 12px;
+  background: var(--superficie); border: 1px solid var(--borda); color: var(--texto-2, #b9b9b9); font-weight: 600;
+}
+.periodo-mais > summary::-webkit-details-marker, .mais-avancado > summary::-webkit-details-marker { display: none; }
+.periodo-mais[open] > summary, .mais-avancado[open] > summary { margin-bottom: 10px; }
+.mais-avancado { margin-bottom: 14px; }

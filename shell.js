@@ -268,8 +268,12 @@ function renderMais() {
       ${podeInstalar ? linha("baixar", "Instalar o aplicativo", "abre como app, direto da tela inicial", "instalarWebApp()", "mais-destaque") : ""}
       ${linha("usuario", "Meu perfil", "nome, foto e senha", "abrirModalMeuPerfil()")}
       ${meuPapel === "admin" ? linha("administracao", "Configurações", "empresa, cadastros, usuários e histórico", "irPara('administracao'); mudarSecaoAdmin(null)") : ""}
-      ${linha("atualizar", "Atualizar dados", "busca de novo no servidor", "carregarTudo().then(() => toast('Dados atualizados.'))")}
     </div>
+    <details class="mais-avancado">
+      <summary>Avançado</summary>
+      <div class="mais-lista">
+        ${linha("atualizar", "Atualizar dados", "busca de novo no servidor", "carregarTudo().then(() => toast('Dados atualizados.'))")}
+      </div>
     ${meuPapel === "admin" ? `
       <h3 class="grupo-titulo">Base de dados</h3>
       <div class="cartao cartao-base">
@@ -280,6 +284,7 @@ function renderMais() {
         </div>
         <p class="cartao-nota">A base antiga guarda o que foi lançado antes da arrumação. Nada é apagado.</p>
       </div>` : ""}
+    </details>
     <div class="mais-lista">
       ${linha("sair", "Sair", "", "sair()", "mais-sair")}
     </div>
