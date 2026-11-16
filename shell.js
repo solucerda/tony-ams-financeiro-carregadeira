@@ -11,8 +11,8 @@ const NAV_PAGINAS = {
   painel:        { titulo: "Início",            secao: "inicio",     icone: "inicio" },
   inicio:        { titulo: "Início",            secao: "inicio",     icone: "inicio" },
   extrato:       { titulo: "Extrato",           secao: "Financeiro", icone: "extrato",       modulo: "extrato",      financeiro: true, sub: "entradas, saídas e saldo por conta" },
-  agenda:        { titulo: "Contas a pagar",    secao: "Financeiro", icone: "agenda",        modulo: "agenda",       financeiro: true, sub: "por vencimento" },
-  receber:       { titulo: "A receber",         secao: "Financeiro", icone: "entrada",       modulo: "agenda",       financeiro: true, sub: "clientes e serviços" },
+  agenda:        { titulo: "Contas",            secao: "Financeiro", icone: "agenda",        modulo: "agenda",       financeiro: true, sub: "a pagar e a receber" },
+  receber:       { titulo: "Contas",            secao: "Financeiro", icone: "entrada",       modulo: "agenda",       financeiro: true, semMenu: true },
   servicos:      { titulo: "Serviços",          secao: "Operação",   icone: "servico",       financeiro: true, sub: "custo e lucro de cada trabalho" },
   recebimentos:  { titulo: "Horas trabalhadas", secao: "Operação",   icone: "relogio",       modulo: "recebimentos", sub: "horímetro por cliente" },
   diesel:        { titulo: "Abastecimento",     secao: "Operação",   icone: "abastecimento", modulo: "diesel",       sub: "consumo L/h e preço do litro" },
@@ -68,7 +68,7 @@ function mostrarPagina(aba) {
   document.body.dataset.pagina = aba;
   const grupoNav = pag.secao === "inicio" ? "inicio" : "mais";
   document.querySelectorAll("[data-nav-grupo]").forEach(b => b.classList.toggle("ativo", b.dataset.navGrupo === grupoNav));
-  document.querySelectorAll("[data-nav-pagina]").forEach(b => b.classList.toggle("ativo", b.dataset.navPagina === aba));
+  document.querySelectorAll("[data-nav-pagina]").forEach(b => b.classList.toggle("ativo", b.dataset.navPagina === (aba === "receber" ? "agenda" : aba)));
   if (mudou) {
     window.scrollTo(0, 0);
     // gráficos desenhados com a seção escondida ficam com tamanho zero
@@ -121,7 +121,7 @@ function aplicarPermissoesNavegacao() {
   // barra lateral (computador): todas as páginas agrupadas
   const lat = [`<button type="button" class="lateral-item" data-nav-pagina="${paginaInicial()}">${icone("inicio")}<span>Início</span></button>`];
   for (const sec of [...SECOES_MENU, "Gestão"]) {
-    const pags = Object.keys(NAV_PAGINAS).filter(k => NAV_PAGINAS[k].secao === sec && paginaPermitida(k));
+    const pags = Object.keys(NAV_PAGINAS).filter(k => NAV_PAGINAS[k].secao === sec && !NAV_PAGINAS[k].semMenu && paginaPermitida(k));
     if (sec === "Gestão") pags.push("mais");
     if (!pags.length) continue;
     lat.push(`<div class="lateral-grupo">${sec}</div>` + pags.map(p => `<button type="button" class="lateral-item" data-nav-pagina="${p}">${icone(NAV_PAGINAS[p].icone)}<span>${escHtml(NAV_PAGINAS[p].rotuloLateral || NAV_PAGINAS[p].titulo)}</span><i class="nav-selo oculto" data-selo-pagina="${p}"></i></button>`).join(""));
@@ -151,12 +151,8 @@ function opcoesNovoRegistro() {
   if (meusModulos.recebimentos !== false) op.push({ chave: "horas", titulo: "Horas trabalhadas", sub: "horímetro e cliente", icone: "relogio", cor: "#4DA3FF", fn: () => abrirModalRecebimento(null) });
   if (meusModulos.manutencao !== false) op.push({ chave: "manutencao", titulo: "Manutenção", sub: "conserto, peças e oficina", icone: "manutencao", cor: "#FF8C42", fn: () => abrirModalManutencao(null) });
   if (vejoFinanceiro && meusModulos.extrato !== false) {
-    op.push({ chave: "despesa", titulo: "Despesa", sub: "saiu dinheiro", icone: "saida", cor: "#F0564A", fn: () => abrirModalLancamento(null, "saida") });
-    op.push({ chave: "receita", titulo: "Receita", sub: "entrou dinheiro", icone: "entrada", cor: "#3ECF8E", fn: () => abrirModalLancamento(null, "entrada") });
-  }
-  if (vejoFinanceiro && meusModulos.agenda !== false) {
-    op.push({ chave: "conta", titulo: "Conta a pagar", sub: "boleto, parcela, mensalidade", icone: "agenda", cor: "#A78BFA", fn: () => abrirModalAgenda(null, "pagar") });
-    op.push({ chave: "conta_receber", titulo: "Conta a receber", sub: "cliente que vai pagar depois", icone: "entrada", cor: "#2FB37A", fn: () => abrirModalAgenda(null, "receber") });
+    op.push({ chave: "despesa", titulo: "Despesa", sub: "já paguei ou vou pagar", icone: "saida", cor: "#F0564A", fn: () => abrirModalLancamento(null, "saida") });
+    op.push({ chave: "receita", titulo: "Receita", sub: "já recebi ou vou receber", icone: "entrada", cor: "#3ECF8E", fn: () => abrirModalLancamento(null, "entrada") });
   }
   return op;
 }
@@ -252,7 +248,7 @@ function renderMais() {
   const podeInstalar = !instalado() && (promptInstalacao || ehIOS());
   const atrasadas = vejoFinanceiro ? contasEmAberto().filter(a => a.venc < hoje() && a.valor > 0).length : 0;
   const paginasMenu = SECOES_MENU.map(sec => {
-    const pags = Object.keys(NAV_PAGINAS).filter(k => NAV_PAGINAS[k].secao === sec && paginaPermitida(k));
+    const pags = Object.keys(NAV_PAGINAS).filter(k => NAV_PAGINAS[k].secao === sec && !NAV_PAGINAS[k].semMenu && paginaPermitida(k));
     if (!pags.length) return "";
     return `<h3 class="grupo-titulo">${sec}</h3><div class="mais-lista">${pags.map(k => `
       <button type="button" class="mais-item" onclick="irPara('${k}')">${icone(NAV_PAGINAS[k].icone)}<span><b>${NAV_PAGINAS[k].titulo}</b>${NAV_PAGINAS[k].sub ? `<small>${NAV_PAGINAS[k].sub}</small>` : ""}</span>${k === "agenda" && atrasadas ? `<i class="nav-selo selo-inline">${atrasadas}</i>` : ""}${icone("chevron-right", "icone-sm mais-seta")}</button>`).join("")}</div>`;

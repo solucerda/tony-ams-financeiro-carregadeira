@@ -1464,3 +1464,6 @@ body[data-pagina="painel"] .btn-olho { width: 36px; }
 
 /* Abastecimento: botão "Mais indicadores" ocupa a linha toda da grade */
 .kpi-grade > .kpi-ver-mais { grid-column: 1 / -1; border: 1px dashed var(--borda-clara); border-radius: 12px; }
+
+/* ── Onda 3: chave "A pagar | A receber" em Contas ── */
+.chave-contas { margin: 0 0 14px; }

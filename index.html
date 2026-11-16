@@ -442,6 +442,10 @@
 
       <!-- ─── AGENDA ─── -->
       <section id="aba-agenda" class="secao oculto">
+        <div class="segmentado segmentado-largo chave-contas" role="tablist" aria-label="Tipo de conta">
+          <button type="button" class="ativo" onclick="irPara('agenda')">A pagar</button>
+          <button type="button" onclick="irPara('receber')">A receber</button>
+        </div>
         <div class="filtros">
           <div class="segmentado" id="age-modo">
             <button type="button" data-valor="lista" class="ativo">Por vencimento</button>
@@ -470,6 +474,10 @@
 
       <!-- ─── A RECEBER ─── -->
       <section id="aba-receber" class="secao oculto">
+        <div class="segmentado segmentado-largo chave-contas" role="tablist" aria-label="Tipo de conta">
+          <button type="button" onclick="irPara('agenda')">A pagar</button>
+          <button type="button" class="ativo" onclick="irPara('receber')">A receber</button>
+        </div>
         <div class="filtros">
           <span data-periodo-slot="receber"></span>
           <button class="btn-primario so-desktop" id="rcb-novo">+ Conta a receber</button>
