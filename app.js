@@ -1456,6 +1456,17 @@ function abrirModalLancamento(id, tipoNovo) {
   const grupoInicial = l && l.grupo !== "Recebimentos" ? l.grupo : (grupos.includes("Outras despesas") ? "Outras despesas" : grupos[0] || "Outras despesas");
   const nomeTipo = tipo === "entrada" ? "receita" : "despesa";
   const ded = criarDeducaoHistorico("descricao");
+  // lançamento novo marcado como "vou pagar/receber depois" vira uma conta com vencimento
+  // (só a conta aparece em Contas); o que já foi digitado segue para o formulário da conta.
+  // Com serviço escolhido, mantém o comportamento de sempre.
+  function passarParaConta(v) {
+    if (l || v !== "pendente") return;
+    const f = lerFormulario();
+    if (f.servico_id) return;
+    const ent = ehReceita(f);
+    fecharModal();
+    abrirModalAgenda(null, ent ? "receber" : "pagar", { item: f.descricao, valor: numDeMoeda(f._valor) || "", grupo: f.grupo, natureza: f.natureza, equipamento_id: f.equipamento_id });
+  }
   abrirModal({
     titulo: l ? "Editar " + nomeTipo : tipoNovo ? "Nova " + nomeTipo : "Novo lançamento",
     tabela: "lancamentos", id,
@@ -1470,8 +1481,8 @@ function abrirModalLancamento(id, tipoNovo) {
       { nome:"natureza", rotulo:"Tipo de custo", tipo:"select",
         opcoes:["Variavel|Custo variável","Fixo|Custo fixo","Investimento|Investimento"],
         valor: (l?.natureza && l.natureza !== "Receita") ? l.natureza : "Variavel", visivelSe: f => !ehReceita(f), aoMudar: ded.tocou("natureza") },
-      { nome:"status_saida", rotulo:"Situação", tipo:"select", opcoes:["pago|Já foi pago","pendente|Ainda vou pagar"], valor: l?.status || "pago", visivelSe: f => !ehReceita(f) },
-      { nome:"status_entrada", rotulo:"Situação", tipo:"select", opcoes:["pago|Já recebi","pendente|Ainda vou receber"], valor: l?.status || "pago", visivelSe: f => ehReceita(f) },
+      { nome:"status_saida", rotulo:"Situação", tipo:"select", opcoes:["pago|Já paguei", l ? "pendente|Ainda vou pagar" : "pendente|Vou pagar depois…"], valor: l?.status || "pago", visivelSe: f => !ehReceita(f), aoMudar: passarParaConta },
+      { nome:"status_entrada", rotulo:"Situação", tipo:"select", opcoes:["pago|Já recebi", l ? "pendente|Ainda vou receber" : "pendente|Vou receber depois…"], valor: l?.status || "pago", visivelSe: f => ehReceita(f), aoMudar: passarParaConta },
       { nome:"banco", rotulo:"Conta", tipo:"select", opcoes: opcoesContaBancaria(), valor: l?.banco || contaPadrao() },
       { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(true), valor: equipamentoPadrao(l?.equipamento_id, true) },
       ...campoServico(l?.servico_id),
@@ -3520,21 +3531,22 @@ function abrirModalBaixaAgenda(id) {
   });
 }
 
-function abrirModalAgenda(id, tipoNovo) {
+function abrirModalAgenda(id, tipoNovo, pre) {
   const a = id ? dados.age.find(x => x.id === id) : null;
+  pre = a ? null : (pre || null); // valores trazidos do formulário de Despesa/Receita
   const tipo = a ? (a.valor < 0 ? "receber" : "pagar") : (tipoNovo || "pagar");
   const ehPagar = (f) => f._tipo === "pagar";
   const grupos = opcoesGrupoDespesa();
   const ded = criarDeducaoHistorico("item");
   const campos = [
     { nome:"_tipo", rotulo:"É uma conta…", tipo:"select", largo:true, opcoes:["pagar|A pagar (vai sair dinheiro)","receber|A receber (vai entrar dinheiro)"], valor: tipo },
-    { nome:"item", rotulo:"Descrição", tipo:"texto", largo:true, valor: a?.item || "", obrigatorio:true,
+    { nome:"item", rotulo:"Descrição", tipo:"texto", largo:true, valor: a?.item || pre?.item || "", obrigatorio:true,
       ...(a ? {} : { autocompletar: true, lista: descricoesDoHistorico(), aoMudar: (v) => { if (ehPagar(lerFormulario())) ded.aplicar(v); } }) },
-    { nome:"valor", rotulo:"Valor (R$)", tipo:"moeda", valor: a ? Math.abs(a.valor) : "", obrigatorio:true },
+    { nome:"valor", rotulo:"Valor (R$)", tipo:"moeda", valor: a ? Math.abs(a.valor) : (pre?.valor || ""), obrigatorio:true },
     { nome:"vencimento", rotulo:"Vencimento", tipo:"date", valor: a ? vencimentoAgenda(a) : hoje(), obrigatorio:true },
-    { nome:"grupo", rotulo:"Categoria (vai para o Extrato)", tipo:"select", opcoes: grupos, valor: a?.grupo && a.grupo !== "Recebimentos" ? a.grupo : (grupos.includes("Outras despesas") ? "Outras despesas" : grupos[0]), visivelSe: ehPagar, aoMudar: ded.tocou("grupo") },
-    { nome:"natureza", rotulo:"Tipo de custo", tipo:"select", opcoes:["Fixo|Custo fixo","Variavel|Custo variável","Investimento|Investimento"], valor: a?.natureza && a.natureza !== "Receita" ? a.natureza : "Fixo", visivelSe: ehPagar, aoMudar: ded.tocou("natureza") },
-    { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(true), valor: equipamentoPadrao(a?.equipamento_id, true) },
+    { nome:"grupo", rotulo:"Categoria (vai para o Extrato)", tipo:"select", opcoes: grupos, valor: a?.grupo && a.grupo !== "Recebimentos" ? a.grupo : (pre?.grupo && grupos.includes(pre.grupo) ? pre.grupo : (grupos.includes("Outras despesas") ? "Outras despesas" : grupos[0])), visivelSe: ehPagar, aoMudar: ded.tocou("grupo") },
+    { nome:"natureza", rotulo:"Tipo de custo", tipo:"select", opcoes:["Fixo|Custo fixo","Variavel|Custo variável","Investimento|Investimento"], valor: a?.natureza && a.natureza !== "Receita" ? a.natureza : (pre?.natureza || "Fixo"), visivelSe: ehPagar, aoMudar: ded.tocou("natureza") },
+    { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(true), valor: equipamentoPadrao(a?.equipamento_id ?? pre?.equipamento_id, true) },
     { nome:"status_pagamento", rotulo:"Situação", tipo:"select", opcoes:["pendente|Em aberto","pago|Já foi paga / recebida"], valor: a?.status_pagamento || "pendente" },
     { nome:"data_pagamento", rotulo:"Data do pagamento", tipo:"date", valor: a?.data_pagamento || hoje(), visivelSe: f => f.status_pagamento === "pago" },
   ];
