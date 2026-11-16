@@ -268,24 +268,12 @@ function renderMais() {
       ${podeInstalar ? linha("baixar", "Instalar o aplicativo", "abre como app, direto da tela inicial", "instalarWebApp()", "mais-destaque") : ""}
       ${linha("usuario", "Meu perfil", "nome, foto e senha", "abrirModalMeuPerfil()")}
       ${meuPapel === "admin" ? linha("administracao", "Configurações", "empresa, cadastros, usuários e histórico", "irPara('administracao'); mudarSecaoAdmin(null)") : ""}
-      ${linha("atualizar", "Atualizar dados", "busca de novo no servidor", "carregarTudo().then(() => toast('Dados atualizados.'))")}
+      ${meuPapel !== "admin" ? linha("atualizar", "Atualizar dados", "busca de novo no servidor", "carregarTudo().then(() => toast('Dados atualizados.'))") : ""}
     </div>
-    ${meuPapel === "admin" ? `
-      <h3 class="grupo-titulo">Base de dados</h3>
-      <div class="cartao cartao-base">
-        <div class="segmentado segmentado-largo" id="mais-base">
-          <button type="button" data-valor="nova" class="${modoBase === "nova" ? "ativo" : ""}">Operação nova</button>
-          <button type="button" data-valor="antiga" class="${modoBase === "antiga" ? "ativo" : ""}">Base antiga</button>
-          <button type="button" data-valor="tudo" class="${modoBase === "tudo" ? "ativo" : ""}">Tudo</button>
-        </div>
-        <p class="cartao-nota">A base antiga guarda o que foi lançado antes da arrumação. Nada é apagado.</p>
-      </div>` : ""}
     <div class="mais-lista">
       ${linha("sair", "Sair", "", "sair()", "mais-sair")}
     </div>
     <p class="mais-versao">TA Frota · versão ${VERSAO_APP}</p>`;
-  const seg = $("mais-base");
-  if (seg) ligarSegmentado("mais-base", (v) => trocarBase(v));
 }
 
 // Selo vermelho com as contas atrasadas no botão "Caixa"
@@ -338,7 +326,7 @@ window.addEventListener("popstate", () => {
 });
 
 /* ── Web app instalável (PWA) ── */
-const VERSAO_APP = "2.5.0";
+const VERSAO_APP = "2.6.0";
 function registrarWebApp() {
   window.addEventListener("beforeinstallprompt", (ev) => {
     ev.preventDefault();

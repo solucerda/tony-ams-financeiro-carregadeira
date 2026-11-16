@@ -416,12 +416,12 @@ async function sair() {
   location.reload();
 }
 
-// Base de dados: operação nova / base antiga / tudo (fica em "Mais" → só gestor).
+// Base de dados: operação nova / base antiga / tudo (fica em Configurações → Avançado, só gestor).
 function atualizarFaixaBase() {
   $("faixa-base").classList.toggle("oculto", modoBase === "nova");
   $("faixa-base-texto").textContent = modoBase === "antiga"
-    ? "Você está vendo a BASE ANTIGA (legado). O que for lançado aqui também fica na base antiga."
-    : "Você está vendo TUDO: operação nova + base antiga misturadas.";
+    ? "Você está vendo os registros antigos. O que for lançado aqui também fica nos registros antigos."
+    : "Você está vendo TUDO: registros novos e antigos misturados.";
 }
 function trocarBase(v) {
   modoBase = v;
@@ -481,7 +481,7 @@ async function iniciarSessao() {
     await carregarPermissoesEquipamento();
   } catch (e) {
     $("app").classList.remove("oculto");
-    $("carregando").textContent = "Não foi possível conectar ao banco. Confira sua internet e tente de novo. (" + (e.message || e) + ")";
+    $("carregando").textContent = "Não foi possível conectar ao servidor. Confira sua internet e tente de novo. (" + (e.message || e) + ")";
     return;
   }
   // último contexto usado, se ainda for permitido; quem só tem 1 máquina liberada entra direto nela
@@ -984,7 +984,7 @@ function renderPainel() {
     <div class="cartao cartao-operacao">
       <div class="op-duo">
         <div class="op-item">
-          <span class="op-rotulo" title="Exclui saídas classificadas como Investimento">Resultado operacional</span>
+          <span class="op-rotulo" title="Entradas menos saídas, sem contar compra de máquinas e outros investimentos">Resultado operacional</span>
           <b class="op-valor ${resOperacional >= 0 ? "pos" : "neg"}">${brl0(resOperacional)}</b>
         </div>
         <div class="op-item">
@@ -997,7 +997,7 @@ function renderPainel() {
         ${efic.horas > 0
           ? `<div class="op-linha"><span>Combustível por hora</span><b>${brl(custoHora)}</b></div>
         <div class="op-linha"><span>Consumo</span><b>${num(lh, 1)} L/h · ${num(litros, 0)} L</b></div>`
-          : `<div class="op-linha"><span>Combustível por hora</span><b class="op-nota">— precisa de 2 abastecimentos e horas lançadas</b></div>`}
+          : `<div class="op-linha"><span>Combustível por hora</span><b class="op-nota">— precisa de 2 abastecimentos e horas trabalhadas lançadas</b></div>`}
       </div>
       <button type="button" class="btn-ver-mais" data-ver-mais="painel-indicadores" data-rotulo="Mais indicadores">${indAberto ? "Ver menos" : "Mais indicadores"}</button>
     </div>`;
@@ -1203,8 +1203,8 @@ function saldosPorConta() {
   return linhas;
 }
 
-function renderSaldosContas() {
-  const el = $("ext-contas");
+// Fica em Configurações → Avançado (antes ficava no topo do Extrato).
+function renderSaldosContas(el) {
   if (!el) return;
   if (contexto.equipamentoId != null) {
     el.innerHTML = `<p class="cartao-nota">Para ver e ajustar o saldo das contas, mude para <strong>Total do negócio</strong> (os saldos dependem de todos os lançamentos).</p>`;
@@ -1286,7 +1286,6 @@ function abrirModalAjusteSaldo(idConta) {
 }
 
 function renderExtrato() {
-  renderSaldosContas();
   // saldo corrido na ordem cronológica — pendentes não entram na conta
   // (o dinheiro ainda não saiu/entrou), mas continuam aparecendo na lista.
   let acc = dados.saldoInicial;
@@ -1371,6 +1370,84 @@ function origemDoLancamento(id) {
   '<tr><td colspan="7" class="vazio">Nenhum lançamento neste período. Troque o período acima.</td></tr>';
 }
 
+/* ── Dedução pelo histórico ────────────────────────────
+   Ao digitar a descrição de algo que já foi lançado antes (ou o fornecedor,
+   na manutenção), o formulário sugere o tipo de custo e a categoria que
+   mais foram usados nela. Só vale para registros novos e deixa de mexer num
+   campo assim que a pessoa escolhe ele mesma. Nada é gravado sozinho. */
+const MESES_NO_TEXTO = /\b(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro|jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\b/g;
+const _cacheChaveHist = new Map();
+// "Energia - Março/26" e "energia abril" viram a mesma chave: "energia"
+function chaveHistorico(txt) {
+  const t = String(txt || "");
+  if (_cacheChaveHist.has(t)) return _cacheChaveHist.get(t);
+  const k = semAcento(t).replace(MESES_NO_TEXTO, " ").replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim();
+  if (_cacheChaveHist.size > 5000) _cacheChaveHist.clear();
+  _cacheChaveHist.set(t, k);
+  return k;
+}
+// despesas já lançadas (Extrato e Contas a pagar), com o que foi escolhido em cada uma
+function historicoDeSaidas() {
+  const itens = [];
+  for (const l of dados.lanc) {
+    if (l.saida > 0 && !ehAjusteSaldo(l) && l.grupo !== "Recebimentos" && l.descricao) itens.push({ texto: l.descricao, grupo: l.grupo, natureza: l.natureza, data: l.data || "" });
+  }
+  for (const a of dados.age) {
+    if (a.valor > 0 && a.item) itens.push({ texto: a.item, grupo: a.grupo, natureza: a.natureza, data: vencimentoAgenda(a) });
+  }
+  return itens.filter(h => h.natureza && h.natureza !== "Receita");
+}
+// descrições já usadas, as mais recentes primeiro (alimenta a lista de sugestões)
+function descricoesDoHistorico() {
+  const vistas = new Set(), lista = [];
+  historicoDeSaidas().sort((a, b) => b.data.localeCompare(a.data)).forEach(h => {
+    const k = chaveHistorico(h.texto);
+    if (k && !vistas.has(k)) { vistas.add(k); lista.push(h.texto.trim()); }
+  });
+  return lista.slice(0, 300);
+}
+// combinação (tipo de custo + categoria) mais usada para a mesma descrição; empate: a mais recente
+function deduzirPeloHistorico(texto) {
+  const chave = chaveHistorico(texto);
+  if (chave.length < 3) return null;
+  const conta = new Map();
+  for (const h of historicoDeSaidas()) {
+    if (chaveHistorico(h.texto) !== chave) continue;
+    const k = h.natureza + "|" + h.grupo;
+    const c = conta.get(k) || { natureza: h.natureza, grupo: h.grupo, n: 0, ultima: "" };
+    c.n++; if (h.data > c.ultima) c.ultima = h.data;
+    conta.set(k, c);
+  }
+  return [...conta.values()].sort((a, b) => b.n - a.n || b.ultima.localeCompare(a.ultima))[0] || null;
+}
+// Liga a dedução num formulário. `tocou(nome)` vai no aoMudar dos campos que a pessoa pode
+// escolher à mão; `aplicar(texto)` vai no aoMudar do campo que dispara a sugestão.
+function criarDeducaoHistorico(campoTexto) {
+  const mexeu = new Set();
+  const campo = (n) => document.querySelector(`#modal-campos [data-campo="${n}"]`);
+  const dica = (msg) => {
+    const rot = campo(campoTexto)?.closest("label");
+    if (!rot) return;
+    let el = rot.querySelector(".dica-historico");
+    if (!msg) { el?.remove(); return; }
+    if (!el) { el = document.createElement("small"); el.className = "dica-historico"; rot.appendChild(el); }
+    el.textContent = msg;
+  };
+  return {
+    tocou: (nome) => () => { mexeu.add(nome); },
+    aplicar(texto) {
+      const h = deduzirPeloHistorico(texto);
+      if (!h) { dica(""); return; }
+      const nat = campo("natureza"), gr = campo("grupo");
+      const temOpcao = (el, v) => el && [...el.options].some(o => o.value === v);
+      const partes = [];
+      if (!mexeu.has("natureza") && temOpcao(nat, h.natureza)) { nat.value = h.natureza; partes.push(ROTULO_NATUREZA[h.natureza] || h.natureza); }
+      if (!mexeu.has("grupo") && temOpcao(gr, h.grupo)) { gr.value = h.grupo; partes.push(h.grupo); }
+      dica(partes.length ? "Sugerido pelo histórico: " + partes.join(" · ") : "");
+    },
+  };
+}
+
 function abrirModalLancamento(id, tipoNovo) {
   const l = id ? dados.lanc.find(x => x.id === id) : null;
   const tipo = l ? (l.entrada > 0 ? "entrada" : "saida") : (tipoNovo || "saida");
@@ -1378,6 +1455,7 @@ function abrirModalLancamento(id, tipoNovo) {
   const grupos = opcoesGrupoDespesa();
   const grupoInicial = l && l.grupo !== "Recebimentos" ? l.grupo : (grupos.includes("Outras despesas") ? "Outras despesas" : grupos[0] || "Outras despesas");
   const nomeTipo = tipo === "entrada" ? "receita" : "despesa";
+  const ded = criarDeducaoHistorico("descricao");
   abrirModal({
     titulo: l ? "Editar " + nomeTipo : tipoNovo ? "Nova " + nomeTipo : "Novo lançamento",
     tabela: "lancamentos", id,
@@ -1386,11 +1464,12 @@ function abrirModalLancamento(id, tipoNovo) {
       { nome:"_tipo", rotulo:"É uma…", tipo:"select", opcoes:["saida|Despesa (saiu dinheiro)","entrada|Receita (entrou dinheiro)"], valor: tipo, largo:true, oculto: !!tipoNovo },
       { nome:"_valor", rotulo:"Valor (R$)", tipo:"moeda", valor: l ? (l.entrada > 0 ? l.entrada : l.saida) : "", obrigatorio:true },
       { nome:"data", rotulo:"Data", tipo:"date", valor: l?.data || hoje(), obrigatorio:true },
-      { nome:"descricao", rotulo:"Descrição", tipo:"texto", largo:true, valor: l?.descricao || "" },
-      { nome:"grupo", rotulo:"Categoria", tipo:"select", opcoes: grupos.includes(grupoInicial) ? grupos : grupos.concat(grupoInicial), valor: grupoInicial, visivelSe: f => !ehReceita(f) },
+      { nome:"descricao", rotulo:"Descrição", tipo:"texto", largo:true, valor: l?.descricao || "",
+        ...(l ? {} : { autocompletar: true, lista: descricoesDoHistorico(), aoMudar: (v) => { if (!ehReceita(lerFormulario())) ded.aplicar(v); } }) },
+      { nome:"grupo", rotulo:"Categoria", tipo:"select", opcoes: grupos.includes(grupoInicial) ? grupos : grupos.concat(grupoInicial), valor: grupoInicial, visivelSe: f => !ehReceita(f), aoMudar: ded.tocou("grupo") },
       { nome:"natureza", rotulo:"Tipo de custo", tipo:"select",
         opcoes:["Variavel|Custo variável","Fixo|Custo fixo","Investimento|Investimento"],
-        valor: (l?.natureza && l.natureza !== "Receita") ? l.natureza : "Variavel", visivelSe: f => !ehReceita(f) },
+        valor: (l?.natureza && l.natureza !== "Receita") ? l.natureza : "Variavel", visivelSe: f => !ehReceita(f), aoMudar: ded.tocou("natureza") },
       { nome:"status_saida", rotulo:"Situação", tipo:"select", opcoes:["pago|Já foi pago","pendente|Ainda vou pagar"], valor: l?.status || "pago", visivelSe: f => !ehReceita(f) },
       { nome:"status_entrada", rotulo:"Situação", tipo:"select", opcoes:["pago|Já recebi","pendente|Ainda vou receber"], valor: l?.status || "pago", visivelSe: f => ehReceita(f) },
       { nome:"banco", rotulo:"Conta", tipo:"select", opcoes: opcoesContaBancaria(), valor: l?.banco || contaPadrao() },
@@ -1715,7 +1794,7 @@ function renderDiesel() {
   const efic = calcularEficiencia(de, ate);
   const kpisBase = [
     kpi("Consumo médio", efic.horas > 0 ? num(efic.litros / efic.horas, 1) + " L/h" : "—",
-      efic.horas > 0 ? `${num(efic.litros, 0)} L em ${num(efic.horas, 1)} h trabalhadas` : "precisa de 2+ abastecimentos e horas lançadas em Recebimentos", null, true),
+      efic.horas > 0 ? `${num(efic.litros, 0)} L em ${num(efic.horas, 1)} h trabalhadas` : "precisa de 2+ abastecimentos e horas trabalhadas lançadas", null, true),
     kpi("Custo de combustível por hora", efic.horas > 0 ? brl(efic.custo / efic.horas) + "/h" : "—",
       efic.horas > 0 ? "diesel ÷ horas trabalhadas" : ""),
     kpi("Combustível consumido", num(litros,0) + " L", brl0(custo) + " no período"),
@@ -1723,7 +1802,11 @@ function renderDiesel() {
       ? kpi("Preço médio do litro", brl(litros > 0 ? custo/litros : 0))
       : kpi(`Preço médio do litro · ${combs[0]}`, brl(medio(combs[0])), combs.slice(1).map(c => `${c} ${brl(medio(c))}`).join(" · ")),
   ];
-  $("kpis-diesel").innerHTML = kpisBase.join("");
+  // resumo: 2 indicadores à vista; o resto fica atrás de "Mais indicadores"
+  const indDieAberto = listasAbertas.has("die-indicadores");
+  const extras = [kpisBase[1], kpisBase[3]].map(k => k.replace('<div class="kpi ', `<div data-resto="die-indicadores" class="${indDieAberto ? "" : "oculto "}kpi `));
+  $("kpis-diesel").innerHTML = [kpisBase[0], kpisBase[2]].join("") + extras.join("")
+    + `<button type="button" class="btn-ver-mais kpi-ver-mais" data-ver-mais="die-indicadores" data-rotulo="Mais indicadores">${indDieAberto ? "Ver menos" : "Mais indicadores"}</button>`;
 
   // gráfico do consumo (L/h) a cada abastecimento, uma linha por máquina
   const cardConsumo = $("card-consumo");
@@ -2134,7 +2217,7 @@ function abrirModalDiesel(id) {
     { nome:"vencimento", rotulo:"Vence em", tipo:"date", valor: d?.vencimento || "", obrigatorio: (f) => f.status === "pendente", visivelSe: f => f.status === "pendente" },
     { nome:"_banco", rotulo:"Conta de onde saiu", tipo:"select", opcoes: opcoesContaBancaria(), valor: contaDoLancamento(d?.lancamento_id), visivelSe: f => f.status === "pago" },
     { tipo:"separador", rotulo:"Classificação" },
-    { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel",
+    { nome:"natureza", rotulo:"Tipo de custo", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel",
       oculto: !d || (d.natureza || "Variavel") === "Variavel" }, // abastecimento é sempre custo variável; só aparece se o registro antigo for diferente
     ...campoServico(d?.servico_id),
   );
@@ -2489,6 +2572,7 @@ function renderManutencao() {
 function abrirModalManutencao(id) {
   const m = id ? dados.man.find(x => x.id === id) : null;
   let bancoManutencao = null;
+  let naturezaTocada = false;
   // novo: horímetro já vem com o último conhecido da máquina
   const hAuto0 = !m ? ultimoHorimetro(equipamentoPadrao(null, false)) : null;
   let hAuto = hAuto0 != null ? String(hAuto0) : "";
@@ -2515,10 +2599,20 @@ function abrirModalManutencao(id) {
       { nome:"horimetro", rotulo:"Horímetro", tipo:"numero", valor: m?.horimetro ?? hAuto },
       { nome:"descricao", rotulo:"O que foi / será feito", tipo:"texto", largo:true, valor: m?.descricao || "" },
       { nome:"pecas", rotulo:"Peças trocadas/compradas", tipo:"texto", largo:true, valor: m?.pecas || "", visivelSe: f => f.realizada },
-      { nome:"fornecedor", rotulo:"Oficina / fornecedor", tipo:"texto", valor: m?.fornecedor || "", lista: nomesAtivos(dados.fornecedores) },
+      { nome:"fornecedor", rotulo:"Oficina / fornecedor", tipo:"texto", valor: m?.fornecedor || "", lista: nomesAtivos(dados.fornecedores),
+        // oficina que já atendeu antes: sugere o tipo de custo mais usado com ela
+        ...(m ? {} : { aoMudar(v) {
+          const k = semAcento(v.trim());
+          const campo = document.querySelector('#modal-campos [data-campo="natureza"]');
+          if (!k || !campo || naturezaTocada) return;
+          const conta = {};
+          dados.man.filter(x => x.fornecedor && semAcento(x.fornecedor.trim()) === k && x.natureza).forEach(x => { conta[x.natureza] = (conta[x.natureza] || 0) + 1; });
+          const melhor = Object.entries(conta).sort((a, b) => b[1] - a[1])[0];
+          if (melhor && [...campo.options].some(o => o.value === melhor[0])) campo.value = melhor[0];
+        } }) },
       { nome:"valor_pecas", rotulo:"Valor peças (R$)", tipo:"moeda", valor: m?.valor_pecas ?? "" },
       { nome:"valor_mao_obra", rotulo:"Valor mão de obra (R$)", tipo:"moeda", valor: m?.valor_mao_obra ?? "" },
-      { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: m?.natureza || "Variavel" },
+      { nome:"natureza", rotulo:"Tipo de custo", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: m?.natureza || "Variavel", aoMudar: () => { naturezaTocada = true; } },
       { nome:"status_pagamento", rotulo:"Pagamento", tipo:"select", opcoes:["pago|Já foi pago","pendente|Ainda vou pagar"], valor: m?.status_pagamento || "pago", visivelSe: f => f.realizada },
       { nome:"vencimento", rotulo:"Vence em", tipo:"date", valor: m?.vencimento || "", obrigatorio: (f) => f.realizada && f.status_pagamento === "pendente", visivelSe: f => f.realizada && f.status_pagamento === "pendente" },
       { nome:"_banco", rotulo:"Conta de onde saiu", tipo:"select", opcoes: opcoesContaBancaria(), valor: contaDoLancamento(m?.lancamento_id), visivelSe: f => f.realizada && f.status_pagamento === "pago" },
@@ -2584,20 +2678,20 @@ async function abrirModalMeuPerfil() {
     tabela: "_meu_perfil",
     campos: [
       { nome:"nome", rotulo:"Nome", tipo:"texto", largo:true, valor: meu?.nome || "" },
-      { nome:"_email", rotulo:"E-mail", tipo:"texto", largo:true, valor: user?.email || "" },
-      { nome:"avatar_url", rotulo:"Link da foto (opcional)", tipo:"texto", largo:true, valor: meu?.avatar_url || "" },
-      { nome:"nova_senha", rotulo:"Nova senha (deixe em branco pra não trocar)", tipo:"senha", valor:"" },
+      { nome:"_email", rotulo:"E-mail", tipo:"calculado", largo:true, valor: user?.email || "" },
+      { tipo:"recolher", rotulo:"Trocar senha (opcional)" },
+      { nome:"nova_senha", rotulo:"Nova senha (deixe em branco pra não trocar)", tipo:"senha", largo:true, valor:"" },
     ],
     semExcluir: true,
     montar(f) {
       if (!f.nome.trim()) throw erroCampo("nome", "Informe o nome.");
       if (f.nova_senha && f.nova_senha.length < 6) throw erroCampo("nova_senha", "A nova senha precisa ter pelo menos 6 caracteres.");
-      return { nome: f.nome.trim(), avatar_url: f.avatar_url.trim() || null, nova_senha: f.nova_senha };
+      return { nome: f.nome.trim(), nova_senha: f.nova_senha };
     },
     async aoSalvar(reg) {
       const btn = $("modal-salvar");
       btn.disabled = true; btn.textContent = "Salvando…";
-      const { error } = await sb.from("perfis").update({ nome: reg.nome, avatar_url: reg.avatar_url }).eq("id", meuUserId);
+      const { error } = await sb.from("perfis").update({ nome: reg.nome }).eq("id", meuUserId);
       if (error) {
         btn.disabled = false; btn.textContent = "Salvar";
         mostrarErroForm(erroBanco(error));
@@ -2606,7 +2700,7 @@ async function abrirModalMeuPerfil() {
       if (reg.nova_senha) {
         const { error: errSenha } = await sb.auth.updateUser({ password: reg.nova_senha });
         if (errSenha) {
-          toast("Nome/foto salvos, mas a senha não pôde ser trocada: " + errSenha.message);
+          toast("Nome salvo, mas a senha não pôde ser trocada: " + errSenha.message);
         }
       }
       btn.disabled = false; btn.textContent = "Salvar";
@@ -2650,13 +2744,23 @@ const CADASTROS_ADMIN = [
     abrir:"abrirModalTipoRecebimento" },
 ];
 
+const ICONE_CADASTRO = { equipamentos: "tractor", contasBancarias: "banco", clientes: "usuario" };
+const secaoCadastro = (c, grupo) => ({ chave: c.chave, titulo: c.titulo, tipo: "cadastro", config: c, grupo, icone: ICONE_CADASTRO[c.chave] || "extrato" });
+const cadastroPorChave = (chave) => CADASTROS_ADMIN.find(c => c.chave === chave);
+// "Avançado" fica recolhido: ajustes raros e cadastros que quase ninguém usa no dia a dia.
+const GRUPO_AVANCADO = "Avançado";
 const SECOES_ADMIN = [
   { chave: "empresa", titulo: "Empresa", tipo: "empresa", grupo: "Geral", icone: "inicio", sub: "nome e conta padrão" },
-  ...CADASTROS_ADMIN.filter(c => c.chave !== "obras" && c.chave !== "centrosCusto").map(c => ({ chave: c.chave, titulo: c.titulo, tipo: "cadastro", config: c, grupo: "Cadastros", icone: c.chave === "equipamentos" ? "tractor" : c.chave === "contasBancarias" ? "banco" : c.chave === "clientes" ? "usuario" : "extrato" })),
-  { chave: "feriados", titulo: "Feriados", tipo: "feriados", grupo: "Cadastros", icone: "agenda" },
+  ...CADASTROS_ADMIN.filter(c => !["obras", "centrosCusto", "tiposRecebimento"].includes(c.chave)).map(c => secaoCadastro(c, "Cadastros")),
   { chave: "usuarios", titulo: "Usuários e acessos", tipo: "usuarios", grupo: "Pessoas", icone: "usuario" },
   { chave: "auditoria", titulo: "Histórico de alterações", tipo: "auditoria", grupo: "Pessoas", icone: "relogio", sub: "quem fez o quê" },
+  { chave: "saldos", titulo: "Saldo por conta", tipo: "saldos", grupo: GRUPO_AVANCADO, icone: "banco", sub: "conferir e ajustar o saldo de cada conta" },
+  { chave: "base", titulo: "Registros novos e antigos", tipo: "base", grupo: GRUPO_AVANCADO, icone: "atualizar", sub: "escolher o que aparece e atualizar os dados" },
+  secaoCadastro(cadastroPorChave("tiposRecebimento"), GRUPO_AVANCADO),
+  secaoCadastro(cadastroPorChave("obras"), GRUPO_AVANCADO),
+  { chave: "feriados", titulo: "Feriados", tipo: "feriados", grupo: GRUPO_AVANCADO, icone: "agenda" },
 ];
+let adminAvancadoAberto = false;
 let adminSecaoAtiva = null;
 let filtroHistorico = "todos";
 
@@ -2675,12 +2779,15 @@ function renderAdministracao() {
 
   // menu: lateral no computador; no celular, uma lista de seções (tela própria)
   const grupos = [...new Set(SECOES_ADMIN.map(s => s.grupo))];
-  const menu = grupos.map(g => `
-    <h3 class="grupo-titulo">${g}</h3>
-    <div class="mais-lista">${SECOES_ADMIN.filter(s => s.grupo === g).map(s => {
-      const q = qtdSecaoAdmin(s);
-      return `<button type="button" class="mais-item ${s.chave === adminSecaoAtiva ? "ativo" : ""}" onclick="mudarSecaoAdmin('${s.chave}')">${icone(s.icone)}<span><b>${s.titulo}</b>${s.sub ? `<small>${s.sub}</small>` : q != null ? `<small>${q} cadastrado${q === 1 ? "" : "s"}</small>` : ""}</span>${icone("chevron-right", "icone-sm mais-seta")}</button>`;
-    }).join("")}</div>`).join("");
+  const itensMenu = (g) => SECOES_ADMIN.filter(s => s.grupo === g).map(s => {
+    const q = qtdSecaoAdmin(s);
+    return `<button type="button" class="mais-item ${s.chave === adminSecaoAtiva ? "ativo" : ""}" onclick="mudarSecaoAdmin('${s.chave}')">${icone(s.icone)}<span><b>${s.titulo}</b>${s.sub ? `<small>${s.sub}</small>` : q != null ? `<small>${q} cadastrado${q === 1 ? "" : "s"}</small>` : ""}</span>${icone("chevron-right", "icone-sm mais-seta")}</button>`;
+  }).join("");
+  const menu = grupos.map(g => {
+    if (g !== GRUPO_AVANCADO) return `<h3 class="grupo-titulo">${g}</h3><div class="mais-lista">${itensMenu(g)}</div>`;
+    const aberto = adminAvancadoAberto || SECOES_ADMIN.some(s => s.grupo === g && s.chave === adminSecaoAtiva);
+    return `<details class="admin-avancado" ${aberto ? "open" : ""} ontoggle="adminAvancadoAberto = this.open"><summary>${g}</summary><div class="mais-lista">${itensMenu(g)}</div></details>`;
+  }).join("");
   $("admin-sidebar").innerHTML = menu;
   $("admin-sidebar").classList.toggle("oculto", celular && !!adminSecaoAtiva);
   const conteudo = $("admin-conteudo");
@@ -2716,6 +2823,29 @@ function renderAdministracao() {
     return;
   }
 
+  if (secao.tipo === "saldos") {
+    conteudo.innerHTML = cabeca("Saldo por conta", "confira o saldo de cada conta e acerte com o que está no banco quando precisar.") + `<div class="cartao" id="ext-contas"></div>`;
+    renderSaldosContas($("ext-contas"));
+    return;
+  }
+
+  if (secao.tipo === "base") {
+    conteudo.innerHTML = cabeca("Registros novos e antigos", "escolha quais registros aparecem em todas as telas.") + `
+      <div class="cartao cartao-base">
+        <div class="segmentado segmentado-largo" id="adm-base">
+          <button type="button" data-valor="nova" class="${modoBase === "nova" ? "ativo" : ""}">Só os novos</button>
+          <button type="button" data-valor="antiga" class="${modoBase === "antiga" ? "ativo" : ""}">Só os antigos</button>
+          <button type="button" data-valor="tudo" class="${modoBase === "tudo" ? "ativo" : ""}">Todos</button>
+        </div>
+        <p class="cartao-nota">Os registros antigos guardam o que foi lançado antes da arrumação. Nada é apagado.</p>
+      </div>
+      <div class="mais-lista">
+        <button type="button" class="mais-item" onclick="carregarTudo().then(() => toast('Dados atualizados.'))">${icone("atualizar")}<span><b>Atualizar dados</b><small>busca tudo de novo no servidor</small></span>${icone("chevron-right", "icone-sm mais-seta")}</button>
+      </div>`;
+    ligarSegmentado("adm-base", (v) => trocarBase(v));
+    return;
+  }
+
   if (secao.tipo === "feriados") {
     const fer = dados.feriados.slice().sort((a,b) => b.data.localeCompare(a.data));
     conteudo.innerHTML = cabeca("Feriados", "usados para avisar quando um vencimento cai em dia sem expediente. Feriados móveis (Carnaval, Páscoa) entram ano a ano.", `<button class="btn-primario" onclick="abrirModalFeriado(null)">+ Novo</button>`) + `
@@ -2728,19 +2858,19 @@ function renderAdministracao() {
   if (secao.tipo === "usuarios") {
     const ROTULO_PAPEL = { admin:"Administrador", operacional:"Operacional", leitura:"Só leitura" };
     const CLASSE_PAPEL = { admin:"chip-pago", operacional:"chip-pendente", leitura:"" };
-    conteudo.innerHTML = cabeca("Usuários e acessos", "Toque em uma pessoa para definir o que ela pode ver e fazer. Para dar acesso a alguém novo, crie o login dela no Supabase (Authentication → Add user): ela aparece aqui como \"Só leitura\" até você liberar.") + `
+    conteudo.innerHTML = cabeca("Usuários e acessos", "Toque em uma pessoa para definir o que ela pode ver e fazer. Para dar acesso a alguém novo, peça ao suporte para criar o login: a pessoa aparece aqui como \"Só leitura\" até você liberar.") + `
       <div class="lista-cartao">${dados.perfis.length
         ? dados.perfis.map(p => linha(`abrirModalPerfil('${p.id}')`,
             `<b>${escHtml(p.nome || "Sem nome")}</b><small>${p.papel === "admin" ? "acesso total" : (p.ve_financeiro === false ? "sem acesso ao dinheiro" : "vê o financeiro")}</small>`,
             `<span class="chip chip-status ${CLASSE_PAPEL[p.papel] || ""}">${ROTULO_PAPEL[p.papel] || p.papel}</span>${p.ativo === false ? `<span class="chip chip-status chip-vencido">Bloqueado</span>` : ""}`,
             avatarHtml(p.nome, p.avatar_url))).join("")
-        : '<div class="vazio">Nenhum usuário. Rode a migração correcoes_v19.sql no Supabase.</div>'}</div>`;
+        : '<div class="vazio">Nenhum usuário cadastrado.</div>'}</div>`;
     return;
   }
 
   if (secao.tipo === "auditoria") {
     const pessoas = dados.perfis.filter(p => dados.logAtividade.some(l => l.usuario_id === p.id));
-    const itens = agruparHistorico(dados.logAtividade.filter(l => filtroHistorico === "todos" || l.usuario_id === filtroHistorico));
+    const itens = agruparHistorico(dados.logAtividade.filter(l => l.usuario_id && (filtroHistorico === "todos" || l.usuario_id === filtroHistorico)));
     let diaAtual = "";
     const html = itens.map(it => {
       const dia = isoLocal(new Date(it.quando));
@@ -2748,7 +2878,7 @@ function renderAdministracao() {
       diaAtual = dia;
       const hora = new Date(it.quando).toTimeString().slice(0, 5);
       return titDia + `<div class="hist-item">
-        ${it.sistema ? `<span class="avatar-fallback hist-sistema">${icone("atualizar", "icone-sm")}</span>` : avatarHtml(it.nome, it.avatar)}
+        ${avatarHtml(it.nome, it.avatar)}
         <div class="hist-texto">
           <div><b>${escHtml(it.nome)}</b> ${it.frase}</div>
           ${it.detalhe ? `<small>${it.detalhe}</small>` : ""}
@@ -2813,8 +2943,8 @@ function agruparHistorico(logs) {
     else grupos.push({ usuario_id: l.usuario_id, t, itens: [l] });
   }
   const VERBO = { criar: "criou", editar: "alterou", excluir: "excluiu" };
-  return grupos.map(g => {
-    if (!g.usuario_id) return { sistema: true, nome: "Sistema", quando: g.itens[0].criado_em, frase: `fez ${g.itens.length} ajuste${g.itens.length > 1 ? "s" : ""} automático${g.itens.length > 1 ? "s" : ""} no banco`, detalhe: "migrações e correções feitas direto no banco de dados" };
+  // alterações automáticas do sistema (sem usuário) não aparecem: o histórico mostra só o que pessoas fizeram
+  return grupos.filter(g => g.usuario_id).map(g => {
     const p = dados.perfis.find(x => x.id === g.usuario_id);
     // ação principal: o que a pessoa mexeu de fato (o lançamento/conta gerados vêm junto)
     const principal = g.itens.find(x => x.tabela !== "lancamentos" && x.tabela !== "agenda") || g.itens.find(x => x.tabela !== "agenda") || g.itens[0];
@@ -2893,6 +3023,9 @@ function abrirModalEquipamentoAdmin(id) {
       { nome:"nome", rotulo:"Nome (como aparece no app)", tipo:"texto", largo:true, valor: e?.nome || "", obrigatorio: true },
       { nome:"tipo", rotulo:"Tipo", tipo:"select", opcoes:["Maquina|Máquina (horímetro)","Veiculo|Veículo"], valor: e?.tipo || "Maquina" },
       { nome:"combustivel", rotulo:"Combustível", tipo:"select", opcoes: Object.entries(ROTULO_COMBUSTIVEL).map(([k, r]) => `${k}|${r}`), valor: e ? combustivelDoEquip(e.id) : "Diesel" },
+      { nome:"controla_resultado", rotulo:"Tem resultado próprio (painel só dele). Desmarcado: os gastos entram só no total do negócio", tipo:"checkbox", largo:true, valor: controlaResultado(e || { tipo: "Maquina" }) },
+      { nome:"ativo", rotulo:"Ativo", tipo:"checkbox", valor: e?.ativo ?? true },
+      { tipo:"recolher", rotulo:"Mais detalhes (opcional)" },
       { nome:"marca", rotulo:"Marca", tipo:"texto", valor: e?.marca || "" },
       { nome:"modelo", rotulo:"Modelo", tipo:"texto", valor: e?.modelo || "" },
       { nome:"ano", rotulo:"Ano", tipo:"numero", valor: e?.ano ?? "" },
@@ -2902,9 +3035,6 @@ function abrirModalEquipamentoAdmin(id) {
       { nome:"valor_compra", rotulo:"Valor de compra (R$)", tipo:"moeda", valor: e?.valor_compra ?? "" },
       { nome:"teve_entrada", rotulo:"Houve entrada", tipo:"checkbox", largo:true, valor: e?.teve_entrada ?? false },
       { nome:"valor_entrada", rotulo:"Valor da entrada (R$)", tipo:"moeda", valor: e?.valor_entrada ?? "", visivelSe: f => f.teve_entrada, obrigatorio: f => f.teve_entrada },
-      { tipo:"separador", rotulo:"No aplicativo" },
-      { nome:"controla_resultado", rotulo:"Tem resultado próprio (painel só dele). Desmarcado: os gastos entram só no total do negócio", tipo:"checkbox", largo:true, valor: controlaResultado(e || { tipo: "Maquina" }) },
-      { nome:"ativo", rotulo:"Ativo", tipo:"checkbox", valor: e?.ativo ?? true },
       { nome:"imagem_url", rotulo:"Foto (link da imagem, opcional)", tipo:"texto", largo:true, valor: e?.imagem_url || "" },
     ],
     montar(f) {
@@ -3395,19 +3525,25 @@ function abrirModalAgenda(id, tipoNovo) {
   const tipo = a ? (a.valor < 0 ? "receber" : "pagar") : (tipoNovo || "pagar");
   const ehPagar = (f) => f._tipo === "pagar";
   const grupos = opcoesGrupoDespesa();
+  const ded = criarDeducaoHistorico("item");
   const campos = [
     { nome:"_tipo", rotulo:"É uma conta…", tipo:"select", largo:true, opcoes:["pagar|A pagar (vai sair dinheiro)","receber|A receber (vai entrar dinheiro)"], valor: tipo },
-    { nome:"item", rotulo:"Descrição", tipo:"texto", largo:true, valor: a?.item || "", obrigatorio:true },
+    { nome:"item", rotulo:"Descrição", tipo:"texto", largo:true, valor: a?.item || "", obrigatorio:true,
+      ...(a ? {} : { autocompletar: true, lista: descricoesDoHistorico(), aoMudar: (v) => { if (ehPagar(lerFormulario())) ded.aplicar(v); } }) },
     { nome:"valor", rotulo:"Valor (R$)", tipo:"moeda", valor: a ? Math.abs(a.valor) : "", obrigatorio:true },
     { nome:"vencimento", rotulo:"Vencimento", tipo:"date", valor: a ? vencimentoAgenda(a) : hoje(), obrigatorio:true },
-    { nome:"grupo", rotulo:"Categoria (vai para o Extrato)", tipo:"select", opcoes: grupos, valor: a?.grupo && a.grupo !== "Recebimentos" ? a.grupo : (grupos.includes("Outras despesas") ? "Outras despesas" : grupos[0]), visivelSe: ehPagar },
-    { nome:"natureza", rotulo:"Tipo de custo", tipo:"select", opcoes:["Fixo|Custo fixo","Variavel|Custo variável","Investimento|Investimento"], valor: a?.natureza && a.natureza !== "Receita" ? a.natureza : "Fixo", visivelSe: ehPagar },
+    { nome:"grupo", rotulo:"Categoria (vai para o Extrato)", tipo:"select", opcoes: grupos, valor: a?.grupo && a.grupo !== "Recebimentos" ? a.grupo : (grupos.includes("Outras despesas") ? "Outras despesas" : grupos[0]), visivelSe: ehPagar, aoMudar: ded.tocou("grupo") },
+    { nome:"natureza", rotulo:"Tipo de custo", tipo:"select", opcoes:["Fixo|Custo fixo","Variavel|Custo variável","Investimento|Investimento"], valor: a?.natureza && a.natureza !== "Receita" ? a.natureza : "Fixo", visivelSe: ehPagar, aoMudar: ded.tocou("natureza") },
     { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(true), valor: equipamentoPadrao(a?.equipamento_id, true) },
     { nome:"status_pagamento", rotulo:"Situação", tipo:"select", opcoes:["pendente|Em aberto","pago|Já foi paga / recebida"], valor: a?.status_pagamento || "pendente" },
     { nome:"data_pagamento", rotulo:"Data do pagamento", tipo:"date", valor: a?.data_pagamento || hoje(), visivelSe: f => f.status_pagamento === "pago" },
   ];
   if (!id) {
-    campos.push({ nome:"replicarMeses", rotulo:"Repete todo mês? Quantos meses a mais (0 = não repete)", tipo:"numero", largo:true, valor: 0 });
+    // repetição: "Mensal" cria uma conta por mês até a data escolhida
+    campos.push(
+      { nome:"repetir", rotulo:"Repetição", tipo:"select", opcoes:["nao|Não repete","mensal|Todo mês"], valor: "nao" },
+      { nome:"repetir_ate", rotulo:"Repetir até", tipo:"date", valor: isoLocal(new Date(Number(hoje().slice(0, 4)), Number(hoje().slice(5, 7)) - 1 + 12, 0)), visivelSe: f => f.repetir === "mensal" },
+    );
   }
 
   abrirModal({
@@ -3424,12 +3560,26 @@ function abrirModalAgenda(id, tipoNovo) {
       if (f.status_pagamento === "pago" && !f.data_pagamento) throw erroCampo("data_pagamento", "Informe a data do pagamento.");
       const [ano, mes, dia] = f.vencimento.split("-").map(Number);
       const pagar = ehPagar(f);
+      // meses a mais depois do primeiro vencimento, contando só os que caem até a data escolhida
+      let mesesExtra = 0;
+      if (!id && f.repetir === "mensal") {
+        if (!f.repetir_ate) throw erroCampo("repetir_ate", "Informe até quando a conta se repete.");
+        if (f.repetir_ate < f.vencimento) throw erroCampo("repetir_ate", "A data final é antes do primeiro vencimento.");
+        const [anoAte, mesAte] = f.repetir_ate.split("-").map(Number);
+        mesesExtra = (anoAte - ano) * 12 + (mesAte - mes);
+        while (mesesExtra > 0) {
+          const ult = calcularDataAgenda(ano + Math.floor((mes - 1 + mesesExtra) / 12), ((mes - 1 + mesesExtra) % 12) + 1, String(dia));
+          if (ult && isoLocal(ult) <= f.repetir_ate) break;
+          mesesExtra--;
+        }
+        if (mesesExtra > 60) throw erroCampo("repetir_ate", "A repetição pode ir até 5 anos à frente.");
+      }
       return {
         item: f.item.trim(), equipamento_id: f.equipamento_id ? Number(f.equipamento_id) : null,
         grupo: pagar ? f.grupo : "Recebimentos", ano, dia: String(dia), mes, valor: pagar ? v : -v,
         natureza: pagar ? f.natureza : "Receita", centro_custo_id: a?.centro_custo_id ?? null,
         status_pagamento: f.status_pagamento, data_pagamento: f.status_pagamento === "pago" ? f.data_pagamento : null,
-        _replicarMeses: id ? 0 : Math.max(0, Math.min(60, Number(f.replicarMeses) || 0)),
+        _replicarMeses: id ? 0 : mesesExtra,
       };
     },
     async aoSalvar(reg) {
@@ -3577,6 +3727,15 @@ function abrirModal(ctx) {
       : c);
   }
   modalCtx = ctx;
+  $("modal-campos").classList.remove("recolher-aberto");
+  // { tipo: "recolher" } esconde os campos que vêm depois dele atrás do botão
+  // "Mais detalhes (opcional)". Abre sozinho se o registro já tem algo preenchido ali.
+  let recolhendo = false, recolherAberto = false;
+  (ctx.campos || []).forEach(c => {
+    if (c.tipo === "recolher") { recolhendo = true; return; }
+    c._rec = recolhendo;
+    if (recolhendo && ["texto", "numero", "moeda", "date"].includes(c.tipo) && c.valor != null && c.valor !== "") recolherAberto = true;
+  });
   $("modal-fundo").classList.toggle("modal-folha", !!ctx.folha || !!ctx.corpoCustom);
   marcarModalNoHistorico();
   $("modal-titulo").textContent = ctx.titulo;
@@ -3588,10 +3747,13 @@ function abrirModal(ctx) {
     $("modal-campos").innerHTML = ctx.corpoCustom;
   } else {
   $("modal-campos").innerHTML = ctx.campos.map(c => {
-    const largo = (c.largo ? "form-larga " : "") + (c.oculto ? "oculto " : "");
+    const largo = (c.largo ? "form-larga " : "") + (c.oculto ? "oculto " : "") + (c._rec ? "campo-recolhido " : "");
     const dataGrupo = c.grupoCondicional ? `data-grupo-cond="${c.grupoCondicional}"` : "";
+    if (c.tipo === "recolher") {
+      return `<button type="button" class="form-recolher form-larga" data-recolher aria-expanded="false"><span>${escHtml(c.rotulo || "Mais detalhes (opcional)")}</span>${icone("chevron-right", "icone-sm")}</button>`;
+    }
     if (c.tipo === "separador") {
-      return `<div class="form-separador form-larga ${c.oculto ? "oculto" : ""}" ${dataGrupo} data-sep="${escHtml(c.nome || "")}">${c.rotulo}</div>`;
+      return `<div class="form-separador form-larga ${c.oculto ? "oculto" : ""} ${c._rec ? "campo-recolhido" : ""}" ${dataGrupo} data-sep="${escHtml(c.nome || "")}">${c.rotulo}</div>`;
     }
     if (c.tipo === "info") {
       return `<div class="form-info form-larga">${escHtml(c.texto)}${c.acaoId
@@ -3658,6 +3820,17 @@ function abrirModal(ctx) {
 
   if (travadoNoContexto) {
     $("modal-campos").insertAdjacentHTML("afterbegin", `<div class="form-contexto form-larga">${icone("tractor", "icone-sm")} Em <b>${escHtml(contexto.nome || nomeEquipamento(contexto.equipamentoId))}</b><span>para lançar em outro equipamento, troque no topo</span></div>`);
+  }
+
+  const btnRecolher = $("modal-campos").querySelector("[data-recolher]");
+  if (btnRecolher) {
+    const mostrarRecolhido = (aberto) => {
+      $("modal-campos").classList.toggle("recolher-aberto", aberto);
+      btnRecolher.setAttribute("aria-expanded", String(aberto));
+      btnRecolher.classList.toggle("aberto", aberto);
+    };
+    mostrarRecolhido(recolherAberto);
+    btnRecolher.addEventListener("click", () => mostrarRecolhido(!$("modal-campos").classList.contains("recolher-aberto")));
   }
 
   // aplica a máscara monetária nos campos "moeda" (formata a cada tecla e
@@ -3924,6 +4097,11 @@ function validarObrigatorios() {
     if (!primeiro) primeiro = el;
   }
   if (!primeiro) return true;
+  // campo obrigatório dentro de "Mais detalhes": abre pra pessoa enxergar o aviso
+  if (primeiro.closest(".campo-recolhido")) {
+    $("modal-campos").classList.add("recolher-aberto");
+    document.querySelector("#modal-campos [data-recolher]")?.classList.add("aberto");
+  }
   if (primeiro.scrollIntoView) primeiro.scrollIntoView({ block: "center", behavior: "smooth" });
   primeiro.focus({ preventScroll: true });
   return false;

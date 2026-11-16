@@ -156,9 +156,7 @@
     <div class="login-caixa">
       <h1 class="titulo-risco"><span>Configuração pendente</span></h1>
       <p class="texto-config">
-        Abra o arquivo <code>config.js</code> e preencha a <b>URL</b> e a
-        <b>anon key</b> do seu projeto Supabase, conforme o passo a passo do
-        <code>README.md</code>.
+        Este aplicativo ainda não foi configurado. Avise o suporte para concluir a instalação.
       </p>
     </div>
   </div>
@@ -222,7 +220,7 @@
       </div>
 
     <main class="conteudo">
-      <div id="carregando" class="vazio">Carregando dados do banco…</div>
+      <div id="carregando" class="vazio">Carregando…</div>
       <div class="cabeca-pagina oculto" id="cabeca-pagina">
         <button type="button" class="btn-voltar-pagina" id="btn-voltar-pagina" aria-label="Voltar ao menu">
           <svg class="icone" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><use href="#icone-chevron-right"></use></svg>
@@ -247,29 +245,38 @@
 
         <!-- Gráficos recolhidos por padrão (Chart.js redimensiona ao abrir — ver shell.js) -->
         <details class="cartao cartao-analise" id="pnl-analise">
-        <summary>Fluxo e destino do dinheiro</summary>
+        <summary>Gráficos</summary>
         <div class="cartao">
           <div class="cartao-cabeca">
             <h2 class="titulo-risco"><span>Fluxo de caixa mensal</span></h2>
-            <div class="segmentado" id="pnl-tipo-fluxo">
-              <button type="button" data-valor="bar" class="ativo">Barras</button>
-              <button type="button" data-valor="line">Linhas</button>
-            </div>
           </div>
           <p class="cartao-nota">entradas e saídas do período · linha amarela: saldo acumulado (sempre total)</p>
           <div class="grafico-caixa"><canvas id="graf-fluxo"></canvas></div>
+          <details class="grafico-opcoes">
+            <summary>Opções do gráfico</summary>
+            <div class="cartao-controles">
+              <div class="segmentado" id="pnl-tipo-fluxo">
+                <button type="button" data-valor="bar" class="ativo">Barras</button>
+                <button type="button" data-valor="line">Linhas</button>
+              </div>
+            </div>
+          </details>
         </div>
 
         <div class="cartao">
           <div class="cartao-cabeca">
             <h2 class="titulo-risco"><span>Para onde vai o dinheiro</span></h2>
+          </div>
+          <p class="cartao-nota">saídas no período selecionado</p>
+          <details class="grafico-opcoes">
+            <summary>Opções do gráfico</summary>
             <div class="cartao-controles">
               <div class="segmentado" id="pnl-agrupar">
-                <button type="button" data-valor="grupo" class="ativo">Por grupo</button>
-                <button type="button" data-valor="natureza">Por natureza</button>
+                <button type="button" data-valor="grupo" class="ativo">Por categoria</button>
+                <button type="button" data-valor="natureza">Por tipo de custo</button>
               </div>
-              <select id="pnl-natureza" aria-label="Natureza">
-                <option value="todos">Todas as naturezas</option>
+              <select id="pnl-natureza" aria-label="Tipo de custo">
+                <option value="todos">Todos os tipos de custo</option>
                 <option value="Fixo">Só custo fixo</option>
                 <option value="Variavel">Só custo variável</option>
                 <option value="Investimento">Só investimento</option>
@@ -279,8 +286,7 @@
                 <button type="button" data-valor="pizza">Pizza</button>
               </div>
             </div>
-          </div>
-          <p class="cartao-nota">saídas no período selecionado</p>
+          </details>
           <div class="grupos" id="grupos-painel"></div>
           <div class="grafico-caixa grafico-baixo oculto" id="composicao-grafico-caixa"><canvas id="graf-composicao"></canvas></div>
         </div>
@@ -289,7 +295,6 @@
 
       <!-- ─── EXTRATO ─── -->
       <section id="aba-extrato" class="secao oculto">
-        <div class="cartao" id="ext-contas"></div>
         <div class="segmentado segmentado-largo ext-tipo" id="ext-tipo">
           <button type="button" data-valor="todos" class="ativo">Tudo</button>
           <button type="button" data-valor="entrada">Entradas</button>
@@ -362,15 +367,19 @@
       <!-- ─── DIESEL ─── -->
       <section id="aba-diesel" class="secao oculto">
         <div class="kpi-grade" id="kpis-diesel"></div>
-        <div class="cartao oculto" id="card-consumo">
-          <h2 class="titulo-risco"><span>Consumo da máquina (litros por hora trabalhada)</span></h2>
-          <p class="cartao-nota">a cada abastecimento: litros ÷ horas faturadas desde o abastecimento anterior (assume tanque cheio)</p>
-          <div class="grafico-caixa grafico-baixo"><canvas id="graf-consumo"></canvas></div>
-        </div>
-        <div class="cartao">
-          <h2 class="titulo-risco"><span>Preço do litro por abastecimento</span></h2>
-          <div class="grafico-caixa grafico-baixo"><canvas id="graf-diesel"></canvas></div>
-        </div>
+        <!-- Gráficos recolhidos por padrão (Chart.js redimensiona ao abrir — ver shell.js) -->
+        <details class="cartao cartao-analise" id="die-graficos">
+          <summary>Gráficos</summary>
+          <div class="cartao oculto" id="card-consumo">
+            <h2 class="titulo-risco"><span>Consumo da máquina (litros por hora trabalhada)</span></h2>
+            <p class="cartao-nota">a cada abastecimento: litros ÷ horas faturadas desde o abastecimento anterior (assume tanque cheio)</p>
+            <div class="grafico-caixa grafico-baixo"><canvas id="graf-consumo"></canvas></div>
+          </div>
+          <div class="cartao">
+            <h2 class="titulo-risco"><span>Preço do litro por abastecimento</span></h2>
+            <div class="grafico-caixa grafico-baixo"><canvas id="graf-diesel"></canvas></div>
+          </div>
+        </details>
         <div class="filtros">
           <select id="die-filtro-equip" aria-label="Equipamento"></select>
           <select id="die-filtro-combustivel" aria-label="Combustível"></select>
