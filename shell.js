@@ -86,6 +86,25 @@ function iniciarNavegacao() {
     if (pag) irPara(pag.dataset.navPagina);
   });
   $("btn-voltar-pagina").addEventListener("click", () => irPara("mais"));
+  // gráficos desenhados dentro de um <details> fechado ficam com tamanho zero:
+  // ao abrir, redimensiona (o evento "toggle" não borbulha, por isso captura)
+  document.addEventListener("toggle", (ev) => {
+    if (ev.target.open) requestAnimationFrame(() => Object.values(graficos).forEach(g => { try { g.resize(); } catch (e) { /* ignora */ } }));
+  }, true);
+  // "Ocultar valores": só uma classe no <body> (o CSS embaça os números); nenhum dado muda
+  const olho = $("btn-olho");
+  const aplicarOlho = (oculto) => {
+    document.body.classList.toggle("valores-ocultos", oculto);
+    olho.setAttribute("aria-pressed", String(oculto));
+    olho.setAttribute("aria-label", oculto ? "Mostrar valores" : "Ocultar valores");
+    olho.title = olho.getAttribute("aria-label");
+  };
+  try { aplicarOlho(localStorage.getItem("valoresOcultos") === "1"); } catch (e) { aplicarOlho(false); }
+  olho.addEventListener("click", () => {
+    const oculto = !document.body.classList.contains("valores-ocultos");
+    aplicarOlho(oculto);
+    try { localStorage.setItem("valoresOcultos", oculto ? "1" : "0"); } catch (e) { /* sem storage */ }
+  });
   registrarWebApp();
 }
 

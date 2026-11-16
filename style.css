@@ -1293,3 +1293,124 @@ input[type="search"]:focus { outline: none; border-color: var(--amarelo); }
 .arquivo-botao.com-arquivo { border-style: solid; border-color: rgba(62,207,142,.5); color: var(--verde) !important; }
 .arquivo-botao span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .arquivo-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+
+/* ═══════════════════════════════════════════════════════
+   PR 1 — Limpeza visual (fundação + telas de Início)
+   Escopo: body[data-pagina="painel"] (Início do gestor) e
+   body[data-pagina="inicio"] (Início do operador). As demais
+   telas não mudam neste PR. Regras globais de limpeza:
+   1 um herói por tela · 2 cabeçalho sem decoração ·
+   3 lista com no máx. 3 informações · 4 cor com função
+   (amarelo = ação, verde/vermelho = dinheiro) · 5 sem texto de ajuda.
+   ═══════════════════════════════════════════════════════ */
+:root {
+  --fs-heroi: 44px;          /* o único número gigante da tela */
+  --fs-destaque: 28px;       /* segundo nível (saldo) */
+  --fs-valor: 17px;          /* números de apoio */
+  --fs-rotulo: 13px;         /* rótulos: sem caixa alta */
+  --raio-cartao: 20px;
+  --espaco-secao: 26px;
+}
+.secao-titulo { font-size: var(--fs-rotulo); font-weight: 500; color: var(--texto-mudo); margin: var(--espaco-secao) 4px 10px; }
+
+/* ── Início do gestor ── */
+/* saldo já aparece no cartão "Caixa": tira a duplicata do topo nesta tela */
+body[data-pagina="painel"] .topo-saldo { display: none !important; }
+body[data-pagina="painel"] .titulo-risco::after { display: none; }
+body[data-pagina="painel"] .btn-dica { display: none; }
+
+/* herói: resultado sem caixa nem gradiente */
+body[data-pagina="painel"] #kpis-posicao { display: block; }
+body[data-pagina="painel"] .hero-resultado { background: none; border: none; padding: 4px 2px 0; gap: 6px; }
+body[data-pagina="painel"] .hero-resultado .hero-rotulo { font-weight: 500; font-size: var(--fs-rotulo); }
+body[data-pagina="painel"] .hero-valor { font-size: var(--fs-heroi); letter-spacing: -1px; }
+body[data-pagina="painel"] .hero-filtro { background: none; border: none; padding: 2px 0; font-size: 13.5px; }
+body[data-pagina="painel"] .hero-resultado .hero-linha { gap: 18px; }
+
+/* Caixa: saldo + a receber / a pagar em um único cartão */
+.caixa-cartao { background: var(--superficie); border: 1px solid var(--borda); border-radius: var(--raio-cartao); padding: 18px; margin-top: 20px; }
+.caixa-saldo, .caixa-item { background: none; border: none; color: var(--texto); text-align: left; cursor: pointer; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.caixa-saldo { width: 100%; }
+.caixa-rotulo { font-size: var(--fs-rotulo); color: var(--texto-mudo); }
+.caixa-valor-grande { font-family: var(--fonte-mono); font-size: var(--fs-destaque); font-weight: 600; letter-spacing: -.5px; line-height: 1.15; }
+.caixa-valor { font-family: var(--fonte-mono); font-size: var(--fs-valor); font-weight: 600; }
+.caixa-duo { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--borda); margin-top: 16px; padding-top: 16px; }
+.caixa-duo:first-child { border-top: none; margin-top: 0; padding-top: 0; }
+.caixa-item + .caixa-item { border-left: 1px solid var(--borda); padding-left: 18px; }
+
+/* Atenção (antes "Vence em breve"): uma frase + a próxima conta */
+body[data-pagina="painel"] .painel-topo { margin-bottom: 0; }
+.cartao-vencimentos { border-radius: var(--raio-cartao); padding: 16px 18px 6px; }
+.cartao-vencimentos.tem-atraso { box-shadow: inset 3px 0 0 var(--vermelho); }
+.atencao-topo { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.atencao-texto { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.atencao-texto b { font-size: 15px; font-weight: 600; }
+.atencao-texto small { font-family: var(--fonte-mono); font-size: 12.5px; color: var(--texto-mudo); }
+.cartao-vencimentos .btn-link { text-decoration: none; font-weight: 600; font-size: 13px; white-space: nowrap; }
+.cartao-vencimentos .lista-compacta .conta-item.atrasada { box-shadow: none; }
+
+/* Operação: 2 indicadores à vista, o resto em "Mais indicadores" */
+body[data-pagina="painel"] #kpis-painel { display: block; margin-bottom: 0; }
+.cartao-operacao { border-radius: var(--raio-cartao); padding: 18px 18px 6px; margin-bottom: 0; }
+.op-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.op-item { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.op-rotulo { font-size: var(--fs-rotulo); color: var(--texto-mudo); }
+.op-valor { font-family: var(--fonte-mono); font-size: 20px; font-weight: 600; }
+.op-extra { flex-direction: column; gap: 10px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--borda); }
+.op-extra:not(.oculto) { display: flex; }
+.op-linha { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: var(--fs-rotulo); color: var(--texto-mudo); }
+.op-linha b { font-family: var(--fonte-mono); font-size: 14.5px; font-weight: 600; color: var(--texto); text-align: right; }
+.op-linha b.op-nota { font-family: var(--fonte-texto); font-size: 12px; font-weight: 400; color: var(--texto-mudo); }
+.cartao-operacao .btn-ver-mais { margin-top: 6px; }
+
+/* Gráficos: recolhidos */
+.cartao-analise { padding: 0; overflow: hidden; border-radius: var(--raio-cartao); margin-top: var(--espaco-secao); }
+.cartao-analise > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; padding: 18px; font-size: 15px; font-weight: 500; }
+.cartao-analise > summary::-webkit-details-marker { display: none; }
+.cartao-analise > summary::after { content: ""; width: 8px; height: 8px; border-right: 2px solid var(--texto-mudo); border-bottom: 2px solid var(--texto-mudo); transform: rotate(45deg); margin-right: 4px; transition: transform .15s; }
+.cartao-analise[open] > summary::after { transform: rotate(-135deg); }
+.cartao-analise > .cartao { border: none; border-top: 1px solid var(--borda); border-radius: 0; box-shadow: none; margin-bottom: 0; }
+
+/* ── Início do operador ── */
+body[data-pagina="inicio"] .boas-vindas { background: none; border: none; padding: 6px 2px 0; }
+body[data-pagina="inicio"] .boas-vindas h2 { font-size: 32px; margin-bottom: 18px; }
+body[data-pagina="inicio"] .mini-stats { display: flex; gap: 32px; }
+body[data-pagina="inicio"] .mini-stats div { background: none; border-radius: 0; padding: 0; }
+body[data-pagina="inicio"] .mini-stats b { font-size: 24px; }
+body[data-pagina="inicio"] .grupo-titulo { text-transform: none; letter-spacing: 0; font-size: var(--fs-rotulo); font-weight: 500; margin: var(--espaco-secao) 4px 10px; }
+body[data-pagina="inicio"] .acao-grande { border-radius: var(--raio-cartao); min-height: 96px; }
+body[data-pagina="inicio"] .acao-grande .tile-texto small { display: none; }
+body[data-pagina="inicio"] .lista-cartao { border-radius: var(--raio-cartao); }
+
+/* ── Início: chips neutros na barra do topo, números em Inter, ocultar valores ── */
+.topo-periodo, .btn-olho { display: none; }
+body[data-pagina="painel"] .btn-olho {
+  display: inline-flex; align-items: center; justify-content: center; flex: none; margin-left: auto;
+  width: 40px; height: 40px; border-radius: 999px; border: none; background: none; color: var(--texto-mudo); cursor: pointer;
+}
+body[data-pagina="painel"] .btn-olho:active { background: rgba(255,255,255,.08); }
+.btn-olho .olho-fechado, body.valores-ocultos .btn-olho .olho-aberto { display: none; }
+body.valores-ocultos .btn-olho .olho-fechado { display: block; }
+body[data-pagina="painel"] .chip-contexto { background: rgba(255,255,255,.06); border-color: transparent; color: var(--texto); }
+body[data-pagina="painel"] .chip-contexto:hover { background: rgba(255,255,255,.10); border-color: transparent; }
+body[data-pagina="painel"] .topo .btn-periodo,
+body[data-pagina="painel"] .topo .btn-periodo.ativo { background: rgba(255,255,255,.06); border-color: transparent; color: var(--texto-suave); }
+body[data-pagina="painel"] .topo .btn-periodo .icone:first-child { opacity: .6; }
+@media (max-width: 1023px) {
+  body[data-pagina="painel"] .topo-periodo { display: block; min-width: 0; flex: 0 1 auto; }
+  body[data-pagina="painel"] #aba-painel .filtros-periodo { display: none; }
+}
+/* números em Inter (tabulares) só dentro das telas de Início — janelas e demais telas seguem como antes */
+#aba-painel, #aba-inicio { --fonte-mono: 'Inter', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+body[data-pagina="painel"] .hero-valor { font-weight: 700; }
+body.valores-ocultos[data-pagina="painel"] :is(.hero-valor, .hero-filtro, .caixa-valor-grande, .caixa-valor, .op-valor, .op-linha b, .atencao-texto small, .conta-valor) {
+  filter: blur(9px); user-select: none;
+}
+/* topo do Início cabe em 360–390 px: sem ícone de calendário e sem corte do nome do equipamento */
+body[data-pagina="painel"] .topo .btn-periodo .icone:first-child { display: none; }
+body[data-pagina="painel"] .chip-contexto span#contexto-nome { max-width: none; }
+body[data-pagina="painel"] .btn-olho { width: 36px; }
+@media (max-width: 380px) {
+  body[data-pagina="painel"] .chip-contexto-seta, body[data-pagina="painel"] .topo .btn-periodo-seta { display: none; }
+  body[data-pagina="painel"] .topo .btn-periodo { padding: 0 12px; }
+}
