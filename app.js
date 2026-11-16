@@ -35,7 +35,7 @@ const porBase = (q) => modoBase === "tudo" ? q : q.eq("legado", modoBase === "an
 // registro novo nasce na base que está na tela (assim o que você lança sempre aparece)
 const marcarBase = (obj) => Array.isArray(obj) ? obj.map(marcarBase) : { ...obj, legado: modoBase === "antiga" };
 
-let filtroDiesel = { combustivel: "todos", periodo: { chave: "tudo" } };
+let filtroDiesel = { combustivel: "todos", equipamento: "todos", periodo: { chave: "tudo" } };
 const graficos = {};           // instâncias Chart.js
 
 const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
@@ -248,6 +248,25 @@ function controlaResultado(e) {
   if (!e) return false;
   return e.controla_resultado ?? ((e.tipo || "Maquina") !== "Veiculo");
 }
+// Combustível do equipamento: o do cadastro; sem cadastro, o que ele mais
+// abasteceu até hoje; sem histórico, Diesel para máquina e Gasolina para veículo.
+function combustivelDoEquip(id) {
+  const e = dados.equipamentos.find(x => x.id === Number(id));
+  if (e && e.combustivel) return e.combustivel;
+  const cont = {};
+  for (const d of (typeof todosAbastecimentos === "function" ? todosAbastecimentos() : dados.die)) if (d.equipamento_id === Number(id) && d.combustivel) cont[d.combustivel] = (cont[d.combustivel] || 0) + 1;
+  const maisUsado = Object.entries(cont).sort((a, b) => b[1] - a[1])[0];
+  if (maisUsado) return maisUsado[0];
+  return (e?.tipo || "Maquina") === "Veiculo" ? "Gasolina" : "Diesel";
+}
+const ehFlex = (id) => combustivelDoEquip(id) === "Flex";
+// combustíveis que um item da nota pode ser para este equipamento (flex = gasolina ou álcool)
+function combustivelServe(id, comb) {
+  const c = combustivelDoEquip(id);
+  return c === "Flex" ? (comb === "Gasolina" || comb === "Etanol") : c === comb;
+}
+const ROTULO_COMBUSTIVEL = { Diesel: "Diesel", Gasolina: "Gasolina", Etanol: "Etanol (álcool)", GNV: "GNV", Flex: "Flex (gasolina ou álcool)" };
+
 function nomeEquipamento(id) {
   const e = dados.equipamentos.find(x => x.id === id);
   return e ? e.nome : "";
@@ -531,6 +550,7 @@ async function iniciarApp() {
   // filtros de manutenção
   // filtros do abastecimento
   $("die-filtro-combustivel").addEventListener("change", e => { filtroDiesel.combustivel = e.target.value; renderDiesel(); });
+  $("die-filtro-equip").addEventListener("change", e => { filtroDiesel.equipamento = e.target.value; renderDiesel(); });
   $("man-filtro-tipo").addEventListener("change", e => { filtroManutencao.tipo = e.target.value; renderManutencao(); });
   ligarSegmentado("man-filtro-status", (v) => { filtroManutencao.status = v; renderManutencao(); });
 
@@ -1523,6 +1543,28 @@ function calcularEficiencia(de = "", ate = "") {
 const todosAbastecimentos = () => dados.die.concat(dados.dieExtra || []);
 const acharAbastecimento = (id) => todosAbastecimentos().find(x => x.id === id);
 
+// Opções dos filtros saem do cadastro: só os combustíveis que os equipamentos
+// usam (flex vira gasolina e álcool) e só os equipamentos que abastecem.
+function prepararFiltrosAbastecimento() {
+  const eqs = dados.equipamentos.filter(e => e.ativo !== false && (contexto.equipamentoId == null || e.id === contexto.equipamentoId));
+  const combs = new Set();
+  eqs.forEach(e => { const c = combustivelDoEquip(e.id); if (c === "Flex") { combs.add("Gasolina"); combs.add("Etanol"); } else combs.add(c); });
+  dados.die.forEach(d => d.combustivel && combs.add(d.combustivel));
+  const ordem = ["Diesel", "Gasolina", "Etanol", "GNV"];
+  const lista = [...combs].sort((a, b) => ordem.indexOf(a) - ordem.indexOf(b));
+  if (!lista.includes(filtroDiesel.combustivel)) filtroDiesel.combustivel = "todos";
+  const selC = $("die-filtro-combustivel");
+  selC.innerHTML = `<option value="todos">Todos os combustíveis</option>` + lista.map(c => `<option value="${c}">${escHtml(ROTULO_COMBUSTIVEL[c] || c)}</option>`).join("");
+  selC.value = filtroDiesel.combustivel;
+  selC.classList.toggle("oculto", lista.length < 2);
+  const selE = $("die-filtro-equip");
+  const comAbast = eqs.filter(e => dados.die.some(d => d.equipamento_id === e.id));
+  if (!comAbast.some(e => String(e.id) === filtroDiesel.equipamento)) filtroDiesel.equipamento = "todos";
+  selE.innerHTML = `<option value="todos">Todos os equipamentos</option>` + comAbast.map(e => `<option value="${e.id}">${escHtml(e.nome)}</option>`).join("");
+  selE.value = filtroDiesel.equipamento;
+  selE.classList.toggle("oculto", contexto.equipamentoId != null || comAbast.length < 2);
+}
+
 function renderDiesel() {
   // (filtro por centro de custo removido: o conceito saiu do sistema)
 
@@ -1531,9 +1573,11 @@ function renderDiesel() {
   // aparecem no "Total do negócio", onde todos os equipamentos se misturam.
   const visaoGeral = contexto.equipamentoId == null;
   const { de, ate } = intervaloDe(filtroDiesel.periodo);
+  prepararFiltrosAbastecimento();
   const doFiltro = dados.die.filter(d =>
     (!de || d.data >= de) && (!ate || d.data <= ate) &&
-    (filtroDiesel.combustivel === "todos" || d.combustivel === filtroDiesel.combustivel)
+    (filtroDiesel.combustivel === "todos" || d.combustivel === filtroDiesel.combustivel) &&
+    (filtroDiesel.equipamento === "todos" || String(d.equipamento_id) === filtroDiesel.equipamento)
   );
 
   let litros = 0, custo = 0, aPagar = 0, vencido = 0;
@@ -1770,10 +1814,12 @@ function abrirModalDiesel(id) {
     const combustiveis = itens.filter(i => i.combustivel && i.quantidade > 0 && i.valorTotal > 0);
     if (!combustiveis.length) { linhas.push("A nota não tem item de combustível reconhecido."); return true; }
 
-    const ehMaquina = tipoEquipamento(Number(campoForm("equipamento_id")?.value)) === "Maquina";
-    const principal = combustiveis.find(i => ehMaquina ? i.combustivel === "Diesel" : i.combustivel !== "Diesel") || combustiveis[0];
+    const eqId = Number(campoForm("equipamento_id")?.value);
+    const ehMaquina = tipoEquipamento(eqId) === "Maquina";
+    const principal = combustiveis.find(i => combustivelServe(eqId, i.combustivel)) || combustiveis[0];
+    const carroId = Number(campoForm("carro_equipamento_id")?.value) || null;
     const carro = ehMaquina && temVeiculoCadastrado
-      ? combustiveis.find(i => i !== principal && i.combustivel !== principal.combustivel && i.combustivel !== "Diesel") : null;
+      ? combustiveis.find(i => i !== principal && (carroId ? combustivelServe(carroId, i.combustivel) : i.combustivel !== principal.combustivel)) : null;
 
     let avisoDesconto = null;
     if (!itens.some(i => i.desc > 0) && (Number(nota.descontoTotal) || 0) > 0) {
@@ -1790,7 +1836,7 @@ function abrirModalDiesel(id) {
     let conferir = false;
 
     if (nota.data) campoForm("data").value = nota.data;
-    campoForm("combustivel").value = principal.combustivel;
+    if (principal.combustivel === "Gasolina" || principal.combustivel === "Etanol") campoForm("combustivel").value = principal.combustivel;
     campoForm("litros").value = String(principal.quantidade);
     campoForm("valor_unit_bruto").value = moedaMascara(principal.valorUnit || arred(principal.valorTotal / principal.quantidade, 2));
     campoForm("valor_total").value = moedaMascara(pago(principal));
@@ -1807,7 +1853,7 @@ function abrirModalDiesel(id) {
     if (carro && chk) {
       chk.checked = true;
       chk.dispatchEvent(new Event("change"));
-      campoForm("carro_combustivel").value = carro.combustivel;
+      if (carro.combustivel === "Gasolina" || carro.combustivel === "Etanol") campoForm("carro_combustivel").value = carro.combustivel;
       campoForm("carro_litros").value = String(carro.quantidade);
       campoForm("carro_valor_unit_bruto").value = moedaMascara(carro.valorUnit || arred(carro.valorTotal / carro.quantidade, 2));
       campoForm("carro_valor_total").value = moedaMascara(pago(carro));
@@ -1896,6 +1942,8 @@ function abrirModalDiesel(id) {
       // máquina (Pá Carregadeira, Retroescavadeira) — troca o equipamento
       // no formulário e o checkbox aparece/some na hora, sem reabrir o modal.
       aoMudar(novoId) {
+        const sc = document.querySelector("#modal-campos [data-comb-equip]");
+        if (sc) sc.textContent = ROTULO_COMBUSTIVEL[combustivelDoEquip(novoId)] || "";
         const ehMaquina = tipoEquipamento(Number(novoId)) === "Maquina";
         const chk = document.querySelector('#modal-campos [data-campo="tem_carro_apoio"]');
         if (!chk) return;
@@ -1914,10 +1962,11 @@ function abrirModalDiesel(id) {
       texto:`🔗 Nota conjunta: este lançamento faz par com ${nomeEquipamento(parGrupo.equipamento_id)} · ${parGrupo.combustivel} (${brl(parGrupo.valor_total)}). Cada um tem o seu valor; a soma aparece em "Total da nota".` });
   }
   campos.push(
-    { tipo:"separador", rotulo: temVeiculoCadastrado ? "③ ⛽ Abastecimento da máquina" : "③ ⛽ Abastecimento" },
-    { nome:"combustivel", rotulo:"Combustível", tipo:"select",
-      opcoes:["Diesel|Diesel","Gasolina|Gasolina","Etanol|Etanol","GNV|GNV","Flex|Flex"],
-      valor: d?.combustivel || (tipoEquip === "Veiculo" ? "Gasolina" : "Diesel") },
+    { tipo:"separador", nome:"_sep_maq", rotulo: (temVeiculoCadastrado ? "③ ⛽ Abastecimento da máquina" : "③ ⛽ Abastecimento") + ` <span class="sep-comb" data-comb-equip>${escHtml(ROTULO_COMBUSTIVEL[combustivelDoEquip(equipInicial)] || "")}</span>` },
+    // o combustível vem do cadastro do equipamento; só pergunta quando é flex
+    { nome:"combustivel", rotulo:"Abasteceu com (veículo flex)", tipo:"select", largo:true,
+      opcoes:["Gasolina|Gasolina","Etanol|Etanol (álcool)"],
+      valor: d?.combustivel === "Etanol" ? "Etanol" : "Gasolina", visivelSe: f => ehFlex(f.equipamento_id) },
     { nome:"litros", rotulo:"Litros", tipo:"numero", valor: d?.litros ?? "", obrigatorio: true, aoMudar: recalcularValores },
     { nome:"valor_unit_bruto", rotulo:"Preço do litro na bomba (R$)", tipo:"moeda", valor: precoBrutoInicial ?? "", aoMudar: recalcularValores },
     { nome:"valor_total", rotulo:"Valor total pago (R$)", tipo:"moeda", valor: d?.valor_total ?? "", obrigatorio: true,
@@ -1930,9 +1979,10 @@ function abrirModalDiesel(id) {
       { nome:"tem_carro_apoio", rotulo:"🚗 Esta nota também tem abastecimento do carro de apoio", tipo:"checkbox", largo:true, controla:"carroApoio",
         valor:false, oculto: tipoEquip !== "Maquina", aoMudar: atualizarTotalNota },
       { tipo:"separador", rotulo:"🚗 Abastecimento do carro de apoio", grupoCondicional:"carroApoio", oculto:true },
-      { nome:"carro_equipamento_id", rotulo:"Qual carro", tipo:"select", opcoes: opcoesEquipamentoPorTipo("Veiculo"), valor:"", grupoCondicional:"carroApoio", oculto:true, obrigatorio: true },
-      { nome:"carro_combustivel", rotulo:"Combustível", tipo:"select",
-        opcoes:["Gasolina|Gasolina","Etanol|Etanol/Álcool","GNV|GNV"], valor:"Gasolina", grupoCondicional:"carroApoio", oculto:true },
+      { nome:"carro_equipamento_id", rotulo:"Qual carro", tipo:"select", opcoes: opcoesEquipamentoPorTipo("Veiculo"), valor: opcoesEquipamentoPorTipo("Veiculo").length === 1 ? opcoesEquipamentoPorTipo("Veiculo")[0].split("|")[0] : "", grupoCondicional:"carroApoio", oculto:true, obrigatorio: true },
+      { nome:"carro_combustivel", rotulo:"Abasteceu com (carro flex)", tipo:"select", largo:true,
+        opcoes:["Gasolina|Gasolina","Etanol|Etanol (álcool)"], valor:"Gasolina", grupoCondicional:"carroApoio", oculto:true,
+        visivelSe: f => f.tem_carro_apoio && f.carro_equipamento_id && ehFlex(f.carro_equipamento_id) },
       { nome:"carro_litros", rotulo:"Litros", tipo:"numero", valor:"", grupoCondicional:"carroApoio", oculto:true, obrigatorio: true, aoMudar: recalcularCarro },
       { nome:"carro_valor_unit_bruto", rotulo:"Preço do litro na bomba (R$)", tipo:"moeda", valor:"", grupoCondicional:"carroApoio", oculto:true, aoMudar: recalcularCarro },
       { nome:"carro_valor_total", rotulo:"Valor total pago (R$)", tipo:"moeda", valor:"", grupoCondicional:"carroApoio", oculto:true, obrigatorio: true,
@@ -1993,7 +2043,7 @@ function abrirModalDiesel(id) {
         if (!f.carro_equipamento_id) throw erroCampo("carro_equipamento_id", "Selecione qual foi o carro de apoio.");
         if (!carroTotal) throw erroCampo("carro_valor_total", "Informe o valor total pago do carro de apoio (ou os litros e o preço do litro).");
         carroApoioForm = {
-          equipamento_id: Number(f.carro_equipamento_id), combustivel: f.carro_combustivel,
+          equipamento_id: Number(f.carro_equipamento_id), combustivel: ehFlex(f.carro_equipamento_id) ? f.carro_combustivel : combustivelDoEquip(f.carro_equipamento_id),
           litros: carroLitros,
           valor_unit: carroLitros > 0 ? arred(carroTotal / carroLitros, 4) : carroBruto,
           valor_unit_bruto: carroBruto > 0 ? carroBruto : (carroLitros > 0 ? arred(carroTotal / carroLitros, 4) : 0),
@@ -2010,7 +2060,7 @@ function abrirModalDiesel(id) {
       validarAnexo(anexosForm.nota, "Nota fiscal/recibo");
 
       const registro = {
-        data: f.data, equipamento_id: Number(f.equipamento_id), combustivel: f.combustivel,
+        data: f.data, equipamento_id: Number(f.equipamento_id), combustivel: ehFlex(f.equipamento_id) ? f.combustivel : combustivelDoEquip(f.equipamento_id),
         local: f.local.trim(), litros, valor_unit: vu, valor_unit_bruto: precoBruto, desconto, valor_total: total,
         status: f.status, vencimento: f.status === "pendente" ? f.vencimento : null,
         natureza: f.natureza,
@@ -2516,7 +2566,7 @@ function renderAdministracao() {
     const lista = (dados[c.chave] || []).slice().sort((a, b) => (a.ativo === false) - (b.ativo === false) || String(a.nome).localeCompare(String(b.nome), "pt"));
     conteudo.innerHTML = cabeca(c.titulo, c.nota, meuPapel === "admin" ? `<button class="btn-primario" onclick="${c.abrir}(null)">+ Novo</button>` : "") + `
       <div class="lista-cartao">${lista.length
-        ? lista.map(item => linha(`${c.abrir}(${item.id})`, `<b>${escHtml(item.nome)}</b>${item.telefone ? `<small>${escHtml(item.telefone)}</small>` : item.tipo ? `<small>${item.tipo === "Veiculo" ? "veículo de apoio" : "máquina"}</small>` : ""}`,
+        ? lista.map(item => linha(`${c.abrir}(${item.id})`, `<b>${escHtml(item.nome)}</b>${item.telefone ? `<small>${escHtml(item.telefone)}</small>` : c.chave === "equipamentos" ? `<small>${escHtml([[item.marca, item.modelo].filter(Boolean).join(" "), item.ano, item.placa, ROTULO_COMBUSTIVEL[combustivelDoEquip(item.id)]].filter(Boolean).join(" · ") || (item.tipo === "Veiculo" ? "veículo" : "máquina"))}</small>` : ""}`,
             item.ativo === false ? `<span class="chip chip-status">Inativo</span>` : "")).join("")
         : '<div class="vazio">Nenhum cadastrado ainda.</div>'}</div>`;
     return;
@@ -2687,11 +2737,50 @@ function criarModalCadastro(tabela, chaveDados, tituloSingular, camposExtra = []
   };
 }
 
-const abrirModalEquipamentoAdmin = criarModalCadastro("equipamentos", "equipamentos", "equipamento", [
-  { nome:"tipo", rotulo:"Tipo", tipo:"select", opcoes:["Maquina|Máquina (controla por horímetro)","Veiculo|Veículo (carro de apoio)"] },
-  { nome:"controla_resultado", rotulo:"Tem resultado próprio (painel só dele). Desmarcado: os gastos entram só no total do negócio", tipo:"checkbox", largo:true, padrao: (item) => controlaResultado(item || { tipo: "Maquina" }) },
-  { nome:"imagem_url", rotulo:"Foto (link da imagem, opcional)", tipo:"texto", largo:true },
-]);
+function abrirModalEquipamentoAdmin(id) {
+  const e = id ? dados.equipamentos.find(x => x.id === id) : null;
+  const anoAtual = Number(hoje().slice(0, 4));
+  abrirModal({
+    titulo: e ? "Editar equipamento" : "Novo equipamento",
+    tabela: "equipamentos", id,
+    tituloExclusao: e ? `o equipamento "${e.nome}"` : null,
+    avisoExcluir: e ? "Se já houver lançamentos dele, prefira desmarcar \"Ativo\": os registros continuam ligados." : null,
+    campos: [
+      { nome:"nome", rotulo:"Nome (como aparece no app)", tipo:"texto", largo:true, valor: e?.nome || "", obrigatorio: true },
+      { nome:"tipo", rotulo:"Tipo", tipo:"select", opcoes:["Maquina|Máquina (horímetro)","Veiculo|Veículo"], valor: e?.tipo || "Maquina" },
+      { nome:"combustivel", rotulo:"Combustível", tipo:"select", opcoes: Object.entries(ROTULO_COMBUSTIVEL).map(([k, r]) => `${k}|${r}`), valor: e ? combustivelDoEquip(e.id) : "Diesel" },
+      { nome:"marca", rotulo:"Marca", tipo:"texto", valor: e?.marca || "" },
+      { nome:"modelo", rotulo:"Modelo", tipo:"texto", valor: e?.modelo || "" },
+      { nome:"ano", rotulo:"Ano", tipo:"numero", valor: e?.ano ?? "" },
+      { nome:"placa", rotulo:"Placa (se tiver)", tipo:"texto", valor: e?.placa || "" },
+      { tipo:"separador", rotulo:"Aquisição" },
+      { nome:"data_aquisicao", rotulo:"Data de aquisição", tipo:"date", valor: e?.data_aquisicao || "" },
+      { nome:"valor_compra", rotulo:"Valor de compra (R$)", tipo:"moeda", valor: e?.valor_compra ?? "" },
+      { nome:"teve_entrada", rotulo:"Houve entrada", tipo:"checkbox", largo:true, valor: e?.teve_entrada ?? false },
+      { nome:"valor_entrada", rotulo:"Valor da entrada (R$)", tipo:"moeda", valor: e?.valor_entrada ?? "", visivelSe: f => f.teve_entrada, obrigatorio: f => f.teve_entrada },
+      { tipo:"separador", rotulo:"No aplicativo" },
+      { nome:"controla_resultado", rotulo:"Tem resultado próprio (painel só dele). Desmarcado: os gastos entram só no total do negócio", tipo:"checkbox", largo:true, valor: controlaResultado(e || { tipo: "Maquina" }) },
+      { nome:"ativo", rotulo:"Ativo", tipo:"checkbox", valor: e?.ativo ?? true },
+      { nome:"imagem_url", rotulo:"Foto (link da imagem, opcional)", tipo:"texto", largo:true, valor: e?.imagem_url || "" },
+    ],
+    montar(f) {
+      if (!f.nome.trim()) throw erroCampo("nome", "Informe o nome do equipamento.");
+      const ano = f.ano === "" ? null : Number(f.ano);
+      if (ano != null && (!Number.isInteger(ano) || ano < 1950 || ano > anoAtual + 1)) throw erroCampo("ano", `Ano inválido: use um ano entre 1950 e ${anoAtual + 1}.`);
+      if (f.data_aquisicao && f.data_aquisicao > hoje()) throw erroCampo("data_aquisicao", "A data de aquisição não pode ser no futuro.");
+      const vc = numDeMoeda(f.valor_compra), ve = f.teve_entrada ? numDeMoeda(f.valor_entrada) : 0;
+      if (f.teve_entrada && vc && ve > vc) throw erroCampo("valor_entrada", "A entrada não pode ser maior que o valor de compra.");
+      return {
+        nome: f.nome.trim(), tipo: f.tipo, combustivel: f.combustivel,
+        marca: f.marca.trim() || null, modelo: f.modelo.trim() || null, ano,
+        placa: f.placa.trim() ? f.placa.trim().toUpperCase().replace(/\s+/g, "") : null,
+        data_aquisicao: f.data_aquisicao || null, valor_compra: vc || null,
+        teve_entrada: !!f.teve_entrada, valor_entrada: f.teve_entrada ? (ve || null) : null,
+        controla_resultado: !!f.controla_resultado, ativo: !!f.ativo, imagem_url: f.imagem_url.trim() || null,
+      };
+    },
+  });
+}
 const abrirModalCentroCusto      = criarModalCadastro("centros_custo", "centrosCusto", "centro de custo");
 const abrirModalFornecedor       = criarModalCadastro("fornecedores", "fornecedores", "fornecedor");
 const abrirModalGrupoDespesa     = criarModalCadastro("grupos_despesa", "gruposDespesa", "grupo de despesa");

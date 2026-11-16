@@ -1246,3 +1246,4 @@ input[type="search"]:focus { outline: none; border-color: var(--amarelo); }
 .nav-novo:active span { transform: translateY(-14px) scale(.94); }
 .nav-novo em { margin-top: -12px; }
 .lista-compacta .btn-ver-mais { background: none; }
+.sep-comb { margin-left: 6px; padding: 2px 8px; border-radius: 999px; background: rgba(245,179,1,.14); color: var(--amarelo); font-family: var(--fonte-texto); font-size: 11px; letter-spacing: .3px; text-transform: none; }
