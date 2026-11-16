@@ -3412,6 +3412,16 @@ async function salvarAgendaFinal(id, linhas, lancamentoIdExistente = null) {
 let modalCtx = null;
 
 function abrirModal(ctx) {
+  // Com uma máquina escolhida no topo, todo lançamento é dela: o campo
+  // "Equipamento" some do formulário (fica gravado o da máquina em foco).
+  let travadoNoContexto = false;
+  if (ctx.campos && contexto.equipamentoId != null && ctx.campos.some(c => c.nome === "equipamento_id")) {
+    travadoNoContexto = true;
+    ctx.campos = ctx.campos.map(c => c.nome === "equipamento_id"
+      ? { ...c, oculto: true, obrigatorio: false, valor: String(contexto.equipamentoId),
+          opcoes: c.opcoes.some(o => String(o).split("|")[0] === String(contexto.equipamentoId)) ? c.opcoes : c.opcoes.concat(`${contexto.equipamentoId}|${contexto.nome}`) }
+      : c);
+  }
   modalCtx = ctx;
   $("modal-fundo").classList.toggle("modal-folha", !!ctx.folha || !!ctx.corpoCustom);
   marcarModalNoHistorico();
@@ -3487,6 +3497,10 @@ function abrirModal(ctx) {
       <input type="${tipo}" ${extra} data-campo="${c.nome}" value="${escHtml(c.valor)}" ${c.lista ? `list="${listaId}"` : ""}>
       ${listaHtml}</label>`;
   }).join("");
+
+  if (travadoNoContexto) {
+    $("modal-campos").insertAdjacentHTML("afterbegin", `<div class="form-contexto form-larga">${icone("tractor", "icone-sm")} Em <b>${escHtml(contexto.nome || nomeEquipamento(contexto.equipamentoId))}</b><span>para lançar em outro equipamento, troque no topo</span></div>`);
+  }
 
   // aplica a máscara monetária nos campos "moeda" (formata a cada tecla e
   // absorve ponto/vírgula digitados — quem manda é o dígito, não o separador)

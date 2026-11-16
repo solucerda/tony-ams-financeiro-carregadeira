@@ -1247,3 +1247,10 @@ input[type="search"]:focus { outline: none; border-color: var(--amarelo); }
 .nav-novo em { margin-top: -12px; }
 .lista-compacta .btn-ver-mais { background: none; }
 .sep-comb { margin-left: 6px; padding: 2px 8px; border-radius: 999px; background: rgba(245,179,1,.14); color: var(--amarelo); font-family: var(--fonte-texto); font-size: 11px; letter-spacing: .3px; text-transform: none; }
+.form-contexto {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; font-size: 13px; color: var(--texto-suave);
+  background: rgba(245,179,1,.08); border: 1px solid rgba(245,179,1,.25); border-radius: 10px; padding: 8px 12px;
+}
+.form-contexto b { color: var(--amarelo); }
+.form-contexto .icone { color: var(--amarelo); }
+.form-contexto span { flex-basis: 100%; font-size: 11.5px; color: var(--texto-mudo); }
