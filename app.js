@@ -3518,7 +3518,11 @@ function abrirModal(ctx) {
             <label class="campo-checkbox"><input type="checkbox" data-campo="${c.nome}_remover"> Remover</label>
           </div>` : "";
       return `<div class="campo-arquivo ${largo}" ${dataGrupo}>
-        <label>${c.rotulo}<input type="file" accept="image/*,application/pdf" data-campo="${c.nome}"></label>
+        <span class="arquivo-rotulo">${c.rotulo}</span>
+        <label class="arquivo-botao">
+          <input type="file" accept="image/*,application/pdf" data-campo="${c.nome}" class="arquivo-input">
+          ${icone("baixar", "icone-sm")}<span data-nome-arquivo="${c.nome}">Tirar foto ou escolher arquivo</span>
+        </label>
         <div class="arquivo-status oculto" data-status-arquivo="${c.nome}"></div>
         ${atual}
       </div>`;
@@ -3622,6 +3626,11 @@ function abrirModal(ctx) {
   });
   document.querySelectorAll("#modal-campos [data-abrir-par]").forEach(b =>
     b.addEventListener("click", () => { const alvo = Number(b.dataset.abrirPar); fecharModal(); abrirModalDiesel(alvo); }));
+  document.querySelectorAll("#modal-campos .arquivo-input").forEach(inp => inp.addEventListener("change", () => {
+    const alvo = document.querySelector(`#modal-campos [data-nome-arquivo="${inp.dataset.campo}"]`);
+    if (alvo) alvo.textContent = inp.files && inp.files[0] ? inp.files[0].name : "Tirar foto ou escolher arquivo";
+    inp.closest(".arquivo-botao")?.classList.toggle("com-arquivo", !!(inp.files && inp.files[0]));
+  }));
   document.querySelectorAll("#modal-campos [data-ver-arquivo]").forEach(b =>
     b.addEventListener("click", () => abrirAnexo(b.dataset.verArquivo)));
 
