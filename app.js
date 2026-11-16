@@ -138,10 +138,10 @@ function mostrarErroForm(erro, campo) {
   const msg = typeof erro === "string" ? erro : (erro && (erro.msg || erro.message)) || String(erro);
   campo = campo || (erro && erro.campo);
   const box = $("modal-erro");
-  box.textContent = msg;
-  box.classList.remove("oculto");
   const el = campo ? document.querySelector(`#modal-campos [data-campo="${campo}"]`) : null;
   const rot = el && !escondidoNoForm(el) ? el.closest("label") : null;
+  // com campo destacado, a mensagem fica só embaixo dele (sem faixa nem aviso repetidos)
+  if (!rot) { box.textContent = msg; box.classList.remove("oculto"); }
   if (rot) {
     let m = rot.querySelector(".msg-obrigatorio");
     if (!m) { m = document.createElement("span"); m.className = "msg-obrigatorio"; rot.appendChild(m); }
@@ -149,7 +149,6 @@ function mostrarErroForm(erro, campo) {
     m.classList.remove("oculto");
     rot.classList.remove("campo-invalido"); void rot.offsetWidth; rot.classList.add("campo-invalido");
     if (el.scrollIntoView) el.scrollIntoView({ block: "center", behavior: "smooth" });
-    toast(msg, "erro");
   } else {
     alertaErro(msg);
   }
@@ -220,6 +219,40 @@ function equipamentoPadrao(valorAtual, incluirGeral) {
   if (incluirGeral) return "";
   const primeiro = dados.equipamentos.find(e => e.ativo);
   return primeiro ? String(primeiro.id) : "";
+}
+// ── Sugestões automáticas para os formulários (só leem o que já está carregado;
+// nunca gravam nada e sempre podem ser trocadas à mão) ──
+// último horímetro conhecido da máquina: o maior entre o final das horas lançadas
+// e o horímetro das manutenções já feitas
+function ultimoHorimetro(equipId) {
+  const id = Number(equipId);
+  if (!id) return null;
+  const v = [
+    ...dados.rec.filter(r => r.equipamento_id === id && r.hora_final != null).map(r => Number(r.hora_final)),
+    ...dados.man.filter(m => m.equipamento_id === id && m.realizada && m.horimetro != null).map(m => Number(m.horimetro)),
+  ].filter(Number.isFinite);
+  return v.length ? Math.max(...v) : null;
+}
+// quem costuma operar: o próprio usuário (operador) ou, para o gestor, o último operador lançado na máquina
+function operadorSugerido(equipId) {
+  if (!vejoFinanceiro) return dados.perfis.find(p => p.id === meuUserId)?.nome || "";
+  const ult = dados.rec.filter(r => r.equipamento_id === Number(equipId) && r.operador)
+    .sort((a, b) => String(b.data).localeCompare(String(a.data)) || b.id - a.id)[0];
+  return ult ? ult.operador : "";
+}
+// serviço em andamento da máquina, quando há um só (o formulário já vem com ele escolhido)
+function servicoSugerido(equipId) {
+  if (!dados.temServicos) return null;
+  const lista = (dados.servicos || []).filter(sv => sv.status === "andamento" && (sv.equipamento_id == null || sv.equipamento_id === Number(equipId)));
+  return lista.length === 1 ? lista[0] : null;
+}
+// preço do litro: o último pago no mesmo posto (ou, sem posto conhecido, o último do mesmo combustível)
+function ultimoPrecoLitro(local, combustivel) {
+  const alvo = semAcento(String(local || "").trim());
+  const lista = todosAbastecimentos().filter(x => (x.valor_unit_bruto ?? x.valor_unit) > 0 && (!combustivel || (x.combustivel || "Diesel") === combustivel))
+    .slice().sort((a, b) => String(b.data).localeCompare(String(a.data)) || b.id - a.id);
+  const achado = (alvo && lista.find(x => semAcento(String(x.local || "").trim()) === alvo)) || lista[0];
+  return achado ? (achado.valor_unit_bruto ?? achado.valor_unit) : null;
 }
 // Avatar: usa a foto cadastrada, ou gera um círculo colorido com as
 // iniciais do nome (cor consistente pro mesmo nome, sempre).
@@ -1431,6 +1464,12 @@ function abrirModalRecebimento(id) {
   const r = id ? dados.rec.find(x => x.id === id) : null;
   const semDinheiro = !vejoFinanceiro; // operador: só cliente, operador e horímetro
   let bancoHoras = null;
+  // novo registro: horímetro inicial, operador e serviço já vêm sugeridos
+  const equipNovo = !r ? Number(equipamentoPadrao(null, false)) || null : null;
+  const svAuto = !r && !servicoPreSelecionado ? servicoSugerido(equipNovo) : null;
+  const hiAuto0 = !r ? ultimoHorimetro(equipNovo) : null;
+  let hiAuto = hiAuto0 != null ? String(hiAuto0) : "";
+  const umaMaquina = opcoesEquipamento(false).length === 1;
   abrirModal({
     titulo: r ? "Editar serviço" : "Horas trabalhadas",
     tabela: "recebimentos", id,
@@ -1440,8 +1479,17 @@ function abrirModalRecebimento(id) {
       : null,
     campos: [
       { nome:"data", rotulo:"Data", tipo:"date", valor: r?.data || hoje() },
-      { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(r?.equipamento_id, false), obrigatorio: true },
-      ...campoServico(r?.servico_id, (id) => {
+      { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(r?.equipamento_id, false), obrigatorio: true,
+        oculto: semDinheiro && umaMaquina,
+        aoMudar(eqId) {
+          if (r) return;
+          const campo = document.querySelector('#modal-campos [data-campo="hora_inicial"]');
+          if (!campo || (campo.value !== "" && campo.value !== hiAuto)) return; // já foi mexido à mão
+          const u = ultimoHorimetro(eqId);
+          hiAuto = u != null ? String(u) : "";
+          campo.value = hiAuto;
+        } },
+      ...campoServico(r?.servico_id ?? svAuto?.id, (id) => {
         const sv = dados.servicos.find(x => x.id === Number(id));
         const cmp = (n) => document.querySelector(`#modal-campos [data-campo="${n}"]`);
         if (sv) {
@@ -1449,7 +1497,9 @@ function abrirModalRecebimento(id) {
           if (cmp("valor_hora") && sv.valor_hora) cmp("valor_hora").value = moedaMascara(sv.valor_hora);
         }
       }),
-      { nome:"cliente", rotulo:"Cliente", tipo:"texto", valor: r?.cliente || "", lista: nomesAtivos(dados.clientes), obrigatorio: true,
+      { nome:"cliente", rotulo:"Cliente", tipo:"texto", valor: r?.cliente || svAuto?.cliente || "", lista: nomesAtivos(dados.clientes), obrigatorio: true,
+        // com serviço escolhido e cliente conhecido, o campo some (o cliente vem do serviço)
+        visivelSe: f => !f.servico_id || !String(f.cliente || "").trim(),
         aoMudar(nome) {
           const c = dados.clientes.find(x => x.nome === nome);
           if (c && c.valor_hora_padrao) {
@@ -1457,13 +1507,13 @@ function abrirModalRecebimento(id) {
             if (campoVh) campoVh.value = moedaMascara(c.valor_hora_padrao);
           }
         } },
-      { nome:"operador", rotulo:"Operador", tipo:"texto", valor: r?.operador || "", lista: nomesAtivos(dados.operadores) },
+      { nome:"operador", rotulo:"Operador", tipo:"texto", valor: r ? (r.operador || "") : operadorSugerido(equipNovo), lista: nomesAtivos(dados.operadores), oculto: semDinheiro },
       // "Obra / contrato" virou Serviço; o campo antigo só aparece em registros que já tinham obra
       { nome:"obra", rotulo:"Obra / contrato", tipo:"texto", valor: r?.obra || "", lista: nomesAtivos(dados.obras), oculto: dados.temServicos && !r?.obra },
-      { nome:"hora_inicial", rotulo:"Horímetro inicial", tipo:"numero", valor: r?.hora_inicial ?? "", obrigatorio: true },
+      { nome:"hora_inicial", rotulo:"Horímetro inicial", tipo:"numero", valor: r?.hora_inicial ?? hiAuto, obrigatorio: true },
       { nome:"hora_final", rotulo:"Horímetro final", tipo:"numero", valor: r?.hora_final ?? "", obrigatorio: true },
       { nome:"_sep_fin", rotulo:"Cobrança", tipo:"separador", oculto: semDinheiro },
-      { nome:"valor_hora", rotulo:"Valor da hora (R$)", tipo:"moeda", valor: r?.valor_hora ?? (dados.clientes.find(c => c.nome === r?.cliente)?.valor_hora_padrao || ""), oculto: semDinheiro },
+      { nome:"valor_hora", rotulo:"Valor da hora (R$)", tipo:"moeda", valor: r?.valor_hora ?? (svAuto?.valor_hora || dados.clientes.find(c => c.nome === (r?.cliente || svAuto?.cliente))?.valor_hora_padrao || ""), oculto: semDinheiro },
       { nome:"recebido", rotulo:"Já recebi por estas horas", tipo:"checkbox", largo:true, valor: r?.recebido ?? false, oculto: semDinheiro, visivelSe: f => !semDinheiro && !f.servico_id },
       { nome:"valor_pago", rotulo:"Valor recebido (se diferente do total)", tipo:"moeda", valor: r?.valor_pago || "", oculto: semDinheiro, visivelSe: f => !semDinheiro && !f.servico_id && f.recebido },
       { nome:"_banco", rotulo:"Conta onde entrou", tipo:"select", opcoes: opcoesContaBancaria(), valor: contaDoLancamento(r?.lancamento_id), oculto: semDinheiro, visivelSe: f => !semDinheiro && !f.servico_id && f.recebido },
@@ -1937,7 +1987,21 @@ function abrirModalDiesel(id) {
   const arred = (n, casas) => Math.round(n * 10 ** casas) / 10 ** casas;
   const campoForm = (nome) => document.querySelector(`#modal-campos [data-campo="${nome}"]`);
   const parGrupo = d && d.grupo_abastecimento_id ? acharAbastecimento(d.grupo_abastecimento_id) : null;
-  const precoBrutoInicial = d ? (d.valor_unit_bruto ?? d.valor_unit) : "";
+  // novo: o preço do litro já vem com o último pago (combustível da máquina); troca ao informar o posto
+  const precoNovo = !d ? ultimoPrecoLitro("", combustivelDoEquip(equipInicial)) : null;
+  const precoBrutoInicial = d ? (d.valor_unit_bruto ?? d.valor_unit) : (precoNovo ?? "");
+  let precoAuto = precoNovo != null ? moedaMascara(precoNovo) : "";
+  function sugerirPreco() {
+    if (d) return;
+    const campo = campoForm("valor_unit_bruto");
+    if (!campo || (campo.value !== "" && campo.value !== precoAuto)) return; // já informado (à mão ou pela nota)
+    const eq = campoForm("equipamento_id")?.value;
+    const comb = ehFlex(eq) ? campoForm("combustivel")?.value : combustivelDoEquip(eq);
+    const p = ultimoPrecoLitro(campoForm("local")?.value, comb);
+    precoAuto = p != null ? moedaMascara(p) : "";
+    campo.value = precoAuto;
+    recalcularValores();
+  }
   // enquanto o total não for mexido à mão, ele acompanha litros × preço.
   // Num registro já salvo com desconto, o total é respeitado como está.
   let totalEditado = !!d && Math.abs((d.litros || 0) * (precoBrutoInicial || 0) - (d.valor_total || 0)) > 0.005;
@@ -1985,6 +2049,7 @@ function abrirModalDiesel(id) {
       // máquina (Pá Carregadeira, Retroescavadeira) — troca o equipamento
       // no formulário e o checkbox aparece/some na hora, sem reabrir o modal.
       aoMudar(novoId) {
+        sugerirPreco();
         const sc = document.querySelector("#modal-campos [data-comb-equip]");
         if (sc) sc.textContent = ROTULO_COMBUSTIVEL[combustivelDoEquip(novoId)] || "";
         const ehMaquina = tipoEquipamento(Number(novoId)) === "Maquina";
@@ -1998,7 +2063,7 @@ function abrirModalDiesel(id) {
           atualizarTotalNota();
         }
       } },
-    { nome:"local", rotulo:"Posto / fornecedor (razão social)", tipo:"texto", largo:true, valor: d?.local || "", autocompletar:true, lista: nomesAtivos(dados.fornecedores) },
+    { nome:"local", rotulo:"Posto / fornecedor (razão social)", tipo:"texto", largo:true, valor: d?.local || "", autocompletar:true, lista: nomesAtivos(dados.fornecedores), aoMudar: sugerirPreco },
   ];
   if (parGrupo) {
     campos.push({ tipo:"info", largo:true, acaoId: parGrupo.id, acaoRotulo:"Abrir o outro lançamento",
@@ -2009,7 +2074,7 @@ function abrirModalDiesel(id) {
     // o combustível vem do cadastro do equipamento; só pergunta quando é flex
     { nome:"combustivel", rotulo:"Abasteceu com (veículo flex)", tipo:"select", largo:true,
       opcoes:["Gasolina|Gasolina","Etanol|Etanol (álcool)"],
-      valor: d?.combustivel === "Etanol" ? "Etanol" : "Gasolina", visivelSe: f => ehFlex(f.equipamento_id) },
+      valor: d?.combustivel === "Etanol" ? "Etanol" : "Gasolina", visivelSe: f => ehFlex(f.equipamento_id), aoMudar: sugerirPreco },
     { nome:"litros", rotulo:"Litros", tipo:"numero", valor: d?.litros ?? "", obrigatorio: true, aoMudar: recalcularValores },
     { nome:"valor_unit_bruto", rotulo:"Preço do litro na bomba (R$)", tipo:"moeda", valor: precoBrutoInicial ?? "", aoMudar: recalcularValores },
     { nome:"valor_total", rotulo:"Valor total pago (R$)", tipo:"moeda", valor: d?.valor_total ?? "", obrigatorio: true,
@@ -2045,7 +2110,8 @@ function abrirModalDiesel(id) {
     { nome:"vencimento", rotulo:"Vence em", tipo:"date", valor: d?.vencimento || "", obrigatorio: (f) => f.status === "pendente", visivelSe: f => f.status === "pendente" },
     { nome:"_banco", rotulo:"Conta de onde saiu", tipo:"select", opcoes: opcoesContaBancaria(), valor: contaDoLancamento(d?.lancamento_id), visivelSe: f => f.status === "pago" },
     { tipo:"separador", rotulo:"Classificação" },
-    { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel" },
+    { nome:"natureza", rotulo:"Natureza", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: d?.natureza || "Variavel",
+      oculto: !d || (d.natureza || "Variavel") === "Variavel" }, // abastecimento é sempre custo variável; só aparece se o registro antigo for diferente
     ...campoServico(d?.servico_id),
   );
 
@@ -2399,6 +2465,9 @@ function renderManutencao() {
 function abrirModalManutencao(id) {
   const m = id ? dados.man.find(x => x.id === id) : null;
   let bancoManutencao = null;
+  // novo: horímetro já vem com o último conhecido da máquina
+  const hAuto0 = !m ? ultimoHorimetro(equipamentoPadrao(null, false)) : null;
+  let hAuto = hAuto0 != null ? String(hAuto0) : "";
   abrirModal({
     titulo: m ? "Editar manutenção" : "Nova manutenção",
     tabela: "manutencoes", id,
@@ -2407,11 +2476,19 @@ function abrirModalManutencao(id) {
       ? "Isso também remove o lançamento vinculado no Extrato" + (m.agenda_id ? " e a conta a receber em Contas." : ".")
       : null,
     campos: [
-      { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(m?.equipamento_id, false), obrigatorio: true },
+      { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(m?.equipamento_id, false), obrigatorio: true,
+        aoMudar(eqId) {
+          if (m) return;
+          const campo = document.querySelector('#modal-campos [data-campo="horimetro"]');
+          if (!campo || (campo.value !== "" && campo.value !== hAuto)) return;
+          const u = ultimoHorimetro(eqId);
+          hAuto = u != null ? String(u) : "";
+          campo.value = hAuto;
+        } },
       { nome:"tipo", rotulo:"Tipo", tipo:"select", opcoes:["preventiva|Preventiva","preditiva|Preditiva","corretiva|Corretiva"], valor: m?.tipo || "preventiva" },
       { nome:"realizada", rotulo:"Já foi feita (desmarque para agendar)", tipo:"checkbox", largo:true, valor: m?.realizada ?? true },
       { nome:"data", rotulo:"Data", tipo:"date", valor: m?.data || hoje(), obrigatorio: true },
-      { nome:"horimetro", rotulo:"Horímetro", tipo:"numero", valor: m?.horimetro ?? "" },
+      { nome:"horimetro", rotulo:"Horímetro", tipo:"numero", valor: m?.horimetro ?? hAuto },
       { nome:"descricao", rotulo:"O que foi / será feito", tipo:"texto", largo:true, valor: m?.descricao || "" },
       { nome:"pecas", rotulo:"Peças trocadas/compradas", tipo:"texto", largo:true, valor: m?.pecas || "", visivelSe: f => f.realizada },
       { nome:"fornecedor", rotulo:"Oficina / fornecedor", tipo:"texto", valor: m?.fornecedor || "", lista: nomesAtivos(dados.fornecedores) },
@@ -3583,6 +3660,7 @@ function abrirModal(ctx) {
     const el = document.querySelector(`#modal-campos [data-campo="${c.nome}"]`);
     if (!el) return;
     el.addEventListener(el.tagName === "SELECT" ? "change" : "input", () => c.aoMudar(el.value));
+    if (c.autocompletar) el.addEventListener("change", () => c.aoMudar(el.value)); // sugestão escolhida na lista
   });
 
   // checkbox que mostra/esconde um grupo de campos (ex.: "houve carro de
@@ -3695,7 +3773,7 @@ function ligarAutocompletar(input, lista) {
   let itens = [], ativo = -1;
   const fechar = () => { ul.classList.add("oculto"); ativo = -1; };
   const marcar = () => ul.querySelectorAll("li").forEach((li, i) => li.classList.toggle("ativo", i === ativo));
-  const escolher = (valor) => { input.value = valor; fechar(); };
+  const escolher = (valor) => { input.value = valor; fechar(); input.dispatchEvent(new Event("change", { bubbles: true })); };
   const abrir = () => {
     const q = semAcento(input.value.trim());
     itens = lista.filter(n => !q || semAcento(n).includes(q)).slice(0, 8);
@@ -3814,7 +3892,6 @@ function validarObrigatorios() {
   if (!primeiro) return true;
   if (primeiro.scrollIntoView) primeiro.scrollIntoView({ block: "center", behavior: "smooth" });
   primeiro.focus({ preventScroll: true });
-  toast("Preencha os campos destacados em vermelho.", "erro");
   return false;
 }
 
