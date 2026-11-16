@@ -86,6 +86,11 @@ function iniciarNavegacao() {
     if (pag) irPara(pag.dataset.navPagina);
   });
   $("btn-voltar-pagina").addEventListener("click", () => irPara("mais"));
+  // gráficos desenhados dentro de um <details> fechado ficam com tamanho zero:
+  // ao abrir, redimensiona (o evento "toggle" não borbulha, por isso captura)
+  document.addEventListener("toggle", (ev) => {
+    if (ev.target.open) requestAnimationFrame(() => Object.values(graficos).forEach(g => { try { g.resize(); } catch (e) { /* ignora */ } }));
+  }, true);
   registrarWebApp();
 }
 
