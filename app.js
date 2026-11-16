@@ -1534,9 +1534,7 @@ function renderRecebimentos() {
       <div class="cliente-nome">${escHtml(c)}</div>
       <div class="cliente-dados">
         <div><span>Horas</span><b>${num(d.horas)} h</b></div>
-        <div><span>Faturado</span><b>${brl0(d.faturado)}</b></div>
-        <div><span>Recebido</span><b class="pos">${brl0(d.recebido)}</b></div>
-        <div><span>Em aberto</span><b class="${aberto > 0.5 ? "neg" : ""}">${brl0(aberto)}</b></div>
+        ${aberto > 0.5 ? `<div><span>A receber</span><b class="neg">${brl0(aberto)}</b></div>` : ""}
       </div>
     </div>`;
   }), 1);

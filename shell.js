@@ -247,7 +247,8 @@ function renderMais() {
     `<button type="button" class="mais-item ${extra}" onclick="${acao}">${icone(iconeNome)}<span><b>${titulo}</b>${sub ? `<small>${sub}</small>` : ""}</span>${icone("chevron-right", "icone-sm mais-seta")}</button>`;
   const podeInstalar = !instalado() && (promptInstalacao || ehIOS());
   const atrasadas = vejoFinanceiro ? contasEmAberto().filter(a => a.venc < hoje() && a.valor > 0).length : 0;
-  const paginasMenu = SECOES_MENU.map(sec => {
+  // operador: o Início já tem os botões de registrar e os últimos registros — o menu fica só com perfil e sair
+  const paginasMenu = !vejoFinanceiro ? "" : SECOES_MENU.map(sec => {
     const pags = Object.keys(NAV_PAGINAS).filter(k => NAV_PAGINAS[k].secao === sec && !NAV_PAGINAS[k].semMenu && paginaPermitida(k));
     if (!pags.length) return "";
     return `<h3 class="grupo-titulo">${sec}</h3><div class="mais-lista">${pags.map(k => `
