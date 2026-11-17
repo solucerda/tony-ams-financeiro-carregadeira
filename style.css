@@ -1549,3 +1549,37 @@ body[data-pagina="painel"] .btn-olho { width: 36px; }
   /* formulário no desktop: janela centralizada com largura controlada */
   .modal-fundo:not(.modal-folha) .modal { width: min(620px, 90vw); max-width: 620px; max-height: 85vh; border-radius: var(--raio-xl); }
 }
+
+/* ═══ UI PR 04 — Formulários por etapas (Voltar · Avançar · Concluir) ═══ */
+#modal-campos.com-etapas > [data-etapa]:not(.etapa-atual) { display: none !important; }
+#modal-campos.com-etapas > .form-separador { display: none !important; } /* o título da etapa vai no topo */
+.etapas-topo { position: sticky; top: 0; z-index: 3; background: var(--superficie); padding: 4px 0 10px; margin-bottom: -4px; }
+.etapas-barra { display: flex; gap: 6px; }
+.etapa-ponto {
+  flex: 1; height: 10px; min-width: 0; padding: 0; border: none; border-radius: var(--raio-pilula);
+  background: var(--borda-clara); cursor: pointer; position: relative;
+}
+.etapa-ponto::after { content: ""; position: absolute; inset: -17px 0; } /* alvo de toque maior sem engordar a barra */
+.etapa-ponto:disabled { cursor: default; }
+.etapa-ponto.feito { background: var(--verde); }
+.etapa-ponto.atual { background: var(--amarelo); }
+.etapa-ponto.erro { background: var(--vermelho); }
+.etapas-titulo { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 10px 0 0; }
+.etapas-titulo span { font-size: 13px; color: var(--texto-suave); white-space: nowrap; }
+.etapas-titulo b { font-family: var(--fonte-titulo); font-size: 18px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; text-align: right; }
+.etapa-aviso {
+  display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-radius: var(--raio-md);
+  background: rgba(240,86,74,.12); border: 1px solid rgba(240,86,74,.55); color: #FF8A80; font-size: 14px; font-weight: 600; line-height: 1.35;
+}
+.etapa-aviso::before { content: "⚠"; font-size: 18px; line-height: 1; }
+/* o que falta fica bem evidente: borda grossa, rótulo e mensagem maiores */
+.campo-invalido { background: rgba(240,86,74,.08); padding: 8px; margin: -8px; }
+.campo-invalido > input, .campo-invalido > select { border-width: 2px; }
+.msg-obrigatorio { font-size: 13px; }
+.msg-obrigatorio::before { content: "⚠ "; }
+/* botões de navegação */
+#modal-voltar, #modal-avancar { min-height: 44px; }
+@media (max-width: 767px) {
+  .modal-acoes #modal-voltar { min-height: 54px; border-radius: 12px; padding: 0 18px; }
+  .modal-acoes #modal-avancar { flex: 1; min-height: 54px; font-size: 16px; font-weight: 700; border-radius: 12px; }
+}
