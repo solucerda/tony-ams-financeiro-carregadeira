@@ -11,8 +11,8 @@ const NAV_PAGINAS = {
   painel:        { titulo: "Início",            secao: "inicio",     icone: "inicio" },
   inicio:        { titulo: "Início",            secao: "inicio",     icone: "inicio" },
   extrato:       { titulo: "Extrato",           secao: "Financeiro", icone: "extrato",       modulo: "extrato",      financeiro: true, sub: "entradas, saídas e saldo por conta" },
-  agenda:        { titulo: "Contas",            secao: "Financeiro", icone: "agenda",        modulo: "agenda",       financeiro: true, sub: "a pagar e a receber" },
-  receber:       { titulo: "Contas",            secao: "Financeiro", icone: "entrada",       modulo: "agenda",       financeiro: true, semMenu: true },
+  agenda:        { titulo: "A pagar e receber", secao: "Financeiro", icone: "agenda",        modulo: "agenda",       financeiro: true, sub: "a pagar e a receber" },
+  receber:       { titulo: "A pagar e receber", secao: "Financeiro", icone: "entrada",       modulo: "agenda",       financeiro: true, semMenu: true },
   servicos:      { titulo: "Serviços",          secao: "Operação",   icone: "servico",       financeiro: true, sub: "custo e lucro de cada trabalho" },
   recebimentos:  { titulo: "Horas trabalhadas", secao: "Operação",   icone: "relogio",       modulo: "recebimentos", sub: "horímetro por cliente" },
   diesel:        { titulo: "Abastecimento",     secao: "Operação",   icone: "abastecimento", modulo: "diesel",       sub: "consumo L/h e preço do litro" },
@@ -262,13 +262,16 @@ function renderMais() {
     return `<h3 class="mais-secao">${sec}</h3><div class="mais-grade">${pags.map(k => `
       <button type="button" class="mais-tile" onclick="irPara('${k}')">
         <span class="mais-tile-icone">${icone(NAV_PAGINAS[k].icone)}${k === "agenda" && atrasadas ? `<i class="mais-tile-selo" aria-label="${atrasadas} em atraso">${atrasadas > 9 ? "9+" : atrasadas}</i>` : ""}</span>
-        <span class="mais-tile-texto"><b>${NAV_PAGINAS[k].titulo}</b>${NAV_PAGINAS[k].sub ? `<small>${NAV_PAGINAS[k].sub}</small>` : ""}</span>
+        <b>${NAV_PAGINAS[k].titulo}</b>
       </button>`).join("")}</div>`;
   }).join("");
-  const linhasConta = [
-    meuPapel === "admin" ? linha("administracao", "Configurações", "empresa, cadastros, usuários e histórico", "irPara('administracao'); mudarSecaoAdmin(null)") : "",
-    meuPapel !== "admin" ? linha("atualizar", "Atualizar dados", "busca de novo no servidor", "carregarTudo().then(() => toast('Dados atualizados.'))") : "",
-  ].join("");
+  // Configurações (só administrador) aparece aqui mesmo, recolhida: cada linha abre a tela direto, sem um segundo menu
+  const itemConfig = (s) => `<button type="button" class="mais-item" onclick="abrirConfig('${s.chave}')">${icone(s.icone)}<span><b>${s.titulo}</b></span>${icone("chevron-right", "icone-sm mais-seta")}</button>`;
+  const configuracoes = meuPapel !== "admin" || typeof SECOES_ADMIN === "undefined" ? "" : `
+    <details class="mais-config">
+      <summary>${icone("administracao")}<span>Configurações</span>${icone("chevron-right", "icone-sm mais-seta")}</summary>
+      ${(() => { const vis = secoesConfigVisiveis(); return [...new Set(vis.map(s => s.grupo))].map(g => `<h4 class="mais-config-grupo">${g}</h4><div class="mais-lista">${vis.filter(s => s.grupo === g).map(itemConfig).join("")}</div>`).join(""); })()}
+    </details>`;
   el.innerHTML = `
     <button type="button" class="mais-perfil" onclick="abrirModalMeuPerfil()" aria-label="Abrir meu perfil">
       ${avatarHtml(nomeUsuario, perfil?.avatar_url)}
@@ -277,8 +280,11 @@ function renderMais() {
     </button>
     ${podeInstalar ? `<button type="button" class="mais-instalar" onclick="instalarWebApp()">${icone("baixar")}<span><b>Instalar o aplicativo</b><small>abre direto da tela inicial</small></span></button>` : ""}
     ${paginasMenu}
-    ${linhasConta ? `<div class="mais-lista mais-lista-conta">${linhasConta}</div>` : ""}
-    <button type="button" class="mais-sair-btn" onclick="sair()">${icone("sair")}<span>Sair da conta</span></button>
+    ${configuracoes}
+    <div class="mais-rodape">
+      <button type="button" class="mais-atualizar" onclick="carregarTudo().then(() => toast('Dados atualizados.'))">${icone("atualizar")}<span>Atualizar dados</span></button>
+      <button type="button" class="mais-sair-btn" onclick="sair()">${icone("sair")}<span>Sair</span></button>
+    </div>
     <p class="mais-versao">TA Frota · versão ${VERSAO_APP}</p>`;
 }
 

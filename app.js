@@ -573,7 +573,12 @@ async function iniciarApp() {
 
   // alternadores do painel
 
-  ligarSegmentado("age-modo", (v) => { modoAgenda = v; renderAgenda(); });
+  // um botão só: alterna entre a lista por vencimento e a visão anual
+  $("age-modo").addEventListener("click", () => {
+    modoAgenda = modoAgenda === "ano" ? "lista" : "ano";
+    $("age-modo").textContent = modoAgenda === "ano" ? "Por vencimento" : "Visão anual";
+    renderAgenda();
+  });
   ligarSegmentado("srv-filtro", (v) => { filtroServicos = v; renderServicos(); });
   $("srv-novo").addEventListener("click", () => abrirModalServico(null));
   $("topo-saldo").addEventListener("click", () => irPara("extrato"));
@@ -2742,10 +2747,10 @@ const CADASTROS_ADMIN = [
   { chave:"clientes",       tabela:"clientes",         titulo:"Clientes",
     nota:"telefone e valor de hora padrão preenchem sozinhos ao escolher o cliente em Horas e Serviços.",
     abrir:"abrirModalCliente" },
-  { chave:"fornecedores",   tabela:"fornecedores",     titulo:"Fornecedores / Oficinas",
+  { chave:"fornecedores",   tabela:"fornecedores",     titulo:"Fornecedores e oficinas",
     nota:"postos de combustível, oficinas — sugestão automática no Abastecimento e na Manutenção.",
     abrir:"abrirModalFornecedor" },
-  { chave:"gruposDespesa",  tabela:"grupos_despesa",   titulo:"Grupos de despesa",
+  { chave:"gruposDespesa",  tabela:"grupos_despesa",   titulo:"Categorias de despesa",
     nota:"categorias de despesa usadas no Extrato e em Contas.",
     abrir:"abrirModalGrupoDespesa" },
   { chave:"contasBancarias",tabela:"contas_bancarias", titulo:"Contas bancárias",
@@ -2768,20 +2773,37 @@ const cadastroPorChave = (chave) => CADASTROS_ADMIN.find(c => c.chave === chave)
 // "Avançado" fica recolhido: ajustes raros e cadastros que quase ninguém usa no dia a dia.
 const GRUPO_AVANCADO = "Avançado";
 const SECOES_ADMIN = [
-  { chave: "empresa", titulo: "Empresa", tipo: "empresa", grupo: "Geral", icone: "inicio", sub: "nome e conta padrão" },
-  ...CADASTROS_ADMIN.filter(c => !["obras", "centrosCusto", "tiposRecebimento"].includes(c.chave)).map(c => secaoCadastro(c, "Cadastros")),
-  { chave: "usuarios", titulo: "Usuários e acessos", tipo: "usuarios", grupo: "Pessoas", icone: "usuario" },
-  { chave: "auditoria", titulo: "Histórico de alterações", tipo: "auditoria", grupo: "Pessoas", icone: "relogio", sub: "quem fez o quê" },
-  { chave: "saldos", titulo: "Saldo por conta", tipo: "saldos", grupo: GRUPO_AVANCADO, icone: "banco", sub: "conferir e ajustar o saldo de cada conta" },
-  { chave: "base", titulo: "Registros novos e antigos", tipo: "base", grupo: GRUPO_AVANCADO, icone: "atualizar", sub: "escolher o que aparece e atualizar os dados" },
-  secaoCadastro(cadastroPorChave("tiposRecebimento"), GRUPO_AVANCADO),
-  secaoCadastro(cadastroPorChave("obras"), GRUPO_AVANCADO),
-  { chave: "feriados", titulo: "Feriados", tipo: "feriados", grupo: GRUPO_AVANCADO, icone: "agenda" },
+  // Negócio: quem e o que você usa no dia a dia
+  { chave: "empresa", titulo: "Empresa", tipo: "empresa", grupo: "Negócio", icone: "inicio", sub: "nome e conta padrão" },
+  secaoCadastro(cadastroPorChave("equipamentos"), "Negócio"),
+  secaoCadastro(cadastroPorChave("operadores"), "Negócio"),
+  secaoCadastro(cadastroPorChave("clientes"), "Negócio"),
+  secaoCadastro(cadastroPorChave("fornecedores"), "Negócio"),
+  // Financeiro: onde o dinheiro entra, sai e como é classificado
+  secaoCadastro(cadastroPorChave("contasBancarias"), "Financeiro"),
+  secaoCadastro(cadastroPorChave("gruposDespesa"), "Financeiro"),
+  { chave: "saldos", titulo: "Saldo por conta", tipo: "saldos", grupo: "Financeiro", icone: "banco", sub: "conferir e ajustar o saldo de cada conta" },
+  { chave: "feriados", titulo: "Feriados", tipo: "feriados", grupo: "Financeiro", icone: "agenda" },
+  secaoCadastro(cadastroPorChave("tiposRecebimento"), "Financeiro"),   // legado: só aparece com registros
+  secaoCadastro(cadastroPorChave("obras"), "Financeiro"),              // legado: só aparece com registros
+  // Acesso
+  { chave: "usuarios", titulo: "Usuários e acessos", tipo: "usuarios", grupo: "Acesso", icone: "usuario" },
+  { chave: "auditoria", titulo: "Histórico de alterações", tipo: "auditoria", grupo: "Acesso", icone: "relogio", sub: "quem fez o quê" },
+  // Sistema
+  { chave: "base", titulo: "Registros novos e antigos", tipo: "base", grupo: "Sistema", icone: "atualizar", sub: "escolher o que aparece em todas as telas" },
 ];
 let adminAvancadoAberto = false;
 let adminSecaoAtiva = null;
 let filtroHistorico = "todos";
 
+// seções de Configurações para a lista única do menu Mais: cadastros legados (obras, tipos de recebimento) só aparecem se tiverem registros
+function secoesConfigVisiveis() {
+  return SECOES_ADMIN.filter(s => !(s.tipo === "cadastro" && ["obras", "tiposRecebimento"].includes(s.config.chave) && !(dados[s.config.chave] || []).length));
+}
+// abre direto uma tela das Configurações (usado pelo menu Mais)
+function abrirConfig(chave) { irPara("administracao"); mudarSecaoAdmin(chave); }
+// no celular, "voltar" de uma tela das Configurações leva de volta ao menu Mais
+function voltarDaConfig() { adminSecaoAtiva = null; irPara("mais"); }
 function mudarSecaoAdmin(chave) {
   adminSecaoAtiva = chave;
   renderAdministracao();
@@ -2796,8 +2818,9 @@ function renderAdministracao() {
   if (adminSecaoAtiva && !SECOES_ADMIN.some(s => s.chave === adminSecaoAtiva)) adminSecaoAtiva = null;
 
   // menu: lateral no computador; no celular, uma lista de seções (tela própria)
-  const grupos = [...new Set(SECOES_ADMIN.map(s => s.grupo))];
-  const itensMenu = (g) => SECOES_ADMIN.filter(s => s.grupo === g).map(s => {
+  const visiveis = secoesConfigVisiveis();
+  const grupos = [...new Set(visiveis.map(s => s.grupo))];
+  const itensMenu = (g) => visiveis.filter(s => s.grupo === g).map(s => {
     const q = qtdSecaoAdmin(s);
     return `<button type="button" class="mais-item ${s.chave === adminSecaoAtiva ? "ativo" : ""}" onclick="mudarSecaoAdmin('${s.chave}')">${icone(s.icone)}<span><b>${s.titulo}</b>${s.sub ? `<small>${s.sub}</small>` : q != null ? `<small>${q} cadastrado${q === 1 ? "" : "s"}</small>` : ""}</span>${icone("chevron-right", "icone-sm mais-seta")}</button>`;
   }).join("");
@@ -2813,7 +2836,7 @@ function renderAdministracao() {
   if (!adminSecaoAtiva) { conteudo.innerHTML = ""; return; }
 
   const secao = SECOES_ADMIN.find(s => s.chave === adminSecaoAtiva);
-  const voltar = celular ? `<button type="button" class="btn-voltar" onclick="mudarSecaoAdmin(null)">${icone("chevron-right", "icone-sm")} Configurações</button>` : "";
+  const voltar = celular ? `<button type="button" class="btn-voltar" onclick="voltarDaConfig()">${icone("chevron-right", "icone-sm")} Menu</button>` : "";
   const cabeca = (titulo, nota, botao) => `${voltar}
     <div class="admin-cabeca"><h2 class="titulo-risco"><span>${titulo}</span></h2>${botao || ""}</div>
     ${nota ? `<p class="cartao-nota">${nota}</p>` : ""}`;
@@ -2856,9 +2879,6 @@ function renderAdministracao() {
           <button type="button" data-valor="tudo" class="${modoBase === "tudo" ? "ativo" : ""}">Todos</button>
         </div>
         <p class="cartao-nota">Os registros antigos guardam o que foi lançado antes da arrumação. Nada é apagado.</p>
-      </div>
-      <div class="mais-lista">
-        <button type="button" class="mais-item" onclick="carregarTudo().then(() => toast('Dados atualizados.'))">${icone("atualizar")}<span><b>Atualizar dados</b><small>busca tudo de novo no servidor</small></span>${icone("chevron-right", "icone-sm mais-seta")}</button>
       </div>`;
     ligarSegmentado("adm-base", (v) => trocarBase(v));
     return;
