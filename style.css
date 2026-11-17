@@ -1659,3 +1659,8 @@ body[data-pagina="inicio"] .registro-texto small { font-size: 13px; }
   .modal-acoes #modal-voltar { min-height: 54px; border-radius: 12px; padding: 0 18px; }
   .modal-acoes #modal-avancar { flex: 1; min-height: 54px; font-size: 16px; font-weight: 700; border-radius: 12px; }
 }
+
+/* ═══ UI PR 06 — Manutenção: revisão identificável ═══ */
+#modal-campos [data-campo="proxima_horimetro"], #modal-campos [data-campo="proxima_data"], #modal-campos [data-campo="faltam_calc"] { border-color: rgba(245,179,1,.55); }
+#modal-campos [data-campo="faltam_calc"] { font-family: var(--fonte-mono); }
+#modal-campos [data-campo="horimetro"] { font-family: var(--fonte-mono); font-size: 18px; font-weight: 600; }
