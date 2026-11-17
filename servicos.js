@@ -198,6 +198,7 @@ function abrirModalServico(id) {
     tituloExclusao: sv ? `o serviço "${sv.nome}"` : null,
     avisoExcluir: sv ? "Abastecimentos, horas e lançamentos ligados a ele continuam existindo, só perdem o vínculo com o serviço." : null,
     campos: [
+      { tipo:"separador", rotulo:"Serviço e cliente" },
       { nome: "nome", rotulo: "Nome do serviço", tipo: "texto", largo: true, valor: sv?.nome || "", obrigatorio: true },
       { nome: "cliente", rotulo: "Cliente", tipo: "texto", valor: sv?.cliente || "", lista: nomesAtivos(dados.clientes),
         aoMudar(nome) {
@@ -205,11 +206,13 @@ function abrirModalServico(id) {
           if (c && c.valor_hora_padrao && cmp("valor_hora")) cmp("valor_hora").value = moedaMascara(c.valor_hora_padrao);
         } },
       { nome: "equipamento_id", rotulo: "Equipamento", tipo: "select", opcoes: opcoesEquipamento(false).concat("|Vários / não definido"), valor: sv ? (sv.equipamento_id != null ? String(sv.equipamento_id) : "") : equipamentoPadrao(null, true) },
+      { tipo:"separador", rotulo:"Período e cobrança" },
       { nome: "data_inicio", rotulo: "Início", tipo: "date", valor: sv?.data_inicio || hoje(), obrigatorio: true },
       { nome: "data_fim", rotulo: "Fim (previsto ou real)", tipo: "date", valor: sv?.data_fim || "" },
       { nome: "cobranca", rotulo: "Como vai cobrar", tipo: "select", opcoes: ["hora|Por hora trabalhada", "fechado|Valor fechado"], valor: sv?.cobranca || "hora", aoMudar: ajustarCobranca },
       { nome: "valor_hora", rotulo: "Valor da hora (R$)", tipo: "moeda", valor: sv?.valor_hora ?? "", oculto: sv?.cobranca === "fechado" },
       { nome: "valor_fechado", rotulo: "Valor fechado (R$)", tipo: "moeda", valor: sv?.valor_fechado ?? "", oculto: (sv?.cobranca || "hora") !== "fechado" },
+      { tipo:"separador", rotulo:"Situação" },
       { nome: "status", rotulo: "Situação", tipo: "select", opcoes: ["andamento|Em andamento", "concluido|Concluído (gera o a receber)", "cancelado|Cancelado"], valor: sv?.status || "andamento" },
       { nome: "observacao", rotulo: "Observação", tipo: "texto", largo: true, valor: sv?.observacao || "" },
     ],

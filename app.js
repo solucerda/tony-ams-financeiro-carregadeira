@@ -139,6 +139,7 @@ function mostrarErroForm(erro, campo) {
   campo = campo || (erro && erro.campo);
   const box = $("modal-erro");
   const el = campo ? document.querySelector(`#modal-campos [data-campo="${campo}"]`) : null;
+  if (el) irParaEtapaDe(el);
   const rot = el && !escondidoNoForm(el) ? el.closest("label") : null;
   // com campo destacado, a mensagem fica só embaixo dele (sem faixa nem aviso repetidos)
   if (!rot) { box.textContent = msg; box.classList.remove("oculto"); }
@@ -634,8 +635,9 @@ async function iniciarApp() {
       const emCampoDeTexto = ativo && ativo.matches('#modal-campos input:not([type="checkbox"])');
       if (emCampoDeTexto) {
         ev.preventDefault();
-        const btnSalvar = $("modal-salvar");
-        if (!btnSalvar.classList.contains("oculto") && !btnSalvar.disabled) btnSalvar.click();
+        const btnAvancar = $("modal-avancar"), btnSalvar = $("modal-salvar");
+        if (btnAvancar && !btnAvancar.classList.contains("oculto") && !btnAvancar.disabled) btnAvancar.click();
+        else if (!btnSalvar.classList.contains("oculto") && !btnSalvar.disabled) btnSalvar.click();
       }
       // Enter em <select> ou em botão (ex.: "Baixar"/"Editar" da Agenda,
       // itens de "detalhe-lista") segue o comportamento nativo — não intercepta.
@@ -1473,14 +1475,17 @@ function abrirModalLancamento(id, tipoNovo) {
     campos: [
       // tipo só aparece quando não foi escolhido antes (botão Receita/Despesa já define)
       { nome:"_tipo", rotulo:"É uma…", tipo:"select", opcoes:["saida|Despesa (saiu dinheiro)","entrada|Receita (entrou dinheiro)"], valor: tipo, largo:true, oculto: !!tipoNovo },
+      { tipo:"separador", rotulo:"Valor e data" },
       { nome:"_valor", rotulo:"Valor (R$)", tipo:"moeda", valor: l ? (l.entrada > 0 ? l.entrada : l.saida) : "", obrigatorio:true },
       { nome:"data", rotulo:"Data", tipo:"date", valor: l?.data || hoje(), obrigatorio:true },
       { nome:"descricao", rotulo:"Descrição", tipo:"texto", largo:true, valor: l?.descricao || "",
         ...(l ? {} : { autocompletar: true, lista: descricoesDoHistorico(), aoMudar: (v) => { if (!ehReceita(lerFormulario())) ded.aplicar(v); } }) },
+      { tipo:"separador", rotulo:"Classificação" },
       { nome:"grupo", rotulo:"Categoria", tipo:"select", opcoes: grupos.includes(grupoInicial) ? grupos : grupos.concat(grupoInicial), valor: grupoInicial, visivelSe: f => !ehReceita(f), aoMudar: ded.tocou("grupo") },
       { nome:"natureza", rotulo:"Tipo de custo", tipo:"select",
         opcoes:["Variavel|Custo variável","Fixo|Custo fixo","Investimento|Investimento"],
         valor: (l?.natureza && l.natureza !== "Receita") ? l.natureza : "Variavel", visivelSe: f => !ehReceita(f), aoMudar: ded.tocou("natureza") },
+      { tipo:"separador", rotulo:"Pagamento e conta" },
       { nome:"status_saida", rotulo:"Situação", tipo:"select", opcoes:["pago|Já paguei", l ? "pendente|Ainda vou pagar" : "pendente|Vou pagar depois…"], valor: l?.status || "pago", visivelSe: f => !ehReceita(f), aoMudar: passarParaConta },
       { nome:"status_entrada", rotulo:"Situação", tipo:"select", opcoes:["pago|Já recebi", l ? "pendente|Ainda vou receber" : "pendente|Vou receber depois…"], valor: l?.status || "pago", visivelSe: f => ehReceita(f), aoMudar: passarParaConta },
       { nome:"banco", rotulo:"Conta", tipo:"select", opcoes: opcoesContaBancaria(), valor: l?.banco || contaPadrao() },
@@ -2593,6 +2598,7 @@ function abrirModalManutencao(id) {
       ? "Isso também remove o lançamento vinculado no Extrato" + (m.agenda_id ? " e a conta a receber em Contas." : ".")
       : null,
     campos: [
+      { tipo:"separador", rotulo:"Máquina e data" },
       { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(m?.equipamento_id, false), obrigatorio: true,
         aoMudar(eqId) {
           if (m) return;
@@ -2606,6 +2612,7 @@ function abrirModalManutencao(id) {
       { nome:"realizada", rotulo:"Já foi feita (desmarque para agendar)", tipo:"checkbox", largo:true, valor: m?.realizada ?? true },
       { nome:"data", rotulo:"Data", tipo:"date", valor: m?.data || hoje(), obrigatorio: true },
       { nome:"horimetro", rotulo:"Horímetro", tipo:"numero", valor: m?.horimetro ?? hAuto },
+      { tipo:"separador", rotulo:"Serviço feito" },
       { nome:"descricao", rotulo:"O que foi / será feito", tipo:"texto", largo:true, valor: m?.descricao || "" },
       { nome:"pecas", rotulo:"Peças trocadas/compradas", tipo:"texto", largo:true, valor: m?.pecas || "", visivelSe: f => f.realizada },
       { nome:"fornecedor", rotulo:"Oficina / fornecedor", tipo:"texto", valor: m?.fornecedor || "", lista: nomesAtivos(dados.fornecedores),
@@ -2619,12 +2626,14 @@ function abrirModalManutencao(id) {
           const melhor = Object.entries(conta).sort((a, b) => b[1] - a[1])[0];
           if (melhor && [...campo.options].some(o => o.value === melhor[0])) campo.value = melhor[0];
         } }) },
+      { tipo:"separador", rotulo:"Valores e pagamento" },
       { nome:"valor_pecas", rotulo:"Valor peças (R$)", tipo:"moeda", valor: m?.valor_pecas ?? "" },
       { nome:"valor_mao_obra", rotulo:"Valor mão de obra (R$)", tipo:"moeda", valor: m?.valor_mao_obra ?? "" },
       { nome:"natureza", rotulo:"Tipo de custo", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: m?.natureza || "Variavel", aoMudar: () => { naturezaTocada = true; } },
       { nome:"status_pagamento", rotulo:"Pagamento", tipo:"select", opcoes:["pago|Já foi pago","pendente|Ainda vou pagar"], valor: m?.status_pagamento || "pago", visivelSe: f => f.realizada },
       { nome:"vencimento", rotulo:"Vence em", tipo:"date", valor: m?.vencimento || "", obrigatorio: (f) => f.realizada && f.status_pagamento === "pendente", visivelSe: f => f.realizada && f.status_pagamento === "pendente" },
       { nome:"_banco", rotulo:"Conta de onde saiu", tipo:"select", opcoes: opcoesContaBancaria(), valor: contaDoLancamento(m?.lancamento_id), visivelSe: f => f.realizada && f.status_pagamento === "pago" },
+      { tipo:"separador", rotulo:"Próxima revisão" },
       { nome:"proxima_data", rotulo:"Próxima revisão (data)", tipo:"date", valor: m?.proxima_data || "" },
       { nome:"proxima_horimetro", rotulo:"Próxima revisão (horímetro)", tipo:"numero", valor: m?.proxima_horimetro ?? "" },
       ...campoServico(m?.servico_id),
@@ -3538,13 +3547,16 @@ function abrirModalAgenda(id, tipoNovo, pre) {
   const ded = criarDeducaoHistorico("item");
   const campos = [
     { nome:"_tipo", rotulo:"É uma conta…", tipo:"select", largo:true, opcoes:["pagar|A pagar (vai sair dinheiro)","receber|A receber (vai entrar dinheiro)"], valor: tipo },
+    { tipo:"separador", rotulo:"Conta" },
     { nome:"item", rotulo:"Descrição", tipo:"texto", largo:true, valor: a?.item || pre?.item || "", obrigatorio:true,
       ...(a ? {} : { autocompletar: true, lista: descricoesDoHistorico(), aoMudar: (v) => { if (ehPagar(lerFormulario())) ded.aplicar(v); } }) },
     { nome:"valor", rotulo:"Valor (R$)", tipo:"moeda", valor: a ? Math.abs(a.valor) : (pre?.valor || ""), obrigatorio:true },
     { nome:"vencimento", rotulo:"Vencimento", tipo:"date", valor: a ? vencimentoAgenda(a) : hoje(), obrigatorio:true },
+    { tipo:"separador", rotulo:"Classificação" },
     { nome:"grupo", rotulo:"Categoria (vai para o Extrato)", tipo:"select", opcoes: grupos, valor: a?.grupo && a.grupo !== "Recebimentos" ? a.grupo : (pre?.grupo && grupos.includes(pre.grupo) ? pre.grupo : (grupos.includes("Outras despesas") ? "Outras despesas" : grupos[0])), visivelSe: ehPagar, aoMudar: ded.tocou("grupo") },
     { nome:"natureza", rotulo:"Tipo de custo", tipo:"select", opcoes:["Fixo|Custo fixo","Variavel|Custo variável","Investimento|Investimento"], valor: a?.natureza && a.natureza !== "Receita" ? a.natureza : (pre?.natureza || "Fixo"), visivelSe: ehPagar, aoMudar: ded.tocou("natureza") },
     { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(true), valor: equipamentoPadrao(a?.equipamento_id ?? pre?.equipamento_id, true) },
+    { tipo:"separador", rotulo:"Situação e repetição" },
     { nome:"status_pagamento", rotulo:"Situação", tipo:"select", opcoes:["pendente|Em aberto","pago|Já foi paga / recebida"], valor: a?.status_pagamento || "pendente" },
     { nome:"data_pagamento", rotulo:"Data do pagamento", tipo:"date", valor: a?.data_pagamento || hoje(), visivelSe: f => f.status_pagamento === "pago" },
   ];
@@ -3944,6 +3956,7 @@ function abrirModal(ctx) {
     el.addEventListener("change", () => c.aoEscolher(el.files[0] || null, mostrar));
   });
   }
+  montarEtapas(ctx);
 
   const btnExcluir = $("modal-excluir");
   btnExcluir.classList.toggle("oculto", !(ctx.id || ctx.mostrarExcluir) || !!ctx.semExcluir);
@@ -3955,6 +3968,9 @@ function abrirModal(ctx) {
   $("modal-cancelar").classList.toggle("oculto", !!ctx.semSalvar);
   $("modal-fundo").classList.toggle("modal-sem-acoes", !!ctx.semSalvar && !(ctx.id || ctx.mostrarExcluir));
   $("modal-salvar").onclick = () => salvarRegistro();
+  $("modal-avancar").onclick = () => avancarEtapa();
+  $("modal-voltar").onclick = () => voltarEtapa();
+  renderEtapas();
   $("modal-fundo").classList.remove("oculto");
 
   // autofoco no primeiro campo do formulário (ou primeiro botão, nos
@@ -4084,16 +4100,18 @@ function escondidoNoForm(el) {
   for (let n = el; n && n !== raiz; n = n.parentElement) if (n.classList.contains("oculto")) return true;
   return false;
 }
-function validarObrigatorios() {
+function validarObrigatorios(soEtapa) {
   const ctx = modalCtx;
   if (!ctx || !ctx.campos) return true;
   const f = lerFormulario();
   let primeiro = null;
+  const faltando = [];
   for (const c of ctx.campos) {
     if (!c.obrigatorio || !c.nome) continue;
     if (typeof c.obrigatorio === "function" && !c.obrigatorio(f)) continue;
     const el = document.querySelector(`#modal-campos [data-campo="${c.nome}"]`);
     if (!el || escondidoNoForm(el)) continue;
+    if (soEtapa != null && etapaDoElemento(el) !== soEtapa) continue;
     const vazio = el.hasAttribute("data-moeda") ? !(numDeMoeda(el.value) > 0) : String(el.value).trim() === "";
     if (!vazio) continue;
     const rot = el.closest("label");
@@ -4104,9 +4122,12 @@ function validarObrigatorios() {
     rot.classList.remove("campo-invalido");
     void rot.offsetWidth; // reinicia a animação de piscar
     rot.classList.add("campo-invalido");
+    faltando.push(String(c.rotulo || c.nome).replace(/<[^>]*>/g, "").replace(/\s*\*\s*$/, "").trim());
     if (!primeiro) primeiro = el;
   }
-  if (!primeiro) return true;
+  if (!primeiro) { avisoEtapa([]); return true; }
+  avisoEtapa(faltando);
+  if (soEtapa == null) irParaEtapaDe(primeiro);
   // campo obrigatório dentro de "Mais detalhes": abre pra pessoa enxergar o aviso
   if (primeiro.closest(".campo-recolhido")) {
     $("modal-campos").classList.add("recolher-aberto");
@@ -4115,6 +4136,162 @@ function validarObrigatorios() {
   if (primeiro.scrollIntoView) primeiro.scrollIntoView({ block: "center", behavior: "smooth" });
   primeiro.focus({ preventScroll: true });
   return false;
+}
+
+/* ═══════════ FORMULÁRIOS POR ETAPAS ═══════════
+   Todo formulário do app (abrirModal com campos) vira passo a passo:
+   Voltar · Avançar · Concluir. As etapas vêm dos separadores do próprio
+   formulário (ou, sem separadores e com muitos campos, de blocos de 4).
+   Cada "Avançar" valida só os obrigatórios da etapa e destaca o que falta;
+   "Concluir" salva com as mesmas regras de sempre (validarObrigatorios +
+   montar). Campos escondidos por visivelSe/grupoCondicional não contam, e
+   etapas inteiras sem campo visível são puladas. */
+let etapas = null; // { lista: [{ titulo, els }], atual, edicao, html }
+const TAM_ETAPA_AUTO = 4;
+const MIN_CAMPOS_AUTO = 6;
+
+function tituloEtapa(t) {
+  return String(t || "").replace(/<[^>]*>/g, "").replace(/^[\s①②③④⑤⑥⑦⑧⑨⑩]+/, "").replace(/\s+/g, " ").trim();
+}
+function etapaTemConteudo(et) {
+  const aberto = $("modal-campos").classList.contains("recolher-aberto");
+  return et.els.some(e => !e.classList.contains("form-separador") && !e.classList.contains("oculto")
+    && !(e.classList.contains("campo-recolhido") && !aberto));
+}
+function etapasVisiveis() {
+  const v = etapas.lista.map((_, i) => i).filter(i => etapaTemConteudo(etapas.lista[i]));
+  return v.length ? v : [0];
+}
+function etapaDoElemento(el) {
+  if (!etapas) return -1;
+  const raiz = $("modal-campos");
+  let n = el;
+  while (n && n.parentElement !== raiz) n = n.parentElement;
+  return n ? etapas.lista.findIndex(et => et.els.includes(n)) : -1;
+}
+function irParaEtapaDe(el) {
+  if (!etapas) return;
+  const i = etapaDoElemento(el);
+  if (i >= 0 && i !== etapas.atual) { etapas.atual = i; renderEtapas(); }
+}
+function avisoEtapa(faltando) {
+  const box = $("modal-campos").querySelector(".etapa-aviso");
+  if (!box) return;
+  if (!faltando || !faltando.length) { box.classList.add("oculto"); box.textContent = ""; return; }
+  box.textContent = (faltando.length === 1 ? "Falta preencher: " : "Faltam preencher: ") + faltando.join(" · ");
+  box.classList.remove("oculto");
+}
+
+function montarEtapas(ctx) {
+  const mc = $("modal-campos");
+  etapas = null;
+  mc.classList.remove("com-etapas");
+  mc.querySelectorAll(".etapas-topo, .etapa-aviso").forEach(e => e.remove());
+  if (mc._etapasInput) { mc.removeEventListener("input", mc._etapasInput); mc.removeEventListener("change", mc._etapasInput); mc._etapasInput = null; }
+  ["modal-voltar", "modal-avancar"].forEach(id => $(id).classList.add("oculto"));
+  if (ctx.semEtapas || ctx.corpoCustom || ctx.semSalvar || !ctx.campos) return;
+
+  const filhos = [...mc.children].filter(e => !e.classList.contains("form-contexto"));
+  const lista = [];
+  let atual = null;
+  for (const e of filhos) {
+    if (e.classList.contains("form-separador")) { atual = { titulo: tituloEtapa(e.textContent), els: [e] }; lista.push(atual); continue; }
+    if (!atual) { atual = { titulo: "", els: [] }; lista.push(atual); }
+    atual.els.push(e);
+  }
+  // sem separadores e com muitos campos: blocos de 4 campos visíveis
+  if (lista.length === 1) {
+    const ehCampo = e => e.matches("label, .campo-arquivo");
+    const visiveis = lista[0].els.filter(e => ehCampo(e) && !e.classList.contains("oculto"));
+    if (visiveis.length >= MIN_CAMPOS_AUTO) {
+      const blocos = [];
+      let bloco = { titulo: "", els: [] }, n = 0;
+      for (const e of lista[0].els) {
+        if (ehCampo(e) && !e.classList.contains("oculto") && n === TAM_ETAPA_AUTO) { blocos.push(bloco); bloco = { titulo: "", els: [] }; n = 0; }
+        bloco.els.push(e);
+        if (ehCampo(e) && !e.classList.contains("oculto")) n++;
+      }
+      blocos.push(bloco);
+      lista.splice(0, 1, ...blocos);
+    }
+  }
+  if (lista.length < 2) return;
+
+  etapas = { lista, atual: 0, edicao: !!ctx.id, html: "" };
+  lista.forEach(et => { if (!et.titulo) et.titulo = lista.length > 1 ? "Dados principais" : ""; });
+  lista.forEach((et, i) => et.els.forEach(e => { e.dataset.etapa = i; }));
+  mc.classList.add("com-etapas");
+  mc.insertAdjacentHTML("afterbegin",
+    `<div class="etapas-topo form-larga"></div><div class="etapa-aviso form-larga oculto" role="alert"></div>`);
+  mc.querySelector(".etapas-topo").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-ir]");
+    if (b && !b.disabled) irEtapa(Number(b.dataset.ir));
+  });
+  // reavalia (etapas puladas, pontos vermelhos) depois do _visivel de cada mudança
+  mc._etapasInput = () => {
+    if (!mc.querySelector(".campo-invalido")) avisoEtapa([]);
+    renderEtapas();
+  };
+  mc.addEventListener("input", mc._etapasInput);
+  mc.addEventListener("change", mc._etapasInput);
+}
+
+function renderEtapas() {
+  const voltar = $("modal-voltar"), avancar = $("modal-avancar"), salvar = $("modal-salvar");
+  if (!etapas) {
+    voltar.classList.add("oculto"); avancar.classList.add("oculto");
+    return;
+  }
+  const ctx = modalCtx;
+  const vis = etapasVisiveis();
+  if (!vis.includes(etapas.atual)) etapas.atual = vis.find(i => i > etapas.atual) ?? vis[vis.length - 1];
+  const pos = vis.indexOf(etapas.atual);
+  const ultima = pos === vis.length - 1;
+  etapas.lista.forEach((et, i) => et.els.forEach(e => e.classList.toggle("etapa-atual", i === etapas.atual)));
+
+  const pontos = vis.map((i, k) => {
+    const et = etapas.lista[i];
+    const erro = et.els.some(e => e.matches(".campo-invalido") || e.querySelector(".campo-invalido"));
+    const cls = [k < pos ? "feito" : "", i === etapas.atual ? "atual" : "", erro ? "erro" : ""].join(" ").trim();
+    const livre = k < pos || etapas.edicao || erro;
+    return `<button type="button" class="etapa-ponto ${cls}" data-ir="${i}" ${livre && i !== etapas.atual ? "" : "disabled"}
+      aria-label="Etapa ${k + 1} de ${vis.length}: ${escHtml(et.titulo)}${erro ? " (falta preencher)" : ""}" ${i === etapas.atual ? 'aria-current="step"' : ""}></button>`;
+  }).join("");
+  const atualEt = etapas.lista[etapas.atual];
+  const html = `<div class="etapas-barra">${pontos}</div>
+    <p class="etapas-titulo"><span>Etapa ${pos + 1} de ${vis.length}</span><b>${escHtml(atualEt.titulo)}</b></p>`;
+  const topo = $("modal-campos").querySelector(".etapas-topo");
+  if (topo && html !== etapas.html) { topo.innerHTML = html; etapas.html = html; }
+
+  voltar.classList.toggle("oculto", pos === 0);
+  avancar.classList.toggle("oculto", ultima);
+  salvar.classList.toggle("oculto", !!ctx.semSalvar || !ultima);
+  salvar.textContent = ctx.rotuloSalvar || "Concluir";
+}
+
+function irEtapa(i) {
+  if (!etapas || i === etapas.atual) return;
+  etapas.atual = i;
+  avisoEtapa([]);
+  renderEtapas();
+  const corpo = $("modal-campos").closest(".modal-corpo");
+  if (corpo) corpo.scrollTop = 0;
+  if (!telaCombina("(pointer: coarse)")) {
+    $("modal-campos").querySelector('.etapa-atual input:not([type="hidden"]):not(:disabled), .etapa-atual select:not(:disabled)')?.focus({ preventScroll: true });
+  }
+}
+function avancarEtapa() {
+  if (!etapas) return;
+  if (!validarObrigatorios(etapas.atual)) return;
+  const vis = etapasVisiveis();
+  const prox = vis[vis.indexOf(etapas.atual) + 1];
+  if (prox != null) irEtapa(prox);
+}
+function voltarEtapa() {
+  if (!etapas) return;
+  const vis = etapasVisiveis();
+  const ant = vis[vis.indexOf(etapas.atual) - 1];
+  if (ant != null) irEtapa(ant); // voltar nunca bloqueia
 }
 
 async function salvarRegistro() {
