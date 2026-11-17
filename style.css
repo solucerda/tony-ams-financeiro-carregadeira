@@ -11,8 +11,8 @@
   --borda: #2C3038;
   --borda-clara: #3A3F48;
   --texto: #E8EAED;
-  --texto-suave: #A3A8B4;
-  --texto-mudo: #8B919C;
+  --texto-suave: #B5BAC4;      /* secundário (9:1 no fundo) */
+  --texto-mudo: #A3A8B4;       /* auxiliar (6,8:1 na superfície) */
   --amarelo: #F5B301;
   --amarelo-claro: #FFC71F;
   --verde: #3ECF8E;
@@ -1516,3 +1516,46 @@ body[data-pagina="painel"] .btn-olho { width: 36px; }
 }
 .mais-sair-btn .icone { width: 18px; height: 18px; }
 @media (min-width: 1024px) { #aba-mais { max-width: 560px; } }
+
+/* ═══ UI PR 01 — design tokens + acessibilidade base (sem mudança funcional) ═══ */
+:root {
+  --texto-desabilitado: #8B919C;
+  --azul: #72B8FF;
+  --laranja: #E6A16A;
+  --superficie-hover: #252932;
+  --esp-1: 4px; --esp-2: 8px; --esp-3: 12px; --esp-4: 16px; --esp-5: 20px; --esp-6: 24px; --esp-8: 32px;
+  --raio-sm: 6px; --raio-md: 10px; --raio-lg: 14px; --raio-xl: 20px; --raio-pilula: 999px;
+  --fs-xs: 12px; --fs-sm: 14px; --fs-md: 16px; --fs-lg: 18px; --fs-xl: 22px; --fs-2xl: 28px;
+  --linha-texto: 1.5; --linha-titulo: 1.2;
+  --alvo-toque: 44px;
+}
+
+/* foco visível para teclado em qualquer controle (WCAG 2.4.7 / 2.4.11) */
+:where(a, button, input, select, textarea, summary, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid var(--amarelo); outline-offset: 2px;
+}
+:where(input, select, textarea):focus-visible { outline-offset: 0; }
+
+/* alvos de toque de 44 px nas ações mais usadas */
+.nav-item, .nav-novo { min-height: var(--alvo-toque); }
+.modal-fechar, .btn-voltar-pagina { width: var(--alvo-toque); height: var(--alvo-toque); }
+.subnav-item, .chip-periodo, .btn-periodo { min-height: var(--alvo-toque); }
+.subnav-item { height: auto; }
+.chip-periodo, .btn-periodo { height: auto; }
+.btn-pagar, .btn-editar, .btn-link { min-height: var(--alvo-toque); }
+.btn-link { display: inline-flex; align-items: center; }
+
+/* textos auxiliares: nada abaixo de 12 px */
+.nav-item, .nav-novo em { font-size: 12px; }
+.topo-saldo-rotulo, .cliente-dados span, .mini-stats span, .grupo-titulo span, .form-separador { font-size: 12px; }
+.nav-selo { font-size: 11px; }
+
+/* campos: 16 px evita o zoom automático do iOS e melhora a leitura */
+.form-grade input, .form-grade select, .form-grade textarea,
+.periodo-personalizado input, input[type="search"] { font-size: 16px; }
+.form-grade label { font-size: 13px; }
+
+/* movimento reduzido em todo o app */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
