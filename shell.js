@@ -188,6 +188,14 @@ function saudacao() {
   const h = new Date().getHours();
   return h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
 }
+// selo de urgência (texto + ícone, nunca só cor): atrasada ou vence em até 7 dias
+function urgenciaManutencao(m) {
+  const alvo = m.proxima_data || "";
+  if (!alvo) return "";
+  if (alvo < hoje()) return `<em class="selo-urgencia selo-atrasada">${icone("alerta", "icone-sm")}Atrasada</em>`;
+  if (alvo <= somarDias(hoje(), 7)) return `<em class="selo-urgencia selo-proxima">${icone("relogio", "icone-sm")}Em breve</em>`;
+  return "";
+}
 function renderInicio() {
   const el = $("aba-inicio");
   if (!el || vejoFinanceiro) return;
@@ -219,7 +227,7 @@ function renderInicio() {
         <div class="registro-item" role="button" tabindex="0" onclick="aoClicarLinha(() => abrirModalManutencao(${m.id}))" onkeydown="teclaLinha(event)">
           <span class="registro-icone" style="--cor-tile:#FF8C42">${icone("manutencao")}</span>
           <span class="registro-texto"><b>${escHtml(m.descricao || "Manutenção")}</b><small>${escHtml(nomeEquipamento(m.equipamento_id))}</small></span>
-          <span class="registro-data">${m.proxima_data ? fData(m.proxima_data) : m.proxima_horimetro ? num(m.proxima_horimetro, 0) + " h" : fData(m.data)}</span>
+          <span class="registro-data">${urgenciaManutencao(m)}${m.proxima_data ? fData(m.proxima_data) : m.proxima_horimetro ? num(m.proxima_horimetro, 0) + " h" : fData(m.data)}</span>
         </div>`), 1)}</div>` : ""}
     <h3 class="grupo-titulo">Últimos registros</h3>
     <div class="lista-cartao">${recentes.length ? listaComVerMais("op-recentes", recentes.map(r => `
