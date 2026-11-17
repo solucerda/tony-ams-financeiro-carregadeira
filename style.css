@@ -1591,3 +1591,35 @@ body[data-pagina="inicio"] .registro-texto small { font-size: 13px; }
 .selo-urgencia .icone { width: 14px; height: 14px; }
 .selo-atrasada { color: var(--vermelho); background: rgba(240,86,74,.14); }
 .selo-proxima { color: var(--amarelo-claro); background: rgba(245,179,1,.14); }
+/* ═══ UI PR 03 — Formulário de abastecimento (e demais formulários): campos de 52 px, grupos claros ═══ */
+#modal-campos .form-grade { gap: 18px 12px; }
+#modal-campos .form-grade label { font-size: 14px; color: var(--texto-suave); gap: 6px; }
+#modal-campos .form-grade label.campo-checkbox { font-size: 14px; color: var(--texto); min-height: var(--alvo-toque); }
+#modal-campos .form-grade .campo-checkbox input { width: 22px; height: 22px; }
+#modal-campos .form-grade select,
+#modal-campos .form-grade input:not([type="checkbox"]):not([type="file"]) {
+  min-height: 52px; font-size: 16px; padding: 12px 14px; border-radius: var(--raio-md);
+}
+#modal-campos .form-grade input:focus-visible, #modal-campos .form-grade select:focus-visible { border-color: var(--amarelo); box-shadow: 0 0 0 3px rgba(245,179,1,.25); }
+#modal-campos .campo-calculado { font-size: 16px; font-weight: 600; }
+
+/* títulos dos grupos (① Nota · ② Dados · ③ Abastecimento · ④ Pagamento) */
+#modal-campos .form-separador { font-size: 14px; letter-spacing: .8px; color: var(--texto-suave); padding-top: 18px; margin-top: 6px; }
+#modal-campos .form-grade > .form-separador:first-child { padding-top: 0; margin-top: 0; }
+
+/* captura da nota: alvo grande, lançamento manual continua valendo */
+#modal-campos .arquivo-botao { min-height: 64px; font-size: 15px !important; border-radius: var(--raio-lg); }
+#modal-campos .arquivo-botao .icone { width: 24px; height: 24px; }
+#modal-campos .arquivo-rotulo { font-size: 14px; color: var(--texto-suave); line-height: 1.4; }
+#modal-campos .arquivo-status { font-size: 13px; }
+
+@media (max-width: 767px) {
+  /* cabeçalho e rodapé fixos; só o corpo rola (já é assim) — rodapé com respiro e botão de 54 px */
+  .modal-acoes { background: var(--superficie-2); }
+  .modal-acoes #modal-salvar { min-height: 54px; font-weight: 700; }
+  .modal-corpo { padding-bottom: 16px; }
+}
+@media (min-width: 768px) {
+  /* formulário no desktop: janela centralizada com largura controlada */
+  .modal-fundo:not(.modal-folha) .modal { width: min(620px, 90vw); max-width: 620px; max-height: 85vh; border-radius: var(--raio-xl); }
+}
