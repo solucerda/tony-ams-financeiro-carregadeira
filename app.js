@@ -957,7 +957,7 @@ function renderPainel() {
   const total = contexto.equipamentoId == null;
   $("kpis-posicao").innerHTML = `
     <div class="hero-saldo hero-resultado" role="button" tabindex="0" onclick="abrirExtratoFiltrado({ periodo: filtroPainel.periodo })" onkeydown="teclaLinha(event)">
-      <span class="hero-rotulo">${total ? "Resultado" : "Resultado da máquina"} · ${escHtml(rotuloPeriodo(filtroPainel.periodo).toLowerCase())}</span>
+      <span class="hero-rotulo">${total ? "Resultado" : "Resultado da máquina"} · ${escHtml(rotuloPeriodo(filtroPainel.periodo).toLowerCase())}<em class="selo-resultado ${res >= 0 ? "pos" : "neg"}">${icone(res >= 0 ? "entrada" : "saida", "icone-sm")}${res >= 0 ? "Positivo" : "Negativo"}</em></span>
       <span class="hero-valor ${res >= 0 ? "pos" : "neg"}">${brl(res)}</span>
       <span class="hero-linha">
         <button type="button" class="hero-filtro pos" onclick="event.stopPropagation(); abrirExtratoFiltrado({ tipo: 'entrada', periodo: filtroPainel.periodo })">${icone("entrada", "icone-sm")} ${brl0(ent)}</button>
