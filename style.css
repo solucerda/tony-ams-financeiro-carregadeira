@@ -1659,3 +1659,7 @@ body[data-pagina="inicio"] .registro-texto small { font-size: 13px; }
   .modal-acoes #modal-voltar { min-height: 54px; border-radius: 12px; padding: 0 18px; }
   .modal-acoes #modal-avancar { flex: 1; min-height: 54px; font-size: 16px; font-weight: 700; border-radius: 12px; }
 }
+
+/* ═══ UI PR 05 — Horas: horímetro em destaque ═══ */
+#modal-campos .campo-calculado.campo-alerta { color: var(--vermelho); -webkit-text-fill-color: var(--vermelho); border-color: var(--vermelho); }
+#modal-campos [data-campo="hora_inicial"], #modal-campos [data-campo="hora_final"] { font-family: var(--fonte-mono); font-size: 20px; font-weight: 600; min-height: 60px; }

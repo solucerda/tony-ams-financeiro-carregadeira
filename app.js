@@ -225,11 +225,11 @@ function equipamentoPadrao(valorAtual, incluirGeral) {
 // nunca gravam nada e sempre podem ser trocadas à mão) ──
 // último horímetro conhecido da máquina: o maior entre o final das horas lançadas
 // e o horímetro das manutenções já feitas
-function ultimoHorimetro(equipId) {
+function ultimoHorimetro(equipId, ignorarRecId) {
   const id = Number(equipId);
   if (!id) return null;
   const v = [
-    ...dados.rec.filter(r => r.equipamento_id === id && r.hora_final != null).map(r => Number(r.hora_final)),
+    ...dados.rec.filter(r => r.equipamento_id === id && r.hora_final != null && r.id !== ignorarRecId).map(r => Number(r.hora_final)),
     ...dados.man.filter(m => m.equipamento_id === id && m.realizada && m.horimetro != null).map(m => Number(m.horimetro)),
   ].filter(Number.isFinite);
   return v.length ? Math.max(...v) : null;
@@ -1592,6 +1592,22 @@ function abrirModalRecebimento(id) {
   const hiAuto0 = !r ? ultimoHorimetro(equipNovo) : null;
   let hiAuto = hiAuto0 != null ? String(hiAuto0) : "";
   const umaMaquina = opcoesEquipamento(false).length === 1;
+  // último horímetro conhecido da máquina (na edição, ignora o próprio registro)
+  function refHorimetro(eqId, ignorarId) {
+    const u = ultimoHorimetro(eqId, ignorarId);
+    return u != null ? num(u) + " h" : "sem registro anterior";
+  }
+  // mostra as horas ao digitar os horímetros; vermelho se o final não passa do inicial
+  function atualizarHorasCalc() {
+    const g = (n) => document.querySelector(`#modal-campos [data-campo="${n}"]`);
+    const out = g("horas_calc");
+    if (!out) return;
+    const hi = g("hora_inicial").value, hf = g("hora_final").value;
+    if (hi === "" || hf === "") { out.value = "—"; out.classList.remove("campo-alerta"); return; }
+    const h = Number(hf) - Number(hi);
+    out.value = h > 0 ? num(h) + " h" : "final menor ou igual ao inicial";
+    out.classList.toggle("campo-alerta", !(h > 0));
+  }
   abrirModal({
     titulo: r ? "Editar serviço" : "Horas trabalhadas",
     tabela: "recebimentos", id,
@@ -1600,10 +1616,12 @@ function abrirModalRecebimento(id) {
       ? "Isso também remove o(s) lançamento(s) vinculado(s) no Extrato" + (r.agenda_id ? " e a conta a receber em Contas." : ".")
       : null,
     campos: [
-      { nome:"data", rotulo:"Data", tipo:"date", valor: r?.data || hoje() },
+      { tipo:"separador", rotulo:"Máquina e cliente" },
       { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(r?.equipamento_id, false), obrigatorio: true,
         oculto: semDinheiro && umaMaquina,
         aoMudar(eqId) {
+          const ref = document.querySelector('#modal-campos [data-campo="ref_horimetro"]');
+          if (ref) { const ult = ultimoHorimetro(eqId); ref.value = ult != null ? num(ult) + " h" : "sem registro anterior"; }
           if (r) return;
           const campo = document.querySelector('#modal-campos [data-campo="hora_inicial"]');
           if (!campo || (campo.value !== "" && campo.value !== hiAuto)) return; // já foi mexido à mão
@@ -1632,8 +1650,15 @@ function abrirModalRecebimento(id) {
       { nome:"operador", rotulo:"Operador", tipo:"texto", valor: r ? (r.operador || "") : operadorSugerido(equipNovo), lista: nomesAtivos(dados.operadores), oculto: semDinheiro },
       // "Obra / contrato" virou Serviço; o campo antigo só aparece em registros que já tinham obra
       { nome:"obra", rotulo:"Obra / contrato", tipo:"texto", valor: r?.obra || "", lista: nomesAtivos(dados.obras), oculto: dados.temServicos && !r?.obra },
-      { nome:"hora_inicial", rotulo:"Horímetro inicial", tipo:"numero", valor: r?.hora_inicial ?? hiAuto, obrigatorio: true },
-      { nome:"hora_final", rotulo:"Horímetro final", tipo:"numero", valor: r?.hora_final ?? "", obrigatorio: true },
+      { tipo:"separador", rotulo:"Data e horímetro" },
+      { nome:"data", rotulo:"Data", tipo:"date", valor: r?.data || hoje() },
+      // referência (só leitura): o último horímetro da máquina; NÃO preenche nada sozinho
+      { nome:"ref_horimetro", rotulo:"Último horímetro desta máquina", tipo:"calculado", valor: refHorimetro(r ? r.equipamento_id : equipNovo, r?.id) },
+      { nome:"hora_inicial", rotulo:"Horímetro inicial", tipo:"numero", valor: r?.hora_inicial ?? hiAuto, obrigatorio: true, aoMudar: atualizarHorasCalc },
+      { nome:"hora_final", rotulo:"Horímetro final", tipo:"numero", valor: r?.hora_final ?? "", obrigatorio: true, aoMudar: atualizarHorasCalc,
+        validar: f => (f.hora_inicial !== "" && f.hora_final !== "" && Number(f.hora_final) <= Number(f.hora_inicial))
+          ? `O final (${f.hora_final}) precisa ser maior que o inicial (${f.hora_inicial}).` : null },
+      { nome:"horas_calc", rotulo:"Horas trabalhadas", tipo:"calculado", valor: r?.horas != null ? num(r.horas) + " h" : "—" },
       { nome:"_sep_fin", rotulo:"Cobrança", tipo:"separador", oculto: semDinheiro },
       { nome:"valor_hora", rotulo:"Valor da hora (R$)", tipo:"moeda", valor: r?.valor_hora ?? (svAuto?.valor_hora || dados.clientes.find(c => c.nome === (r?.cliente || svAuto?.cliente))?.valor_hora_padrao || ""), oculto: semDinheiro },
       { nome:"recebido", rotulo:"Já recebi por estas horas", tipo:"checkbox", largo:true, valor: r?.recebido ?? false, oculto: semDinheiro, visivelSe: f => !semDinheiro && !f.servico_id },
@@ -3881,11 +3906,11 @@ function abrirModal(ctx) {
 
   // marca os obrigatórios com * e tira o aviso vermelho assim que o campo é mexido
   ctx.campos.forEach(c => {
-    if (!c.obrigatorio || !c.nome) return;
+    if ((!c.obrigatorio && !c.validar) || !c.nome) return;
     const el = document.querySelector(`#modal-campos [data-campo="${c.nome}"]`);
     if (!el) return;
     const rot = el.closest("label");
-    if (rot && !rot.querySelector(".req-marca")) {
+    if (c.obrigatorio && rot && !rot.querySelector(".req-marca")) {
       const marca = document.createElement("span");
       marca.className = "req-marca"; marca.textContent = " *";
       const texto = [...rot.childNodes].find(n => n.nodeType === 3 && n.textContent.trim());
@@ -4127,17 +4152,20 @@ function validarObrigatorios(soEtapa) {
   let primeiro = null;
   const faltando = [];
   for (const c of ctx.campos) {
-    if (!c.obrigatorio || !c.nome) continue;
-    if (typeof c.obrigatorio === "function" && !c.obrigatorio(f)) continue;
+    if (!c.nome || (!c.obrigatorio && !c.validar)) continue;
+    const exige = c.obrigatorio && !(typeof c.obrigatorio === "function" && !c.obrigatorio(f));
     const el = document.querySelector(`#modal-campos [data-campo="${c.nome}"]`);
     if (!el || escondidoNoForm(el)) continue;
     if (soEtapa != null && etapaDoElemento(el) !== soEtapa) continue;
     const vazio = el.hasAttribute("data-moeda") ? !(numDeMoeda(el.value) > 0) : String(el.value).trim() === "";
-    if (!vazio) continue;
+    // obrigatório vazio, ou regra própria do campo (ex.: horímetro final menor que o inicial)
+    const msg = exige && vazio ? "Campo obrigatório" : (!vazio && c.validar ? c.validar(f) : null);
+    if (!msg) continue;
     const rot = el.closest("label");
     if (!rot) continue;
     let m = rot.querySelector(".msg-obrigatorio");
-    if (!m) { m = document.createElement("span"); m.className = "msg-obrigatorio"; m.textContent = "Campo obrigatório"; rot.appendChild(m); }
+    if (!m) { m = document.createElement("span"); m.className = "msg-obrigatorio"; rot.appendChild(m); }
+    m.textContent = msg;
     m.classList.remove("oculto");
     rot.classList.remove("campo-invalido");
     void rot.offsetWidth; // reinicia a animação de piscar
@@ -4198,7 +4226,7 @@ function avisoEtapa(faltando) {
   const box = $("modal-campos").querySelector(".etapa-aviso");
   if (!box) return;
   if (!faltando || !faltando.length) { box.classList.add("oculto"); box.textContent = ""; return; }
-  box.textContent = (faltando.length === 1 ? "Falta preencher: " : "Faltam preencher: ") + faltando.join(" · ");
+  box.textContent = (faltando.length === 1 ? "Falta preencher ou corrigir: " : "Faltam preencher ou corrigir: ") + faltando.join(" · ");
   box.classList.remove("oculto");
 }
 
