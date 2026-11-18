@@ -143,9 +143,12 @@
           <input type="email" id="login-email" required autocomplete="username">
         </label>
         <label>Senha
-          <input type="password" id="login-senha" required autocomplete="current-password">
+          <span class="campo-senha">
+            <input type="password" id="login-senha" required autocomplete="current-password">
+            <button type="button" class="btn-ver-senha" id="login-ver-senha" aria-pressed="false" aria-label="Mostrar senha">Mostrar</button>
+          </span>
         </label>
-        <div id="login-erro" class="form-erro oculto"></div>
+        <div id="login-erro" class="form-erro oculto" role="alert"></div>
         <button type="submit" class="btn-primario btn-largo" id="login-btn">Entrar</button>
       </form>
     </div>
@@ -505,7 +508,7 @@
         </div>
         <div class="modal-corpo">
           <div class="form-grade" id="modal-campos"></div>
-          <div class="form-erro oculto" id="modal-erro"></div>
+          <div class="form-erro oculto" id="modal-erro" role="alert"></div>
         </div>
         <div class="modal-acoes">
           <button class="btn-perigo oculto" id="modal-excluir">Excluir</button>
@@ -518,7 +521,7 @@
       </div>
     </div>
 
-    <div id="toast" class="toast oculto"></div>
+    <div id="toast" class="toast oculto" role="status" aria-live="polite"></div>
   </div>
 
   <!-- Bibliotecas via CDN — mesmo padrão do portal -->

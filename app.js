@@ -435,6 +435,18 @@ function mostrarLogin() {
   $("tela-login").classList.remove("oculto");
 }
 
+// mostrar/ocultar a senha (ajuda no celular, onde digitar é mais difícil)
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest("#login-ver-senha");
+  if (!b) return;
+  const campo = $("login-senha");
+  const mostrar = campo.type === "password";
+  campo.type = mostrar ? "text" : "password";
+  b.textContent = mostrar ? "Ocultar" : "Mostrar";
+  b.setAttribute("aria-pressed", String(mostrar));
+  b.setAttribute("aria-label", mostrar ? "Ocultar senha" : "Mostrar senha");
+  campo.focus();
+});
 async function fazerLogin(ev) {
   ev.preventDefault();
   const btn = $("login-btn"), erro = $("login-erro");
@@ -446,8 +458,14 @@ async function fazerLogin(ev) {
   });
   btn.disabled = false; btn.textContent = "Entrar";
   if (error) {
-    erro.textContent = "E-mail ou senha incorretos. Confira e tente de novo.";
+    // senha errada x problema de conexão: mensagens diferentes
+    const semRede = !navigator.onLine || /fetch|network|failed to/i.test(String(error.message || ""));
+    erro.textContent = semRede
+      ? "Não foi possível conectar. Verifique a internet e tente de novo."
+      : "E-mail ou senha incorretos. Confira e tente de novo.";
     erro.classList.remove("oculto");
+    $(semRede ? "login-btn" : "login-senha").focus();
+    if (!semRede) $("login-senha").select();
     return;
   }
   meuUserId = data.user.id;
