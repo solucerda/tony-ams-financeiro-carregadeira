@@ -1624,6 +1624,10 @@ function abrirModalRecebimento(id) {
   const hiAuto0 = !r ? ultimoHorimetro(equipNovo) : null;
   let hiAuto = hiAuto0 != null ? String(hiAuto0) : "";
   const umaMaquina = opcoesEquipamento(false).length === 1;
+  // Operador (sem acesso financeiro) não edita o horímetro inicial: ele vem do último final da
+  // máquina, que é o que sustenta as horas trabalhadas e o consumo (L/h). Máquina sem histórico
+  // (primeiro registro) continua editável; só o gestor altera um inicial já gravado.
+  const inicialTravado = semDinheiro && (r ? r.hora_inicial != null : hiAuto0 != null);
   // último horímetro conhecido da máquina (na edição, ignora o próprio registro)
   function refHorimetro(eqId, ignorarId) {
     const u = ultimoHorimetro(eqId, ignorarId);
@@ -1660,6 +1664,7 @@ function abrirModalRecebimento(id) {
           const u = ultimoHorimetro(eqId);
           hiAuto = u != null ? String(u) : "";
           campo.value = hiAuto;
+          campo.readOnly = semDinheiro && u != null; // máquina sem histórico: operador digita o primeiro
         } },
       ...campoServico(r?.servico_id ?? svAuto?.id, (id) => {
         const sv = dados.servicos.find(x => x.id === Number(id));
@@ -1686,7 +1691,7 @@ function abrirModalRecebimento(id) {
       { nome:"data", rotulo:"Data", tipo:"date", valor: r?.data || hoje() },
       // referência (só leitura): o último horímetro da máquina; NÃO preenche nada sozinho
       { nome:"ref_horimetro", rotulo:"Último horímetro desta máquina", tipo:"calculado", valor: refHorimetro(r ? r.equipamento_id : equipNovo, r?.id) },
-      { nome:"hora_inicial", rotulo:"Horímetro inicial", tipo:"numero", valor: r?.hora_inicial ?? hiAuto, obrigatorio: true, aoMudar: atualizarHorasCalc },
+      { nome:"hora_inicial", rotulo: inicialTravado ? "Horímetro inicial (vem do último registro)" : "Horímetro inicial", tipo:"numero", valor: r?.hora_inicial ?? hiAuto, obrigatorio: true, aoMudar: atualizarHorasCalc, somenteLeitura: inicialTravado },
       { nome:"hora_final", rotulo:"Horímetro final", tipo:"numero", valor: r?.hora_final ?? "", obrigatorio: true, aoMudar: atualizarHorasCalc,
         validar: f => (f.hora_inicial !== "" && f.hora_final !== "" && Number(f.hora_final) <= Number(f.hora_inicial))
           ? `O final (${f.hora_final}) precisa ser maior que o inicial (${f.hora_inicial}).` : null },
@@ -3936,7 +3941,7 @@ function abrirModal(ctx) {
     const listaHtml = c.lista
       ? `<datalist id="${listaId}">${c.lista.map(v => `<option value="${escHtml(v)}">`).join("")}</datalist>` : "";
     return `<label class="${largo}" ${dataGrupo}>${c.rotulo}
-      <input type="${tipo}" ${extra} data-campo="${c.nome}" value="${escHtml(c.valor)}" ${c.lista ? `list="${listaId}"` : ""}>
+      <input type="${tipo}" ${extra} data-campo="${c.nome}" value="${escHtml(c.valor)}" ${c.lista ? `list="${listaId}"` : ""} ${c.somenteLeitura ? "readonly" : ""}>
       ${listaHtml}</label>`;
   }).join("");
 
