@@ -2620,6 +2620,18 @@ function abrirModalManutencao(id) {
   // novo: horímetro já vem com o último conhecido da máquina
   const hAuto0 = !m ? ultimoHorimetro(equipamentoPadrao(null, false)) : null;
   let hAuto = hAuto0 != null ? String(hAuto0) : "";
+  // revisão controlada por horímetro: quantas horas faltam a partir do horímetro informado
+  function faltamRevisao(atual, proxima) {
+    if (atual === "" || atual == null || proxima === "" || proxima == null) return "—";
+    const d = Number(proxima) - Number(atual);
+    return d > 0 ? num(d) + " h" : "já passou do horímetro da revisão";
+  }
+  function atualizarFaltamRevisao() {
+    const g = (n) => document.querySelector(`#modal-campos [data-campo="${n}"]`);
+    const out = g("faltam_calc");
+    if (!out) return;
+    out.value = faltamRevisao(g("horimetro")?.value, g("proxima_horimetro")?.value);
+  }
   abrirModal({
     titulo: m ? "Editar manutenção" : "Nova manutenção",
     tabela: "manutencoes", id,
@@ -2641,7 +2653,7 @@ function abrirModalManutencao(id) {
       { nome:"tipo", rotulo:"Tipo", tipo:"select", opcoes:["preventiva|Preventiva","preditiva|Preditiva","corretiva|Corretiva"], valor: m?.tipo || "preventiva" },
       { nome:"realizada", rotulo:"Já foi feita (desmarque para agendar)", tipo:"checkbox", largo:true, valor: m?.realizada ?? true },
       { nome:"data", rotulo:"Data", tipo:"date", valor: m?.data || hoje(), obrigatorio: true },
-      { nome:"horimetro", rotulo:"Horímetro", tipo:"numero", valor: m?.horimetro ?? hAuto },
+      { nome:"horimetro", rotulo:"Horímetro", tipo:"numero", valor: m?.horimetro ?? hAuto, aoMudar: atualizarFaltamRevisao },
       { tipo:"separador", rotulo:"Serviço feito" },
       { nome:"descricao", rotulo:"O que foi / será feito", tipo:"texto", largo:true, valor: m?.descricao || "" },
       { nome:"pecas", rotulo:"Peças trocadas/compradas", tipo:"texto", largo:true, valor: m?.pecas || "", visivelSe: f => f.realizada },
@@ -2665,7 +2677,8 @@ function abrirModalManutencao(id) {
       { nome:"_banco", rotulo:"Conta de onde saiu", tipo:"select", opcoes: opcoesContaBancaria(), valor: contaDoLancamento(m?.lancamento_id), visivelSe: f => f.realizada && f.status_pagamento === "pago" },
       { tipo:"separador", rotulo:"Próxima revisão" },
       { nome:"proxima_data", rotulo:"Próxima revisão (data)", tipo:"date", valor: m?.proxima_data || "" },
-      { nome:"proxima_horimetro", rotulo:"Próxima revisão (horímetro)", tipo:"numero", valor: m?.proxima_horimetro ?? "" },
+      { nome:"proxima_horimetro", rotulo:"Próxima revisão (horímetro)", tipo:"numero", valor: m?.proxima_horimetro ?? "", aoMudar: atualizarFaltamRevisao },
+      { nome:"faltam_calc", rotulo:"Faltam para a revisão", tipo:"calculado", valor: faltamRevisao(m?.horimetro ?? hAuto, m?.proxima_horimetro ?? "") },
       ...campoServico(m?.servico_id),
     ],
     montar(f) {
