@@ -500,7 +500,7 @@ async function iniciarSessao() {
     await carregarPermissoesEquipamento();
   } catch (e) {
     $("app").classList.remove("oculto");
-    $("carregando").textContent = "Não foi possível conectar ao servidor. Confira sua internet e tente de novo. (" + (e.message || e) + ")";
+    estadoErro("Não foi possível conectar ao servidor", "Confira sua internet e tente de novo. (" + (e.message || e) + ")");
     return;
   }
   // último contexto usado, se ainda for permitido; quem só tem 1 máquina liberada entra direto nela
@@ -681,10 +681,24 @@ async function iniciarApp() {
   await carregarTudo();
 }
 
+/* ── Estados globais: carregando e erro (com "Tentar de novo") ── */
+function estadoCarregando(msg) {
+  const c = $("carregando");
+  c.className = "vazio estado-carregando";
+  c.setAttribute("role", "status");
+  c.innerHTML = `<span class="spinner" aria-hidden="true"></span><span>${escHtml(msg)}</span>`;
+}
+function estadoErro(titulo, detalhe) {
+  const c = $("carregando");
+  c.className = "vazio estado-erro";
+  c.setAttribute("role", "alert");
+  c.innerHTML = `<b>${escHtml(titulo)}</b><span>${escHtml(detalhe || "")}</span>
+    <button type="button" class="btn-primario" onclick="location.reload()">Tentar de novo</button>`;
+}
 /* ── Carga de dados ────────────────────────────────────── */
 async function carregarTudo() {
   if (primeiraCarga) {
-    $("carregando").textContent = "Carregando dados…";
+    estadoCarregando("Carregando dados…");
     $("carregando").classList.remove("oculto");
   }
   document.body.classList.add("sincronizando");
@@ -825,7 +839,7 @@ async function carregarTudo() {
   } catch (e) {
     document.body.classList.remove("sincronizando");
     $("carregando").classList.remove("oculto");
-    $("carregando").textContent = "Não foi possível carregar os dados. " + erroBanco(e);
+    estadoErro("Não foi possível carregar os dados", erroBanco(e));
     if (!primeiraCarga) alertaErro(erroBanco(e), "Não deu para atualizar os dados");
   }
 }
