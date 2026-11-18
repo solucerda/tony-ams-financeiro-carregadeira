@@ -3292,6 +3292,13 @@ function contasEmAberto() {
 const ROTULO_ORIGEM = { diesel: "Abastecimento", manutencoes: "Manutenção", recebimentos: "Horas", servicos: "Serviço" };
 function somarDias(iso, n) { const [y, m, d] = iso.split("-").map(Number); return isoLocal(new Date(y, m - 1, d + n)); }
 
+// situação em texto (além da cor): vencida · próxima (até 7 dias) · prevista
+function situacaoConta(a, receber) {
+  const hj = hoje();
+  if (a.venc < hj) return `<em class="selo-situacao sit-vencida">${receber ? "Vencida" : "Atrasada"}</em>`;
+  if (a.venc <= somarDias(hj, 7)) return `<em class="selo-situacao sit-proxima">Próxima</em>`;
+  return `<em class="selo-situacao sit-prevista">Prevista</em>`;
+}
 function linhaConta(a, compacta) {
   const hj = hoje();
   const receber = a.valor < 0;
@@ -3300,7 +3307,7 @@ function linhaConta(a, compacta) {
   const podePagar = !a.origem_tabela && meuPapel !== "leitura";
   return `<div class="conta-item ${atraso ? "atrasada" : ""}" role="button" tabindex="0"
       onclick="aoClicarLinha(() => abrirLinhaDaAgenda(${a.id}))" onkeydown="teclaLinha(event)">
-    <span class="conta-data ${atraso ? "neg" : ""}">${atraso ? icone("alerta", "icone-sm") + " " : ""}${quando}</span>
+    <span class="conta-data ${atraso ? "neg" : ""}">${atraso ? icone("alerta", "icone-sm") + " " : ""}${quando}${situacaoConta(a, receber)}</span>
     <span class="conta-desc"><b>${escHtml(a.item)}</b>${!compacta ? `<small>${escHtml([ROTULO_ORIGEM[a.origem_tabela] ? "via " + ROTULO_ORIGEM[a.origem_tabela] : a.grupo, contexto.equipamentoId == null && a.equipamento_id ? nomeEquipamento(a.equipamento_id) : ""].filter(Boolean).join(" · "))}</small>` : ""}</span>
     <span class="conta-valor ${receber ? "pos" : ""}">${receber ? "+ " : ""}${brl(Math.abs(a.valor))}</span>
     ${podePagar ? `<button type="button" class="btn-pagar" onclick="event.stopPropagation(); abrirModalBaixaAgenda(${a.id})">${receber ? "Receber" : "Pagar"}</button>` : `<span class="btn-pagar-vazio"></span>`}

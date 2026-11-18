@@ -1685,3 +1685,25 @@ body[data-pagina="inicio"] .registro-texto small { font-size: 13px; }
   body[data-pagina="painel"] #kpis-posicao .caixa-cartao { margin-top: 0; }
   body[data-pagina="painel"] .hero-resultado { align-self: center; }
 }
+
+/* ═══ UI PR 08 — Extrato e Contas: leitura mais confortável, situação em texto ═══ */
+.tabela th { font-size: 12px; padding: 12px 14px; }
+.tabela td { padding: 13px 14px; font-size: 14px; }
+.tabela .td-desc { font-size: 15px; font-weight: 500; }
+.tabela .num { font-size: 15px; font-weight: 600; }
+.tabela .td-data { font-size: 13px; }
+.tabela .td-mudo, .td-natureza { font-size: 13px; }
+.td-natureza { margin-top: 3px; }
+@media (max-width: 767px) {
+  .tabela tbody tr.linha-clicavel { min-height: 56px; }
+  .tabela .td-desc { max-width: 200px; }
+}
+/* contas: data e valor em destaque, situação como etiqueta */
+.conta-data { font-size: 13px; color: var(--texto-suave); gap: 8px; }
+.conta-desc b { font-size: 15px; }
+.conta-desc small { font-size: 13px; color: var(--texto-suave); }
+.conta-valor { font-size: 16px; }
+.selo-situacao { font-style: normal; font-family: var(--fonte-texto); font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: var(--raio-pilula); letter-spacing: .2px; }
+.sit-vencida { color: var(--vermelho); background: rgba(240,86,74,.14); }
+.sit-proxima { color: var(--amarelo-claro); background: rgba(245,179,1,.14); }
+.sit-prevista { color: var(--texto-suave); background: rgba(255,255,255,.06); }
