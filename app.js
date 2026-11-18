@@ -2161,7 +2161,26 @@ function abrirModalDiesel(id) {
       linhas.push(`⚠ A soma dos itens (${brl(somaNota)}) não bate com o valor pago na nota (${brl(nota.valorPago)}). Confira os números com a foto.`);
       conferir = true;
     }
+    // leitura sem nenhum aviso: trava os valores para ninguém "acertar" litros/preço/total depois
+    if (!conferir) travarValoresDaNota();
     return conferir;
+  }
+
+  // Litros, preço do litro e total vindos da nota (leitura que passou em todas as conferências)
+  // ficam travados. Se a leitura errou, "Corrigir valores" destrava, com confirmação.
+  function travarValoresDaNota() {
+    const alvos = ["litros", "valor_unit_bruto", "valor_total", "carro_litros", "carro_valor_unit_bruto", "carro_valor_total"]
+      .map(n => campoForm(n)).filter(Boolean);
+    const rotulo = campoForm("valor_total")?.closest("label");
+    if (!alvos.length || !rotulo) return;
+    alvos.forEach(el => { el.readOnly = true; });
+    rotulo.querySelector("[data-travado-nota]")?.remove();
+    rotulo.insertAdjacentHTML("beforeend", `<small class="dica-historico" data-travado-nota>🔒 Litros e valores vieram da nota fiscal. <button type="button" class="btn-link" data-destravar-nota>Corrigir valores</button></small>`);
+    rotulo.querySelector("[data-destravar-nota]").addEventListener("click", () => {
+      if (!confirm("Esses valores foram lidos da nota fiscal. Corrija só se a leitura estiver errada. Destravar os campos?")) return;
+      alvos.forEach(el => { el.readOnly = false; });
+      rotulo.querySelector("[data-travado-nota]")?.remove();
+    });
   }
 
   // ── Valores do litro / desconto ──────────────────────────────────────
