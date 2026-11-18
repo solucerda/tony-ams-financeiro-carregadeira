@@ -2719,6 +2719,42 @@ function abrirModalManutencao(id) {
     if (!out) return;
     out.value = faltamRevisao(g("horimetro")?.value, g("proxima_horimetro")?.value);
   }
+  // Próxima revisão sugerida: repete o intervalo da última manutenção realizada da mesma máquina
+  // e do mesmo tipo (horas e/ou dias entre uma e a revisão seguinte). Só em registro novo, e só
+  // preenche campo vazio ou ainda não mexido à mão. Quem lança não precisa digitar a revisão.
+  let revAuto = { h: "", d: "" };
+  function intervaloAnterior(eqId, tipo, ate) {
+    const ant = dados.man
+      .filter(x => String(x.equipamento_id) === String(eqId) && x.tipo === tipo && x.realizada && x.data && x.data <= ate)
+      .sort((a, b) => b.data.localeCompare(a.data));
+    for (const x of ant) {
+      const h = x.proxima_horimetro != null && x.horimetro != null ? Number(x.proxima_horimetro) - Number(x.horimetro) : 0;
+      const [y1, m1, d1] = x.data.split("-").map(Number);
+      const d = x.proxima_data ? Math.round((Date.UTC(...x.proxima_data.split("-").map((v, i) => i === 1 ? Number(v) - 1 : Number(v))) - Date.UTC(y1, m1 - 1, d1)) / 86400000) : 0;
+      if (h > 0 || d > 0) return { h: h > 0 ? h : 0, d: d > 0 ? d : 0 };
+    }
+    return null;
+  }
+  function sugerirRevisao() {
+    if (m) return;
+    const g = (n) => document.querySelector(`#modal-campos [data-campo="${n}"]`);
+    const ph = g("proxima_horimetro"), pd = g("proxima_data");
+    if (!ph || !pd) return;
+    const f = lerFormulario();
+    const iv = f.realizada && f.equipamento_id && f.data ? intervaloAnterior(f.equipamento_id, f.tipo, f.data) : null;
+    const novoH = iv && iv.h && f.horimetro !== "" ? String(Number(f.horimetro) + iv.h) : "";
+    const novoD = iv && iv.d ? somarDias(f.data, iv.d) : "";
+    if (ph.value === "" || ph.value === revAuto.h) { ph.value = novoH; revAuto.h = novoH; }
+    if (pd.value === "" || pd.value === revAuto.d) { pd.value = novoD; revAuto.d = novoD; }
+    const rot = pd.closest("label");
+    if (rot) {
+      let dica = rot.querySelector(".dica-historico");
+      const msg = (novoH || novoD) ? "Sugerido repetindo o intervalo da última manutenção deste tipo" : "";
+      if (!msg) dica?.remove();
+      else { if (!dica) { dica = document.createElement("small"); dica.className = "dica-historico"; rot.appendChild(dica); } dica.textContent = msg; }
+    }
+    atualizarFaltamRevisao();
+  }
   abrirModal({
     titulo: m ? "Editar manutenção" : "Nova manutenção",
     tabela: "manutencoes", id,
@@ -2733,15 +2769,17 @@ function abrirModalManutencao(id) {
         aoMudar(eqId) {
           if (m) return;
           const campo = document.querySelector('#modal-campos [data-campo="horimetro"]');
-          if (!campo || (campo.value !== "" && campo.value !== hAuto)) return;
-          const u = ultimoHorimetro(eqId);
-          hAuto = u != null ? String(u) : "";
-          campo.value = hAuto;
+          if (campo && (campo.value === "" || campo.value === hAuto)) {
+            const u = ultimoHorimetro(eqId);
+            hAuto = u != null ? String(u) : "";
+            campo.value = hAuto;
+          }
+          sugerirRevisao();
         } },
-      { nome:"tipo", rotulo:"Tipo", tipo:"select", opcoes:["preventiva|Preventiva","preditiva|Preditiva","corretiva|Corretiva"], valor: m?.tipo || "preventiva" },
-      { nome:"realizada", rotulo:"Já foi feita (desmarque para agendar)", tipo:"checkbox", largo:true, valor: m?.realizada ?? true },
-      { nome:"data", rotulo:"Data", tipo:"date", valor: m?.data || hoje(), obrigatorio: true },
-      { nome:"horimetro", rotulo:"Horímetro", tipo:"numero", valor: m?.horimetro ?? hAuto, aoMudar: atualizarFaltamRevisao },
+      { nome:"tipo", rotulo:"Tipo", tipo:"select", opcoes:["preventiva|Preventiva","preditiva|Preditiva","corretiva|Corretiva"], valor: m?.tipo || "preventiva", aoMudar: sugerirRevisao },
+      { nome:"realizada", rotulo:"Já foi feita (desmarque para agendar)", tipo:"checkbox", largo:true, valor: m?.realizada ?? true, aoMudar: sugerirRevisao },
+      { nome:"data", rotulo:"Data", tipo:"date", valor: m?.data || hoje(), obrigatorio: true, aoMudar: sugerirRevisao },
+      { nome:"horimetro", rotulo:"Horímetro", tipo:"numero", valor: m?.horimetro ?? hAuto, aoMudar: () => { sugerirRevisao(); atualizarFaltamRevisao(); } },
       { tipo:"separador", rotulo:"Serviço feito" },
       { nome:"descricao", rotulo:"O que foi / será feito", tipo:"texto", largo:true, valor: m?.descricao || "" },
       { nome:"pecas", rotulo:"Peças trocadas/compradas", tipo:"texto", largo:true, valor: m?.pecas || "", visivelSe: f => f.realizada },
@@ -2822,6 +2860,7 @@ function abrirModalManutencao(id) {
       if (m?.agenda_id) await sb.from("agenda").delete().eq("id", m.agenda_id);
     },
   });
+  sugerirRevisao();
 }
 
 async function abrirModalMeuPerfil() {
