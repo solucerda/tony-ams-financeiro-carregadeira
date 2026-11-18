@@ -2595,7 +2595,7 @@ function renderManutencao() {
       <div class="man-proxima-linha linha-clicavel" role="button" tabindex="0" onclick="aoClicarLinha(() => abrirModalManutencao(${m.id}))" onkeydown="teclaLinha(event)">
         <span class="chip" style="border-color:${COR_TIPO_MAN[m.tipo]};color:${COR_TIPO_MAN[m.tipo]}">${ROTULO_TIPO_MAN[m.tipo]}</span>
         <span class="man-proxima-desc">${escHtml(m.descricao || "—")}${contexto.equipamentoId == null ? " · " + escHtml(nomeEquipamento(m.equipamento_id)) : ""}</span>
-        <span class="man-proxima-data">${fData(m.proxima_data || m.data)}${m.proxima_horimetro ? " · " + num(m.proxima_horimetro,0) + "h" : ""}</span>
+        <span class="man-proxima-data">${urgenciaManutencao(m.proxima_data ? m : { proxima_data: m.data })}${fData(m.proxima_data || m.data)}${m.proxima_horimetro ? " · " + num(m.proxima_horimetro,0) + "h" : ""}</span>
       </div>`), 1)
     : '<div class="vazio">Nenhuma manutenção agendada.</div>';
 
@@ -2607,8 +2607,11 @@ function renderManutencao() {
 
   const linhasMan = filtrado.map(m => {
     const venceu = m.status_pagamento === "pendente" && m.vencimento && m.vencimento < hj;
+    const agendadaAtrasada = !m.realizada && (m.proxima_data || m.data) < hj;
     const statusHtml = !m.realizada
-      ? `<span class="chip chip-status chip-pendente">Agendada</span>`
+      ? (agendadaAtrasada
+        ? `<span class="chip chip-status chip-vencido">${icone("alerta", "icone-sm")} Atrasada</span>`
+        : `<span class="chip chip-status chip-pendente">Agendada</span>`)
       : (m.status_pagamento === "pendente"
         ? `<span class="chip chip-status ${venceu ? "chip-vencido" : "chip-pendente"}">${venceu ? "Vencido" : "A pagar"}</span>`
         : `<span class="chip chip-status chip-pago">Pago</span>`);

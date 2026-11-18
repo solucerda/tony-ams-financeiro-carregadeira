@@ -1724,3 +1724,17 @@ body[data-pagina="inicio"] .registro-texto small { font-size: 13px; }
 .login-caixa .form-erro::before { content: "⚠ "; }
 /* mensagens de erro nos formulários com a mesma presença */
 #modal-erro:not(.oculto) { padding: 12px 14px; border-radius: var(--raio-md); background: rgba(240,86,74,.12); border: 1px solid rgba(240,86,74,.55); font-size: 14px; font-weight: 600; }
+
+/* ═══ UI PR 10 — Listas de abastecimento, manutenção e horas ═══ */
+.td-vencimento, .td-natureza, .cliente-dados span, .papel-badge { font-size: 12px; }
+/* abastecimento: consumo (L/h) é o dado principal da linha */
+#die-corpo td.num .td-vencimento { font-size: 13px; font-weight: 700; color: var(--amarelo-claro); font-family: var(--fonte-mono); }
+/* horas: informação operacional (horímetro, horas) separada da financeira (valores) */
+#rec-corpo td:nth-child(4) { font-weight: 700; font-size: 15px; }
+#aba-recebimentos .tabela th:nth-child(5), #rec-corpo td:nth-child(5) { border-left: 1px solid var(--borda); }
+.cliente-cartao .cliente-nome { font-size: 15px; font-weight: 600; }
+.cliente-dados b { font-size: 15px; }
+/* manutenção: próximas com urgência em texto + ícone */
+.man-proxima-linha { min-height: 52px; }
+.man-proxima-data { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; white-space: nowrap; }
+.chip-status .icone { width: 13px; height: 13px; vertical-align: -2px; }
