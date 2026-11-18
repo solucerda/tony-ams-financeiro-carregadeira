@@ -338,6 +338,15 @@ function corCentroCusto(id) {
 function opcoesGrupoDespesa() {
   return dados.gruposDespesa.filter(g => g.ativo).map(g => g.nome);
 }
+// Tipo de custo (Fixo / Variavel / Investimento) definido pelo gestor no cadastro da
+// categoria. null = a categoria ainda não define → o formulário continua perguntando.
+// `permitidas` limita ao que a tabela de destino aceita (ex.: manutenção e abastecimento
+// só guardam Fixo/Variavel).
+function naturezaDoGrupo(nome, permitidas) {
+  const n = dados.gruposDespesa.find(g => g.nome === nome)?.natureza || null;
+  return n && (!permitidas || permitidas.includes(n)) ? n : null;
+}
+const NATUREZAS_FIXO_VARIAVEL = ["Fixo", "Variavel"];
 function opcoesContaBancaria() {
   return dados.contasBancarias.filter(c => c.ativo).map(c => c.nome);
 }
@@ -1521,7 +1530,7 @@ function abrirModalLancamento(id, tipoNovo) {
       { nome:"grupo", rotulo:"Categoria", tipo:"select", opcoes: grupos.includes(grupoInicial) ? grupos : grupos.concat(grupoInicial), valor: grupoInicial, visivelSe: f => !ehReceita(f), aoMudar: ded.tocou("grupo") },
       { nome:"natureza", rotulo:"Tipo de custo", tipo:"select",
         opcoes:["Variavel|Custo variável","Fixo|Custo fixo","Investimento|Investimento"],
-        valor: (l?.natureza && l.natureza !== "Receita") ? l.natureza : "Variavel", visivelSe: f => !ehReceita(f), aoMudar: ded.tocou("natureza") },
+        valor: (l?.natureza && l.natureza !== "Receita") ? l.natureza : "Variavel", visivelSe: f => !ehReceita(f) && !naturezaDoGrupo(f.grupo), aoMudar: ded.tocou("natureza") },
       { tipo:"separador", rotulo:"Pagamento e conta" },
       { nome:"status_saida", rotulo:"Situação", tipo:"select", opcoes:["pago|Já paguei", l ? "pendente|Ainda vou pagar" : "pendente|Vou pagar depois…"], valor: l?.status || "pago", visivelSe: f => !ehReceita(f), aoMudar: passarParaConta },
       { nome:"status_entrada", rotulo:"Situação", tipo:"select", opcoes:["pago|Já recebi", l ? "pendente|Ainda vou receber" : "pendente|Vou receber depois…"], valor: l?.status || "pago", visivelSe: f => ehReceita(f), aoMudar: passarParaConta },
@@ -1547,7 +1556,7 @@ function abrirModalLancamento(id, tipoNovo) {
         entrada: ent ? v : 0,
         saida:   ent ? 0 : v,
         descricao: f.descricao.trim(),
-        natureza: ent ? "Receita" : f.natureza,
+        natureza: ent ? "Receita" : (naturezaDoGrupo(f.grupo) || f.natureza),
         ...servicoDoForm(f),
       };
     }
@@ -2355,7 +2364,8 @@ function abrirModalDiesel(id) {
         data: f.data, equipamento_id: Number(f.equipamento_id), combustivel: ehFlex(f.equipamento_id) ? f.combustivel : combustivelDoEquip(f.equipamento_id),
         local: f.local.trim(), litros, valor_unit: vu, valor_unit_bruto: precoBruto, desconto, valor_total: total,
         status: f.status, vencimento: f.status === "pendente" ? f.vencimento : null,
-        natureza: f.natureza,
+        // registro novo herda a natureza da categoria "Combustível" (se o gestor definiu); o já salvo não muda
+        natureza: (!d && naturezaDoGrupo("Combustível", NATUREZAS_FIXO_VARIAVEL)) || f.natureza,
         ...servicoDoForm(f),
       };
       // chave da nota (do QR): só mexe quando a nota foi trocada ou removida
@@ -2706,7 +2716,8 @@ function abrirModalManutencao(id) {
       { tipo:"separador", rotulo:"Valores e pagamento" },
       { nome:"valor_pecas", rotulo:"Valor peças (R$)", tipo:"moeda", valor: m?.valor_pecas ?? "" },
       { nome:"valor_mao_obra", rotulo:"Valor mão de obra (R$)", tipo:"moeda", valor: m?.valor_mao_obra ?? "" },
-      { nome:"natureza", rotulo:"Tipo de custo", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: m?.natureza || "Variavel", aoMudar: () => { naturezaTocada = true; } },
+      { nome:"natureza", rotulo:"Tipo de custo", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: m?.natureza || "Variavel", aoMudar: () => { naturezaTocada = true; },
+        visivelSe: () => !naturezaDoGrupo("Manutenção", NATUREZAS_FIXO_VARIAVEL) },
       { nome:"status_pagamento", rotulo:"Pagamento", tipo:"select", opcoes:["pago|Já foi pago","pendente|Ainda vou pagar"], valor: m?.status_pagamento || "pago", visivelSe: f => f.realizada },
       { nome:"vencimento", rotulo:"Vence em", tipo:"date", valor: m?.vencimento || "", obrigatorio: (f) => f.realizada && f.status_pagamento === "pendente", visivelSe: f => f.realizada && f.status_pagamento === "pendente" },
       { nome:"_banco", rotulo:"Conta de onde saiu", tipo:"select", opcoes: opcoesContaBancaria(), valor: contaDoLancamento(m?.lancamento_id), visivelSe: f => f.realizada && f.status_pagamento === "pago" },
@@ -2728,7 +2739,7 @@ function abrirModalManutencao(id) {
         horimetro: f.horimetro === "" ? null : Number(f.horimetro),
         descricao: f.descricao.trim(), pecas: f.pecas.trim(), fornecedor: f.fornecedor.trim(),
         valor_pecas: vp, valor_mao_obra: vm, valor_total: vp + vm,
-        natureza: f.natureza,
+        natureza: naturezaDoGrupo("Manutenção", NATUREZAS_FIXO_VARIAVEL) || f.natureza,
         status_pagamento: f.realizada ? f.status_pagamento : "pendente",
         vencimento: f.realizada && f.status_pagamento === "pendente" ? f.vencimento : null,
         proxima_data: f.proxima_data || null,
@@ -2824,7 +2835,7 @@ const CADASTROS_ADMIN = [
     nota:"postos de combustível, oficinas — sugestão automática no Abastecimento e na Manutenção.",
     abrir:"abrirModalFornecedor" },
   { chave:"gruposDespesa",  tabela:"grupos_despesa",   titulo:"Categorias de despesa",
-    nota:"categorias de despesa usadas no Extrato e em Contas.",
+    nota:"categorias de despesa usadas no Extrato e em Contas. Defina o tipo de custo (fixo/variável) de cada uma: o operador deixa de escolher no lançamento.",
     abrir:"abrirModalGrupoDespesa" },
   { chave:"contasBancarias",tabela:"contas_bancarias", titulo:"Contas bancárias",
     nota:"contas usadas no Extrato.",
@@ -3101,20 +3112,25 @@ function abrirModalEmpresa() {
 function criarModalCadastro(tabela, chaveDados, tituloSingular, camposExtra = []) {
   return function (id) {
     const item = id ? dados[chaveDados].find(x => x.id === id) : null;
+    // camposExtra pode ser uma função (avaliada ao abrir); campo com `ausente: true` não entra
+    // (ex.: coluna ainda não criada no banco) e `nulavel: true` grava vazio como null
+    const extras = (typeof camposExtra === "function" ? camposExtra() : camposExtra).filter(c => !c.ausente);
     abrirModal({
       titulo: item ? "Editar " + tituloSingular : "Novo " + tituloSingular,
       tabela, id,
       campos: [
         { nome:"nome", rotulo:"Nome", tipo:"texto", largo:true, valor: item?.nome || "", obrigatorio: true },
-        ...camposExtra.map(c => ({ ...c, valor: c.padrao ? (item && item[c.nome] != null ? item[c.nome] : c.padrao(item)) : (item ? (item[c.nome] ?? "") : "") })),
+        ...extras.map(c => ({ ...c, valor: c.padrao ? (item && item[c.nome] != null ? item[c.nome] : c.padrao(item)) : (item ? (item[c.nome] ?? "") : "") })),
         { nome:"ativo", rotulo:"Ativo", tipo:"checkbox", valor: item?.ativo ?? true },
       ],
       montar(f) {
         if (!f.nome.trim()) throw erroCampo("nome", "Informe o nome.");
         const extra = {};
-        camposExtra.forEach(c => {
+        extras.forEach(c => {
           extra[c.nome] = c.tipo === "moeda" ? (f[c.nome] ? numDeMoeda(f[c.nome]) : null)
-            : c.tipo === "checkbox" ? !!f[c.nome] : String(f[c.nome] || "").trim();
+            : c.tipo === "checkbox" ? !!f[c.nome]
+            : c.nulavel ? (String(f[c.nome] || "").trim() || null)
+            : String(f[c.nome] || "").trim();
         });
         return { nome: f.nome.trim(), ...extra, ativo: !!f.ativo };
       }
@@ -3168,7 +3184,13 @@ function abrirModalEquipamentoAdmin(id) {
 }
 const abrirModalCentroCusto      = criarModalCadastro("centros_custo", "centrosCusto", "centro de custo");
 const abrirModalFornecedor       = criarModalCadastro("fornecedores", "fornecedores", "fornecedor");
-const abrirModalGrupoDespesa     = criarModalCadastro("grupos_despesa", "gruposDespesa", "grupo de despesa");
+// "Tipo de custo" por categoria: quem define é o gestor, aqui, uma vez. O campo só aparece
+// depois de rodar correcoes_v29.sql (a coluna `natureza` precisa existir em grupos_despesa).
+const abrirModalGrupoDespesa     = criarModalCadastro("grupos_despesa", "gruposDespesa", "grupo de despesa", () => [
+  { nome:"natureza", rotulo:"Tipo de custo desta categoria", tipo:"select", largo:true, nulavel:true,
+    opcoes:["|Não definido (o operador escolhe no lançamento)", "Fixo|Custo fixo", "Variavel|Custo variável", "Investimento|Investimento"],
+    ausente: !dados.gruposDespesa.some(g => "natureza" in g) },
+]);
 const abrirModalContaBancaria    = criarModalCadastro("contas_bancarias", "contasBancarias", "conta bancária");
 const abrirModalOperador         = criarModalCadastro("operadores", "operadores", "operador");
 const abrirModalObra             = criarModalCadastro("obras", "obras", "obra/contrato");
@@ -3654,7 +3676,7 @@ function abrirModalAgenda(id, tipoNovo, pre) {
     { nome:"vencimento", rotulo:"Vencimento", tipo:"date", valor: a ? vencimentoAgenda(a) : hoje(), obrigatorio:true },
     { tipo:"separador", rotulo:"Classificação" },
     { nome:"grupo", rotulo:"Categoria (vai para o Extrato)", tipo:"select", opcoes: grupos, valor: a?.grupo && a.grupo !== "Recebimentos" ? a.grupo : (pre?.grupo && grupos.includes(pre.grupo) ? pre.grupo : (grupos.includes("Outras despesas") ? "Outras despesas" : grupos[0])), visivelSe: ehPagar, aoMudar: ded.tocou("grupo") },
-    { nome:"natureza", rotulo:"Tipo de custo", tipo:"select", opcoes:["Fixo|Custo fixo","Variavel|Custo variável","Investimento|Investimento"], valor: a?.natureza && a.natureza !== "Receita" ? a.natureza : (pre?.natureza || "Fixo"), visivelSe: ehPagar, aoMudar: ded.tocou("natureza") },
+    { nome:"natureza", rotulo:"Tipo de custo", tipo:"select", opcoes:["Fixo|Custo fixo","Variavel|Custo variável","Investimento|Investimento"], valor: a?.natureza && a.natureza !== "Receita" ? a.natureza : (pre?.natureza || "Fixo"), visivelSe: f => ehPagar(f) && !naturezaDoGrupo(f.grupo), aoMudar: ded.tocou("natureza") },
     { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(true), valor: equipamentoPadrao(a?.equipamento_id ?? pre?.equipamento_id, true) },
     { tipo:"separador", rotulo:"Situação e repetição" },
     { nome:"status_pagamento", rotulo:"Situação", tipo:"select", opcoes:["pendente|Em aberto","pago|Já foi paga / recebida"], valor: a?.status_pagamento || "pendente" },
@@ -3699,7 +3721,7 @@ function abrirModalAgenda(id, tipoNovo, pre) {
       return {
         item: f.item.trim(), equipamento_id: f.equipamento_id ? Number(f.equipamento_id) : null,
         grupo: pagar ? f.grupo : "Recebimentos", ano, dia: String(dia), mes, valor: pagar ? v : -v,
-        natureza: pagar ? f.natureza : "Receita", centro_custo_id: a?.centro_custo_id ?? null,
+        natureza: pagar ? (naturezaDoGrupo(f.grupo) || f.natureza) : "Receita", centro_custo_id: a?.centro_custo_id ?? null,
         status_pagamento: f.status_pagamento, data_pagamento: f.status_pagamento === "pago" ? f.data_pagamento : null,
         _replicarMeses: id ? 0 : mesesExtra,
       };
