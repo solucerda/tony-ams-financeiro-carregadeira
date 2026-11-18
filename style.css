@@ -1667,3 +1667,21 @@ body[data-pagina="inicio"] .registro-texto small { font-size: 13px; }
 #modal-campos [data-campo="proxima_horimetro"], #modal-campos [data-campo="proxima_data"], #modal-campos [data-campo="faltam_calc"] { border-color: rgba(245,179,1,.55); }
 #modal-campos [data-campo="faltam_calc"] { font-family: var(--fonte-mono); }
 #modal-campos [data-campo="horimetro"] { font-family: var(--fonte-mono); font-size: 18px; font-weight: 600; }
+/* ═══ UI PR 07 — Painel do gestor: hierarquia e desktop ═══ */
+/* situação do resultado em texto + ícone (não só cor) */
+.selo-resultado { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; padding: 2px 8px; border-radius: var(--raio-pilula); font-style: normal; font-size: 12px; font-weight: 700; vertical-align: middle; }
+.selo-resultado .icone { width: 13px; height: 13px; }
+.selo-resultado.pos { color: var(--verde); background: rgba(62,207,142,.12); }
+.selo-resultado.neg { color: var(--vermelho); background: rgba(240,86,74,.14); }
+/* saldo em caixa com destaque de segundo nível; contas com 20 px */
+.caixa-cartao { padding: 20px; }
+.caixa-valor { font-size: 20px; }
+.caixa-rotulo { font-size: 14px; color: var(--texto-suave); }
+/* valores monetários em tabelas e cartões: alinhados à direita quando em coluna */
+.conta-valor, .op-linha b { text-align: right; }
+@media (min-width: 1024px) {
+  /* resultado à esquerda, saldo e compromissos à direita */
+  body[data-pagina="painel"] #kpis-posicao { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 20px; align-items: stretch; }
+  body[data-pagina="painel"] #kpis-posicao .caixa-cartao { margin-top: 0; }
+  body[data-pagina="painel"] .hero-resultado { align-self: center; }
+}
