@@ -1769,3 +1769,6 @@ body[data-pagina="inicio"] .registro-texto small { font-size: 13px; }
   .admin-sidebar { flex-basis: 240px; }
 }
 @media (min-width: 1700px) { .conteudo { max-width: 1480px; } }
+
+/* campo travado (ex.: horímetro inicial do operador): legível, mas claramente não editável */
+#modal-campos input[readonly] { background: var(--superficie-2); opacity: .8; cursor: not-allowed; }
