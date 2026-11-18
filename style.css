@@ -1707,3 +1707,20 @@ body[data-pagina="inicio"] .registro-texto small { font-size: 13px; }
 .sit-vencida { color: var(--vermelho); background: rgba(240,86,74,.14); }
 .sit-proxima { color: var(--amarelo-claro); background: rgba(245,179,1,.14); }
 .sit-prevista { color: var(--texto-suave); background: rgba(255,255,255,.06); }
+/* ═══ UI PR 09 — Login com acabamento comercial + feedback ═══ */
+.login-caixa { max-width: 400px; padding: 32px 28px; border-radius: var(--raio-xl); }
+.login-marca .marca-icone { width: 52px; height: 52px; }
+.login-marca .marca-nome { font-size: 22px; }
+.login-marca .marca-sub { font-size: 14px; color: var(--texto-suave); }
+.login-caixa form { gap: 18px; margin-top: 20px; }
+.login-caixa label { font-size: 14px; color: var(--texto-suave); gap: 8px; }
+.login-caixa input { min-height: 52px; font-size: 16px; padding: 12px 14px; border-radius: var(--raio-md); }
+.login-caixa input:focus-visible { border-color: var(--amarelo); box-shadow: 0 0 0 3px rgba(245,179,1,.25); }
+.login-caixa .btn-largo { min-height: 54px; font-size: 16px; font-weight: 700; border-radius: 12px; }
+.campo-senha { position: relative; display: block; }
+.campo-senha input { width: 100%; padding-right: 92px; }
+.btn-ver-senha { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); min-height: 40px; padding: 0 12px; background: none; border: none; color: var(--amarelo-claro); font-size: 14px; font-weight: 600; cursor: pointer; border-radius: var(--raio-sm); }
+.login-caixa .form-erro { margin-top: 0; padding: 12px 14px; border-radius: var(--raio-md); background: rgba(240,86,74,.12); border: 1px solid rgba(240,86,74,.55); color: #FF8A80; font-size: 14px; font-weight: 600; }
+.login-caixa .form-erro::before { content: "⚠ "; }
+/* mensagens de erro nos formulários com a mesma presença */
+#modal-erro:not(.oculto) { padding: 12px 14px; border-radius: var(--raio-md); background: rgba(240,86,74,.12); border: 1px solid rgba(240,86,74,.55); font-size: 14px; font-weight: 600; }
