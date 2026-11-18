@@ -1724,3 +1724,23 @@ body[data-pagina="inicio"] .registro-texto small { font-size: 13px; }
 .login-caixa .form-erro::before { content: "⚠ "; }
 /* mensagens de erro nos formulários com a mesma presença */
 #modal-erro:not(.oculto) { padding: 12px 14px; border-radius: var(--raio-md); background: rgba(240,86,74,.12); border: 1px solid rgba(240,86,74,.55); font-size: 14px; font-weight: 600; }
+
+/* ═══ UI PR 12 — Estados globais e desktop ═══ */
+/* vazio, carregando e erro são estados distintos */
+.vazio { font-size: 15px; line-height: 1.5; border: 1px dashed var(--borda-clara); border-radius: var(--raio-lg); margin: 8px 0; }
+.tabela td.vazio, .tabela tr:has(.vazio) .vazio { border: none; margin: 0; }
+.estado-carregando { display: flex; align-items: center; justify-content: center; gap: 12px; border: none; color: var(--texto-suave); }
+.spinner { width: 22px; height: 22px; border: 3px solid var(--borda-clara); border-top-color: var(--amarelo); border-radius: 50%; animation: girar .8s linear infinite; flex: none; }
+@keyframes girar { to { transform: rotate(360deg); } }
+.estado-erro { display: flex; flex-direction: column; align-items: center; gap: 10px; border: 1px solid rgba(240,86,74,.55); background: rgba(240,86,74,.08); color: var(--texto); }
+.estado-erro b { color: #FF8A80; font-size: 16px; }
+.estado-erro span { color: var(--texto-suave); font-size: 14px; max-width: 520px; }
+.estado-erro .btn-primario { min-height: 48px; margin-top: 4px; }
+/* configurações: itens do menu com alvo confortável */
+.admin-sidebar-item { font-size: 15px; padding: 12px 14px; min-height: var(--alvo-toque); color: var(--texto-suave); }
+/* desktop: aproveita a largura sem esticar o texto */
+@media (min-width: 1366px) {
+  .conteudo { max-width: 1320px; padding-left: 28px; padding-right: 28px; }
+  .admin-sidebar { flex-basis: 240px; }
+}
+@media (min-width: 1700px) { .conteudo { max-width: 1480px; } }
