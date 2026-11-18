@@ -299,6 +299,17 @@ function combustivelServe(id, comb) {
   const c = combustivelDoEquip(id);
   return c === "Flex" ? (comb === "Gasolina" || comb === "Etanol") : c === comb;
 }
+// Operador sem acesso financeiro: esconde (e mantém escondidos, mesmo com visivelSe) os campos
+// de dinheiro/pagamento/classificação. Os valores continuam no formulário, então editar um
+// registro que já tem esses dados não os apaga. Mesma ideia que Horas trabalhadas já usa.
+function esconderDoOperador(campos, nomes) {
+  campos.forEach(c => {
+    if (!nomes.includes(c.nome)) return;
+    c.oculto = true;
+    c.visivelSe = () => false;
+    c.obrigatorio = false;
+  });
+}
 const ROTULO_COMBUSTIVEL = { Diesel: "Diesel", Gasolina: "Gasolina", Etanol: "Etanol (álcool)", GNV: "GNV", Flex: "Flex (gasolina ou álcool)" };
 
 function nomeEquipamento(id) {
@@ -1995,6 +2006,7 @@ function abrirDetalheAbastecimentoConjunto(ids) {
 
 function abrirModalDiesel(id) {
   const d = id ? acharAbastecimento(id) : null;
+  const semDinheiro = !vejoFinanceiro; // operador: lança o abastecimento; o pagamento é do gestor
   const temVeiculoCadastrado = opcoesEquipamentoPorTipo("Veiculo").length > 0;
   const equipInicial = Number(equipamentoPadrao(d?.equipamento_id, false)) || null;
   const tipoEquip = tipoEquipamento(equipInicial);
@@ -2297,7 +2309,7 @@ function abrirModalDiesel(id) {
       ...(parGrupo ? {} : { grupoCondicional:"carroApoio", oculto:true }) });
   }
   campos.push(
-    { tipo:"separador", rotulo:"④ Pagamento" },
+    { nome:"_sep_pag", tipo:"separador", rotulo:"④ Pagamento" },
     { nome:"status", rotulo:"Situação", tipo:"select", opcoes:["pago|Pago à vista","pendente|A pagar (fiado)"], valor: d?.status || "pago" },
     { nome:"vencimento", rotulo:"Vence em", tipo:"date", valor: d?.vencimento || "", obrigatorio: (f) => f.status === "pendente", visivelSe: f => f.status === "pendente" },
     { nome:"_banco", rotulo:"Conta de onde saiu", tipo:"select", opcoes: opcoesContaBancaria(), valor: contaDoLancamento(d?.lancamento_id), visivelSe: f => f.status === "pago" },
@@ -2307,6 +2319,7 @@ function abrirModalDiesel(id) {
     ...campoServico(d?.servico_id),
   );
 
+  if (semDinheiro) esconderDoOperador(campos, ["arq_comprovante", "_sep_pag", "status", "vencimento", "_banco", "natureza"]);
   abrirModal({
     titulo: d ? "Editar abastecimento" : "Novo abastecimento",
     tabela: "diesel", id,
@@ -2333,7 +2346,11 @@ function abrirModalDiesel(id) {
       const precoBruto = bruto > 0 ? bruto : vu;
       const desconto = litros > 0 && bruto > 0 ? arred(litros * bruto - total, 2) : 0;
       if (!f.equipamento_id) throw erroCampo("equipamento_id", "Selecione o equipamento.");
-      if (f.status === "pendente" && !f.vencimento) throw erroCampo("vencimento", "Informe quando vence o pagamento.");
+      // lançado por operador (sem acesso ao financeiro): entra como "a pagar", vencendo no dia do
+      // abastecimento, para o gestor dar a baixa e escolher a conta. Edição mantém o que já estava.
+      const statusFinal = semDinheiro && !d ? "pendente" : f.status;
+      const vencimentoFinal = f.vencimento || (semDinheiro ? f.data : "");
+      if (statusFinal === "pendente" && !vencimentoFinal) throw erroCampo("vencimento", "Informe quando vence o pagamento.");
       bancoDieselForm = f._banco || contaPadrao();
 
       carroApoioForm = null;
@@ -2363,7 +2380,7 @@ function abrirModalDiesel(id) {
       const registro = {
         data: f.data, equipamento_id: Number(f.equipamento_id), combustivel: ehFlex(f.equipamento_id) ? f.combustivel : combustivelDoEquip(f.equipamento_id),
         local: f.local.trim(), litros, valor_unit: vu, valor_unit_bruto: precoBruto, desconto, valor_total: total,
-        status: f.status, vencimento: f.status === "pendente" ? f.vencimento : null,
+        status: statusFinal, vencimento: statusFinal === "pendente" ? vencimentoFinal : null,
         // registro novo herda a natureza da categoria "Combustível" (se o gestor definiu); o já salvo não muda
         natureza: (!d && naturezaDoGrupo("Combustível", NATUREZAS_FIXO_VARIAVEL)) || f.natureza,
         ...servicoDoForm(f),
@@ -2660,6 +2677,7 @@ function renderManutencao() {
 
 function abrirModalManutencao(id) {
   const m = id ? dados.man.find(x => x.id === id) : null;
+  const semDinheiro = !vejoFinanceiro; // operador registra o serviço; valores, pagamento e revisão são do gestor
   let bancoManutencao = null;
   let naturezaTocada = false;
   // novo: horímetro já vem com o último conhecido da máquina
@@ -2684,6 +2702,7 @@ function abrirModalManutencao(id) {
     avisoExcluir: m && (m.lancamento_id || m.agenda_id)
       ? "Isso também remove o lançamento vinculado no Extrato" + (m.agenda_id ? " e a conta a receber em Contas." : ".")
       : null,
+    esconder: semDinheiro ? ["_sep_val", "valor_pecas", "valor_mao_obra", "natureza", "status_pagamento", "vencimento", "_banco", "_sep_rev", "proxima_data", "proxima_horimetro", "faltam_calc"] : null,
     campos: [
       { tipo:"separador", rotulo:"Máquina e data" },
       { nome:"equipamento_id", rotulo:"Equipamento", tipo:"select", opcoes: opcoesEquipamento(false), valor: equipamentoPadrao(m?.equipamento_id, false), obrigatorio: true,
@@ -2713,7 +2732,7 @@ function abrirModalManutencao(id) {
           const melhor = Object.entries(conta).sort((a, b) => b[1] - a[1])[0];
           if (melhor && [...campo.options].some(o => o.value === melhor[0])) campo.value = melhor[0];
         } }) },
-      { tipo:"separador", rotulo:"Valores e pagamento" },
+      { nome:"_sep_val", tipo:"separador", rotulo:"Valores e pagamento" },
       { nome:"valor_pecas", rotulo:"Valor peças (R$)", tipo:"moeda", valor: m?.valor_pecas ?? "" },
       { nome:"valor_mao_obra", rotulo:"Valor mão de obra (R$)", tipo:"moeda", valor: m?.valor_mao_obra ?? "" },
       { nome:"natureza", rotulo:"Tipo de custo", tipo:"select", opcoes:["Variavel|Custo variável","Fixo|Custo fixo"], valor: m?.natureza || "Variavel", aoMudar: () => { naturezaTocada = true; },
@@ -2721,7 +2740,7 @@ function abrirModalManutencao(id) {
       { nome:"status_pagamento", rotulo:"Pagamento", tipo:"select", opcoes:["pago|Já foi pago","pendente|Ainda vou pagar"], valor: m?.status_pagamento || "pago", visivelSe: f => f.realizada },
       { nome:"vencimento", rotulo:"Vence em", tipo:"date", valor: m?.vencimento || "", obrigatorio: (f) => f.realizada && f.status_pagamento === "pendente", visivelSe: f => f.realizada && f.status_pagamento === "pendente" },
       { nome:"_banco", rotulo:"Conta de onde saiu", tipo:"select", opcoes: opcoesContaBancaria(), valor: contaDoLancamento(m?.lancamento_id), visivelSe: f => f.realizada && f.status_pagamento === "pago" },
-      { tipo:"separador", rotulo:"Próxima revisão" },
+      { nome:"_sep_rev", tipo:"separador", rotulo:"Próxima revisão" },
       { nome:"proxima_data", rotulo:"Próxima revisão (data)", tipo:"date", valor: m?.proxima_data || "" },
       { nome:"proxima_horimetro", rotulo:"Próxima revisão (horímetro)", tipo:"numero", valor: m?.proxima_horimetro ?? "", aoMudar: atualizarFaltamRevisao },
       { nome:"faltam_calc", rotulo:"Faltam para a revisão", tipo:"calculado", valor: faltamRevisao(m?.horimetro ?? hAuto, m?.proxima_horimetro ?? "") },
@@ -2730,7 +2749,11 @@ function abrirModalManutencao(id) {
     montar(f) {
       if (!f.equipamento_id) throw erroCampo("equipamento_id", "Selecione o equipamento.");
       if (!f.descricao.trim() && !f.pecas.trim()) throw erroCampo("descricao", "Descreva o serviço ou as peças.");
-      if (f.realizada && f.status_pagamento === "pendente" && !f.vencimento) throw erroCampo("vencimento", "Informe quando vence o pagamento.");
+      // registrada por operador (sem valores): fica "a pagar", vencendo no dia do serviço, até o
+      // gestor informar os valores e dar a baixa. Edição mantém o que já estava.
+      const statusPag = semDinheiro && !m ? "pendente" : f.status_pagamento;
+      const vencimentoFinal = f.vencimento || (semDinheiro ? f.data : "");
+      if (f.realizada && statusPag === "pendente" && !vencimentoFinal) throw erroCampo("vencimento", "Informe quando vence o pagamento.");
       bancoManutencao = f._banco || contaPadrao();
       const vp = numDeMoeda(f.valor_pecas);
       const vm = numDeMoeda(f.valor_mao_obra);
@@ -2740,8 +2763,8 @@ function abrirModalManutencao(id) {
         descricao: f.descricao.trim(), pecas: f.pecas.trim(), fornecedor: f.fornecedor.trim(),
         valor_pecas: vp, valor_mao_obra: vm, valor_total: vp + vm,
         natureza: naturezaDoGrupo("Manutenção", NATUREZAS_FIXO_VARIAVEL) || f.natureza,
-        status_pagamento: f.realizada ? f.status_pagamento : "pendente",
-        vencimento: f.realizada && f.status_pagamento === "pendente" ? f.vencimento : null,
+        status_pagamento: f.realizada ? statusPag : "pendente",
+        vencimento: f.realizada && statusPag === "pendente" ? vencimentoFinal : null,
         proxima_data: f.proxima_data || null,
         proxima_horimetro: f.proxima_horimetro === "" ? null : Number(f.proxima_horimetro),
         ...servicoDoForm(f),
@@ -3860,6 +3883,8 @@ async function salvarAgendaFinal(id, linhas, lancamentoIdExistente = null) {
 let modalCtx = null;
 
 function abrirModal(ctx) {
+  // ctx.esconder: nomes de campos que o operador (sem acesso financeiro) não vê
+  if (ctx.esconder && ctx.campos) esconderDoOperador(ctx.campos, ctx.esconder);
   // Com uma máquina escolhida no topo, todo lançamento é dela: o campo
   // "Equipamento" some do formulário (fica gravado o da máquina em foco).
   let travadoNoContexto = false;
