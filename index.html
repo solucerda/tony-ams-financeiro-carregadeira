@@ -166,6 +166,7 @@
 
   <!-- ══════════ APLICAÇÃO ══════════ -->
   <div id="app" class="oculto">
+    <a class="pular-conteudo" href="#conteudo">Pular para o conteúdo</a>
 
     <!-- ── Barra lateral (desktop ≥ 1024px). No celular a navegação fica na
          barra inferior; os dois são montados pelo mesmo mapa em app.js
@@ -221,7 +222,7 @@
         <button type="button" class="btn-link" id="faixa-base-voltar">Voltar para a operação nova</button>
       </div>
 
-    <main class="conteudo">
+    <main class="conteudo" id="conteudo" tabindex="-1">
       <div id="carregando" class="vazio">Carregando…</div>
       <div class="cabeca-pagina oculto" id="cabeca-pagina">
         <button type="button" class="btn-voltar-pagina" id="btn-voltar-pagina" aria-label="Voltar ao menu">

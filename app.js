@@ -4676,3 +4676,34 @@ function opcoesGrafico({ legenda = true, moeda = false, decimais = 0 } = {}) {
     }
   };
 }
+
+/* ═══ ACESSIBILIDADE — estados e rótulos sincronizados com a interface ═══
+   Os botões de filtro/aba já trocam a classe "ativo"; aqui o estado também vai
+   para leitores de tela (aria-pressed / aria-current) e botões só com ícone
+   ganham nome acessível a partir do title. Roda uma vez por quadro após mudanças. */
+(function acessibilidade() {
+  const SEL_TOGGLE = ".segmentado button, .chip-periodo, .btn-periodo, .subnav-item, #ext-tipo button";
+  const SEL_NAV = ".nav-item, .lateral-nav button, .lateral-nav a, .admin-sidebar button";
+  let agendado = false;
+  function passar() {
+    agendado = false;
+    document.querySelectorAll(SEL_TOGGLE).forEach(el => {
+      el.setAttribute("aria-pressed", el.classList.contains("ativo") ? "true" : "false");
+    });
+    document.querySelectorAll(SEL_NAV).forEach(el => {
+      if (el.classList.contains("ativo") || el.classList.contains("ativa")) el.setAttribute("aria-current", "page");
+      else el.removeAttribute("aria-current");
+    });
+    document.querySelectorAll("button:not([aria-label])").forEach(b => {
+      if (!b.textContent.trim() && b.title) b.setAttribute("aria-label", b.title);
+    });
+    const chip = document.getElementById("chip-contexto");
+    if (chip) { chip.setAttribute("aria-haspopup", "dialog"); chip.setAttribute("aria-label", "Equipamento em foco: " + chip.textContent.replace(/\s+/g, " ").trim() + ". Trocar"); }
+  }
+  function agendar() { if (!agendado) { agendado = true; requestAnimationFrame(passar); } }
+  function iniciar() {
+    new MutationObserver(agendar).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
+    agendar();
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", iniciar); else iniciar();
+})();
